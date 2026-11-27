@@ -1,11 +1,11 @@
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { blockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
 import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
-import { literalControlIsOff, nodeControlGate } from './gatedNodeControls';
+import { adapterConsumesOffloadMode, literalControlIsOff, nodeControlGate } from './gatedNodeControls';
 import { nodeDisplayLabel } from './nodePresentation';
 
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
@@ -64,6 +64,10 @@ export function modelSetupControlParams(
   graph: BlockFlowGraphV2,
   params: Record<string, NodeParams>,
   workflowEdges: readonly Edge[] = [],
+  catalog: Pick<
+    ReturnType<typeof useNodesStore.getState>,
+    'workflowModelDescriptors' | 'studioModelCapabilities'
+  > = useNodesStore.getState(),
 ): Record<string, NodeParams> {
   const controls = instance.effectiveInterface.controls;
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -98,6 +102,7 @@ export function modelSetupControlParams(
       if (
         fieldId === 'offload_mode' &&
         literalControlIsOff(gate) &&
+        !adapterConsumesOffloadMode(owner.data.params, catalog) &&
         !control.mirrorBindings?.length &&
         !graph.edges.some((e) => e.target === owner.id && e.targetHandle === 'auto_offload') &&
         !workflowEdges.some(

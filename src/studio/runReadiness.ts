@@ -1998,10 +1998,7 @@ export function collectRunReadinessIssues(options: {
 }) {
   const issues: RunReadinessIssue[] = [];
   const studioState = useStudioStore.getState();
-  if (
-    studioState.canvasTransition?.type === 'template_graph_building' &&
-    studioState.canvasTransition.workflowTabId === studioState.activeWorkflowTabId
-  ) {
+  if (studioState.canvasTransition && studioState.canvasTransition.workflowTabId === studioState.activeWorkflowTabId) {
     return [
       issue({
         id: 'template-graph-preparing',
@@ -2011,7 +2008,7 @@ export function collectRunReadinessIssues(options: {
         blocking: true,
         action: 'inspect_node',
         message: 'Preparing graph',
-        details: 'Run becomes available after the template graph is finalized and arranged.',
+        details: 'Run becomes available after the graph is finalized and arranged.',
       }),
     ];
   }

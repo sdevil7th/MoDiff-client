@@ -190,6 +190,12 @@ export default function App() {
   const runIssuesDialogOpen = useRunIssueStore((state) => state.issueDialogOpen || state.failureDialogOpen);
   const nodeCount = useFlowStore((state) => state.nodes.length);
   const launcherDismissed = useStudioStore((state) => state.launcherDismissed);
+  const finishingLauncher = useStudioStore(
+    (state) =>
+      state.canvasTransition?.type === 'task_graph_building' &&
+      state.canvasTransition.keepLauncher &&
+      state.canvasTransition.workflowTabId === state.activeWorkflowTabId,
+  );
   const fetchBackendOutputs = useStudioStore((state) => state.fetchBackendOutputs);
   const workflowCanvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
   const hydrateActiveWorkflowCanvas = useStudioStore((state) => state.hydrateActiveWorkflowCanvas);
@@ -643,11 +649,13 @@ export default function App() {
             }}
           >
             <Workflow />
-            {startupComplete && workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
-              <Suspense fallback={null}>
-                <DeveloperWorkflowLauncher />
-              </Suspense>
-            )}
+            {startupComplete &&
+              workflowCanvasHydrated &&
+              ((nodeCount === 0 && !launcherDismissed) || finishingLauncher) && (
+                <Suspense fallback={null}>
+                  <DeveloperWorkflowLauncher />
+                </Suspense>
+              )}
             <RunSessionShelf />
           </div>
         </main>

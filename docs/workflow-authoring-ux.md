@@ -509,7 +509,7 @@ uses the current registry to check which model identities the Guider accepts.
 
 Fresh tasks, templates and examples measure the controls, open sections and sockets on each node before arranging the graph. This includes nodes supplied by a Python extension. Long forms start with up to 960 pixels of controls. Right-click the stage and choose **Fit height to controls** to expand a stage further. Saved workflows reopen at their authored sizes and positions.
 
-**Enabled** opens the settings for a guidance operation. Switching it off preserves your settings for the next time you enable it. A modular model loader shows **Offload Mode** when automatic offload is enabled or supplied by a wire. Canvas and inspector controls edit the same stored values.
+**Enabled** opens the settings for a guidance operation. Switching it off preserves your settings for the next time you enable it. A modular model loader shows **Offload Mode** when automatic offload is enabled, supplied by a wire, or required by the selected model’s adapter settings. Canvas and inspector controls edit the same stored values.
 
 New task starters fit the visible graph after its stages are measured. Use **Fit workflow in view** to see the whole graph, or select stages and use **Focus selected stages**. These actions move the canvas view and preserve your stage positions.
 

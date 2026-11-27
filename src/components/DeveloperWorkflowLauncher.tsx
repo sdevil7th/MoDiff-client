@@ -68,6 +68,7 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const signature = JSON.stringify(useFlowStore.getState().toObject());
+    let buildingTabId: string | null = null;
     setBusy(task);
     setError(null);
     try {
@@ -84,8 +85,16 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       )
         throw new Error('The canvas changed. Start a new workflow before choosing a task.');
       const draft = createWorkflowDraft(starter, registry);
+      if (embedded) useStudioStore.getState().createWorkflowTab(workflowTaskLabel(task));
+      buildingTabId = useStudioStore.getState().activeWorkflowTabId;
+      if (!buildingTabId) throw new Error('Workflow tab is no longer available.');
+      useStudioStore.getState().setCanvasTransition({
+        type: 'task_graph_building',
+        workflowTabId: buildingTabId,
+        keepLauncher: !embedded,
+        startedAt: Date.now(),
+      });
       if (embedded) {
-        useStudioStore.getState().createWorkflowTab(workflowTaskLabel(task));
         commitOperationGraph(
           draft.graph,
           captureWorkflowOperationContext(),
@@ -99,19 +108,28 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       prepareWorkflowForManualInsertion();
       const id = useStudioStore.getState().activeWorkflowTabId;
       if (id) {
-        useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
         const { settleExampleWorkflowCanvas } = await import('../studio/exampleWorkflow');
         if (id !== useStudioStore.getState().activeWorkflowTabId || !(await settleExampleWorkflowCanvas())) return;
+        useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
         const now = Date.now();
         useSettingsStore
           .getState()
           .setWorkflowFocusRequest({ workflowTabId: id, nodeId: null, requestId: now, requestedAt: now });
       }
-      useStudioStore.getState().saveActiveWorkflowTab(true);
       if (unbound) enqueueSnackbar(message, { variant: 'info', autoHideDuration: 8000 });
     } catch (e) {
       if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not create this workflow.'));
     } finally {
+      const studio = useStudioStore.getState();
+      if (
+        buildingTabId &&
+        studio.canvasTransition?.type === 'task_graph_building' &&
+        studio.canvasTransition.workflowTabId === buildingTabId &&
+        studio.activeWorkflowTabId === buildingTabId
+      ) {
+        studio.setCanvasTransition(null);
+        studio.saveActiveWorkflowTab(true);
+      }
       if (pending.current === controller) {
         pending.current = null;
         setBusy('');

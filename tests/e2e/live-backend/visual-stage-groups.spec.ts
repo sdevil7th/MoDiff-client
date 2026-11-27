@@ -217,12 +217,21 @@ test('model setup switching updates native model and Generate contract inside co
   await expect(entry).toHaveCount(1);
   await entry.dblclick();
   await expect(page.getByText('Workflow opened as a new tab', { exact: true })).toBeVisible({ timeout: 30_000 });
-  const baseline = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
+  const api = () =>
+    page.evaluate(async () => {
+      const { nodes, paths } = await window.__MODIFF_E2E__!.exportAuthorizedApiGraph();
+      return { nodes, paths };
+    });
+  const baseline = await api();
   expect(posts.filter((url) => url.endsWith('/fields/action'))).toEqual([]);
+  const visibleWiring = async () => {
+    const { nodes, edges } = await snapshot(page);
+    return { ids: nodes.map(({ id }) => id).sort(), edges };
+  };
+  const wiring = await visibleWiring();
   const model = page.locator('.react-flow__node [data-key="stage-node-02:pipeline_class"]');
   await model.getByRole('button').click();
   await page.getByRole('option', { name: 'SanaSprintPipeline', exact: true }).click();
-  const api = () => page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
   await expect
     .poll(async () => {
       const graph = await api();
@@ -237,17 +246,26 @@ test('model setup switching updates native model and Generate contract inside co
   const edited = await api();
   expect(posts.some((url) => url.endsWith('/fields/action'))).toBe(true);
   expect(posts.some((url) => /\/graph$|\/download/.test(url))).toBe(false);
+  expect(await visibleWiring()).toEqual(wiring);
+  expect(Object.keys(edited.nodes).sort()).toEqual(Object.keys(baseline.nodes).sort());
   await page.getByTestId('topbar-resource-policy').focus();
-  await page.keyboard.press('Control+z');
-  await expect.poll(async () => (await api()).nodes).toEqual(baseline.nodes);
-  await page.keyboard.press('Control+Shift+z');
-  await expect.poll(async () => (await api()).nodes).toEqual(edited.nodes);
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await page.keyboard.press('Control+z');
+    await expect.poll(api).toEqual(baseline);
+    expect(await visibleWiring()).toEqual(wiring);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(api).toEqual(edited);
+    expect(await visibleWiring()).toEqual(wiring);
+  }
   await page.getByTestId('topbar-save-workflow').click();
-  await expect(page.getByText('Saved text-to-image to My workflows', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved Text to image to My workflows', { exact: true })).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect.poll(() => page.evaluate(() => Boolean(window.__MODIFF_E2E__?.getState().websocket.sid))).toBe(true);
-  expect((await api()).nodes).toEqual(edited.nodes);
-  const sequenceLength = page.locator('.react-flow__node [data-key="stage-node-01:max_sequence_length"] input');
+  await expect.poll(api).toEqual(edited);
+  expect(await visibleWiring()).toEqual(wiring);
+  const canvas = page.locator('.react-flow__node');
+  const sequenceLength = canvas.getByRole('textbox', { name: 'Max Sequence Length', exact: true });
+  const increaseSequenceLength = canvas.getByRole('button', { name: 'Increase Max Sequence Length', exact: true });
   await expect(sequenceLength).toBeVisible();
   // The imported example uses a default value. Author a value valid for Sana
   // but above PRX's limit so preservation is independent of example defaults.
@@ -256,11 +274,7 @@ test('model setup switching updates native model and Generate contract inside co
   await expect(sequenceLength).toHaveValue('257');
   await model.getByRole('button').click();
   await page.getByRole('option', { name: 'PRXPipeline', exact: true }).click();
-  await expect(
-    page
-      .locator('.react-flow__node [data-key="stage-node-01:max_sequence_length"]')
-      .getByRole('button', { name: 'Increase Max Sequence Length', exact: true }),
-  ).toBeDisabled();
+  await expect(increaseSequenceLength).toBeDisabled();
   await expect(sequenceLength).toHaveValue('257');
   await expect(sequenceLength).toHaveAttribute('aria-invalid', 'true');
   const incompatible = await api();
@@ -269,11 +283,7 @@ test('model setup switching updates native model and Generate contract inside co
   await expect.poll(api).toEqual(incompatible);
   await sequenceLength.fill('256');
   await sequenceLength.press('Tab');
-  await expect(
-    page
-      .locator('.react-flow__node [data-key="stage-node-01:max_sequence_length"]')
-      .getByRole('button', { name: 'Increase Max Sequence Length', exact: true }),
-  ).toBeDisabled();
+  await expect(increaseSequenceLength).toBeDisabled();
   await expect
     .poll(
       async () =>
@@ -288,7 +298,7 @@ test('model setup switching updates native model and Generate contract inside co
   await expect(sequenceLength).toHaveValue('256');
   await expect(sequenceLength).not.toHaveAttribute('aria-invalid', 'true');
   await page.getByTestId('topbar-save-workflow').click();
-  await expect(page.getByText('Saved text-to-image to My workflows', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved Text to image to My workflows', { exact: true })).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(sequenceLength).toHaveValue('256', { timeout: 60_000 });
   await model.getByRole('button').click();
@@ -307,8 +317,9 @@ test('tabbing across an untouched numeric stage control keeps one edit as one Un
   await entry.dblclick();
   await expect(page.getByText('Workflow opened as a new tab', { exact: true })).toBeVisible({ timeout: 30_000 });
   const baseline = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
-  const steps = page.locator('.react-flow__node [data-key="stage-node-04:num_inference_steps"] input');
-  const count = page.locator('.react-flow__node [data-key="stage-node-04:num_videos_per_prompt"] input');
+  const canvasNodes = page.locator('.react-flow__node');
+  const steps = canvasNodes.getByRole('textbox', { name: 'Steps', exact: true });
+  const count = canvasNodes.getByRole('textbox', { name: 'Videos per prompt', exact: true });
   const original = await steps.inputValue();
   for (const gesture of ['Tab', 'Enter']) {
     await steps.fill(String(Number(original) - 1));
@@ -325,7 +336,7 @@ test('tabbing across an untouched numeric stage control keeps one edit as one Un
     await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph())).toEqual(baseline);
   }
   await page.getByTestId('topbar-save-workflow').click();
-  await expect(page.getByText('Saved text-to-video to My workflows', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved Text to video to My workflows', { exact: true })).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect.poll(() => page.evaluate(() => Boolean(window.__MODIFF_E2E__?.getState().websocket.sid))).toBe(true);
   const restored = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());

@@ -1,7 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import { hasInlineScalarControl } from './inlineScalarControl';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import {
   blockControlParamsV2,
@@ -25,15 +25,22 @@ const expandedByInstance = new WeakMap<object, CustomNodeType[]>();
 export function graphNodeControlParams(
   node: CustomNodeType,
   workflowEdges: readonly Edge[] = [],
+  catalog: Pick<
+    ReturnType<typeof useNodesStore.getState>,
+    'workflowModelDescriptors' | 'studioModelCapabilities'
+  > = useNodesStore.getState(),
 ): Record<string, NodeParams> {
   const instance = node.data.blockInstanceV2;
   const source = instance ?? node.data.params;
   const setup = instance && visualOperationGroup(node) === 'setup';
-  const hasIncoming = setup && workflowEdges.some((edge) => edge.target === node.id);
-  const cached = hasIncoming ? undefined : controlsBySource.get(source);
+  // Model Setup depends on current adapter policy and connected suppliers.
+  const cacheable = !setup;
+  const cached = cacheable ? controlsBySource.get(source) : undefined;
   if (cached) return cached;
   const base = instance ? blockControlParamsV2(instance) : node.data.params;
-  const params = setup ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base, workflowEdges) : base;
+  const params = setup
+    ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base, workflowEdges, catalog)
+    : base;
   const controls = Object.fromEntries(
     Object.entries(params)
       .filter(([key, param]) => {
@@ -56,7 +63,7 @@ export function graphNodeControlParams(
         },
       ]),
   );
-  if (!hasIncoming) controlsBySource.set(source, controls);
+  if (cacheable) controlsBySource.set(source, controls);
   return controls;
 }
 

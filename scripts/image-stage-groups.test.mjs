@@ -67,6 +67,42 @@ test('only the built-in raw guider and modular offload controls follow their lit
   }
 });
 
+test('show a disabled loader’s remembered offload choice when the selected adapter policy consumes it', async () => {
+  const { adapterConsumesOffloadMode, orderedActiveNodeControls } = await server.ssrLoadModule(
+    '/src/workflow/gatedNodeControls.ts',
+  );
+  const params = {
+    repo_id: { value: { source: 'hub', value: 'studio/example' } },
+    model_type: { value: 'Pipeline' },
+    auto_offload: { value: false },
+    offload_mode: { value: 'group_cpu' },
+  };
+  const policy = {
+    pipeline_class: 'Pipeline',
+    default_repo: 'studio/example',
+    adapterAuthoring: { requiredControls: { offload_mode: 'none' } },
+  };
+  const declared = { workflowModelDescriptors: [{ adapterAuthoringProfile: policy }], studioModelCapabilities: [] };
+  assert.equal(adapterConsumesOffloadMode(params, declared), true);
+  assert.equal(
+    adapterConsumesOffloadMode(params, {
+      workflowModelDescriptors: [],
+      studioModelCapabilities: [{ executionProfiles: [policy] }],
+    }),
+    true,
+  );
+  assert.equal(adapterConsumesOffloadMode({ ...params, model_type: { value: 'OtherPipeline' } }, declared), false);
+  assert.equal(
+    adapterConsumesOffloadMode({ ...params, repo_id: { value: { source: 'hub', value: 'studio/other' } } }, declared),
+    false,
+  );
+  const keys = orderedActiveNodeControls('modules.ModularDiffusers.ModelsLoader', params, params, false, true).map(
+    ([key]) => key,
+  );
+  assert.ok(keys.includes('offload_mode'));
+  assert.equal(params.offload_mode.value, 'group_cpu');
+});
+
 test('capability discovery retry belongs only to the reported image or audio capability remedy', () => {
   for (const message of [
     'The selected image model profile is unavailable or ambiguous. Refresh capabilities.',

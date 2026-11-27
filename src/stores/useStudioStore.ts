@@ -143,12 +143,12 @@ type StudioVolatileState = {
     message: string | null;
     startedAt: number | null;
   };
-  canvasTransition: {
-    type: 'template_graph_building';
-    workflowTabId: string;
-    templateId: StudioTemplateId;
-    startedAt: number;
-  } | null;
+  canvasTransition:
+    | ({ workflowTabId: string; startedAt: number } & (
+        | { type: 'template_graph_building'; templateId: StudioTemplateId }
+        | { type: 'task_graph_building'; templateId?: never; keepLauncher: boolean }
+      ))
+    | null;
   launcherDismissed: boolean;
   currentRunContext: StudioRunContext | null;
   runContextsByClientRunId: Record<string, StudioRunContext>;
@@ -2830,6 +2830,12 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       saveActiveWorkflowTab: (dirty = true) => {
         set((state) => {
+          // Fresh task controls mount so their actual bounds can be measured. Only the finalized draft is saved.
+          if (
+            state.canvasTransition?.type === 'task_graph_building' &&
+            state.canvasTransition.workflowTabId === state.activeWorkflowTabId
+          )
+            return state;
           const workflowTabs = savedTabsWithActiveSnapshot(state).map((tab) =>
             tab.id === state.activeWorkflowTabId && !dirty && tab.dirty ? { ...tab, dirty: false } : tab,
           );

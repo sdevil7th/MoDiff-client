@@ -164,8 +164,7 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
         ? state.runContextsByClientRunId[failure.clientRunId]
         : null,
   );
-  const isGraphPreparing =
-    canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId;
+  const isGraphPreparing = Boolean(canvasTransition && canvasTransition.workflowTabId === activeWorkflowTabId);
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const hfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);

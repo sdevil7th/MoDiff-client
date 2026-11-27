@@ -193,7 +193,16 @@ export default async function fieldAction(
   const workflowContext = props.workflowContext ?? captureWorkflowOperationContext();
   const isCurrent = () => workflowOperationContextIsCurrent(workflowContext, { includeForm: false });
   if (!isCurrent()) return;
-  const updateStore = props.updateFieldActionStore ?? props.updateStore;
+  let updateStore = props.updateFieldActionStore ?? props.updateStore;
+  if (event === 'onSignal' && !props.updateFieldActionStore) {
+    const owner = fieldActionSource(props)?.node;
+    if (owner?.id === props.nodeId && !owner.data.blockProjectionOwnerId && !owner.data.huggingFaceClusterRole) {
+      // A received wire signal refreshes the consumer contract, including on
+      // Undo or reload. Recording that refresh as an edit clears Redo and
+      // prevents Undo from reaching the original model selection.
+      updateStore = (field, next, property) => useFlowStore.getState().setParam(owner.id, field, next, property);
+    }
+  }
   props = {
     ...props,
     workflowContext,

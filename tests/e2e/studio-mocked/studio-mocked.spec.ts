@@ -15091,6 +15091,10 @@ test('ordinary operation graphs preserve native edits through model/task preview
   expect(errors).toEqual([]);
 });
 
+function canvasControls(page: Page) {
+  return page.getByRole('region', { name: 'Workflow canvas', exact: true });
+}
+
 test('normal New T2I discovers declared evaluation models in Auto without changing the draft until an explicit Custom choice', async ({
   page,
 }) => {
@@ -15168,7 +15172,7 @@ test('normal New T2I discovers declared evaluation models in Auto without changi
   await expect(picker).toHaveCount(0);
   const current = await read();
   expect(current.form.prompt).toBe(original.form.prompt);
-  await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+  await expect(canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
   const selectedSetupId = current.graph.nodes.find((node) => node.data.label === 'Model Setup')!.id;
   const selectedSetup = page.locator(`.react-flow__node[data-id="${selectedSetupId}"]`);
   await expect(selectedSetup.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
@@ -15302,7 +15306,7 @@ for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
     expect(selected.layout).toBeNull();
     expect(selected.binding).toBeNull();
     expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe('auto');
-    const mode = page.getByRole('button', { name: 'Prompt enhancement mode', exact: true });
+    const mode = canvasControls(page).getByRole('button', { name: 'Prompt enhancement mode', exact: true });
     await mode.click();
     for (const label of [
       'Raw wording: FP32',
@@ -15313,8 +15317,8 @@ for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
       await expect(page.getByRole('option', { name: label, exact: true })).toBeVisible();
     await page.getByRole('option', { name: 'Raw wording: BF16 + NF4', exact: true }).click();
     expect(await read()).toEqual(selected);
-    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
     const enabled = await read();
     const nf4Recipe = (fixture.starters as OperationStarter[]).find(
       (starter) => starter.authoring?.id === `${prefix}nf4:v1`,
@@ -15327,12 +15331,12 @@ for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
     expect(enabled.provider).toEqual({ dtype: 'bfloat16', quantization: 'bnb_4bit' });
     expect(enabled.prompt).toBe(selected.prompt);
     expect(enabled.layout).toBeNull();
-    await page.getByRole('button', { name: 'Disable', exact: true }).click();
+    await canvasControls(page).getByRole('button', { name: 'Disable', exact: true }).click();
     await expect.poll(read).toEqual({ ...enabled, binding: null, provider: null });
     const disabled = await read();
     await mode.click();
     await page.getByRole('option', { name: 'Generate constrained table: FP32 (Expert)', exact: true }).click();
-    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
     await expect(
       page
         .getByRole('alert')
@@ -15406,7 +15410,7 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       expect(await read()).toEqual(before);
       await picker.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
       await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+      await expect(canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
       const changed = await read();
       expect(changed).toMatchObject({
         model: pipeline,
@@ -15420,7 +15424,7 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       await expect.poll(read).toEqual(before);
       await page.keyboard.press('Control+Shift+z');
       await expect.poll(read).toEqual(changed);
-      await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+      await expect(canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
       expect(forbiddenPosts).toEqual([]);
     });
 
@@ -16041,14 +16045,14 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
       await expect.poll(read).toEqual(expected);
-      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+      await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+      await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
     };
     expect(raw.layout).toBeNull();
     expect(raw.contractId).toBeNull();
-    await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    await expect(canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true })).toBeEnabled();
+    await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
     const enabled = await read();
     expect(enabled.parentId).toBe(
       `flux3-klein-base:${task === 'text_to_image' ? 'text-to-image:prompt-preview-fp32' : 'edit-image:prompt-preview'}-authoring:v1`,
@@ -16060,13 +16064,13 @@ for (const task of ['text_to_image', 'edit_image'] as const)
     expect(enabled.requestLayout).toBeNull();
     expect(enabled.parentEdges).toEqual(raw.parentEdges);
     await saveAndColdReload(enabled);
-    await page.getByRole('button', { name: 'Disable', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+    await canvasControls(page).getByRole('button', { name: 'Disable', exact: true }).click();
+    await expect(canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
     if (task === 'text_to_image') {
-      const choice = page.getByRole('button', { name: 'Raw prompt enhancement', exact: true });
+      const choice = canvasControls(page).getByRole('button', { name: 'Raw prompt enhancement', exact: true });
       await choice.click();
       await page.getByRole('option', { name: 'Raw wording: BF16 + NF4', exact: true }).click();
-      await page.getByRole('button', { name: 'Selection details', exact: true }).click();
+      await canvasControls(page).getByRole('button', { name: 'Selection details', exact: true }).click();
       await expect(
         page.getByText('Recipe: flux3-klein-base:text-to-image:prompt-preview-authoring:v1', { exact: true }),
       ).toBeVisible();
@@ -16074,8 +16078,8 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       expect(beforeChoice.contractId).toBeNull();
       expect(beforeChoice.prompt).toBe(raw.prompt);
       expect(beforeChoice.parentEdges).toEqual(raw.parentEdges);
-      await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+      await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+      await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
       const nf4 = await read();
       expect(nf4.parentId).toBe('flux3-klein-base:text-to-image:prompt-preview-authoring:v1');
       expect(nf4.provider).toEqual({ dtype: 'bfloat16', quantization: 'bnb_4bit' });
@@ -16083,30 +16087,30 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       expect(nf4.layout).toBeNull();
       expect(nf4.parentEdges).toEqual(raw.parentEdges);
       await saveAndColdReload(nf4);
-      await page.getByRole('button', { name: 'Disable', exact: true }).click();
+      await canvasControls(page).getByRole('button', { name: 'Disable', exact: true }).click();
       await expect(choice).toContainText('Raw wording: BF16 + NF4');
     }
-    await page.getByRole('radio', { name: 'Structured layout', exact: true }).click();
+    await canvasControls(page).getByRole('radio', { name: 'Structured layout', exact: true }).click();
     const empty = await read();
-    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
     await expect(
       page.getByRole('alert').filter({ hasText: 'add authored regions or select Raw layout' }),
     ).toBeVisible();
     expect(await read()).toEqual(empty);
-    await page.getByRole('button', { name: 'Add region', exact: true }).click();
+    await canvasControls(page).getByRole('button', { name: 'Add region', exact: true }).click();
     await page.getByLabel('Region description', { exact: true }).fill('  Authored copper lantern.\n');
-    await page.getByRole('button', { name: 'Apply region', exact: true }).click();
+    await canvasControls(page).getByRole('button', { name: 'Apply region', exact: true }).click();
     const authored = await read();
     expect(authored.layout!.regions).toHaveLength(1);
     if (task === 'text_to_image') {
-      await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+      await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
       await expect(page.getByRole('alert').filter({ hasText: 'requires Raw prompt mode' })).toBeVisible();
       expect(await read()).toEqual(authored);
-      await page.getByRole('button', { name: 'Raw prompt enhancement', exact: true }).click();
+      await canvasControls(page).getByRole('button', { name: 'Raw prompt enhancement', exact: true }).click();
       await page.getByRole('option', { name: 'Match current layout', exact: true }).click();
     }
-    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    await canvasControls(page).getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(canvasControls(page).getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
     const appended = await read();
     expect(appended.parentId).toBe(raw.parentId);
     expect(appended.contractId).toBe(`${raw.parentId}:preview`);

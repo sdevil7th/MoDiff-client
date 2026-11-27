@@ -495,9 +495,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Compared with the shipped bundle, accessible workspace drawers, shared stage controls,
 // task discovery and hardware reporting add 3,781 gzip bytes to the largest startup chunk.
 // Four entry chunks and the existing 64 KiB limit on each deferred chunk are preserved.
-// Content-sized stages, role-aware wiring and editing add the measured largest-chunk delta. 578843 to 581457 gzip bytes.
+// Content-sized stages, role-aware wiring and editing add the measured largest-chunk delta. 578843 to 581770 gzip bytes.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
-  2614 +
+  2927 +
   3781 +
   // The approved native Shap-E preview brings the largest chunk to 575069 gzip bytes.
   631 +
@@ -823,9 +823,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 // The same build measures 757,520 total startup bytes, up from 753,545.
-// The four startup chunks include shared selectors, stage geometry and editing controls. 757520 to 763489 gzip bytes.
+// The four startup chunks include shared selectors, stage geometry and editing controls. 757520 to 763802 gzip bytes.
 const MAX_STARTUP_GZIP_BYTES =
-  5969 +
+  6282 +
   3975 +
   // The Shap-E preview and its Gallery descriptor add 634 bytes of startup JavaScript.
   634 +
@@ -1211,9 +1211,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 // Template previews, Gallery and setup stay deferred. Their aggregate moves from
 // 357,530 to 361,671 bytes, including the shared workflow-file picker.
-// The template feature, panel layouts and conditional controls are loaded with their existing surfaces. 361671 to 366629 gzip bytes.
+// The template feature, panel layouts and conditional controls are loaded with their existing surfaces. 361671 to 366790 gzip bytes.
 const MAX_DEFERRED_GZIP_BYTES =
-  4958 +
+  5119 +
   4141 +
   // The native turntable comparison adds 129 bytes and keeps 41 bytes of headroom.
   129 +

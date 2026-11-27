@@ -41,6 +41,12 @@ export function GraphNodeInputs({
   const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
   const catalog = useNodesStore((state) => state.visualNodeCatalog);
   const registry = useNodesStore((state) => state.nodesRegistry);
+  const modelCatalog = useNodesStore(
+    useShallow((state) => ({
+      workflowModelDescriptors: state.workflowModelDescriptors,
+      studioModelCapabilities: state.studioModelCapabilities,
+    })),
+  );
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const incomingEdges = useFlowStore(
@@ -56,7 +62,7 @@ export function GraphNodeInputs({
     });
 
     if (selectedNode) {
-      const selectedParams = graphNodeControlParams(selectedNode, incomingEdges);
+      const selectedParams = graphNodeControlParams(selectedNode, incomingEdges, modelCatalog);
       byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
     }
 
@@ -68,7 +74,7 @@ export function GraphNodeInputs({
       const group = byNode.get(id);
       return group ? [group] : [];
     });
-  }, [nodes, pinnedInputs, selectedNode, incomingEdges]);
+  }, [nodes, pinnedInputs, selectedNode, incomingEdges, modelCatalog]);
 
   const updateParam = useCallback(
     (nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {

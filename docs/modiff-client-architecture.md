@@ -16,7 +16,9 @@ registered Block interfaces keep their existing public-control visibility policy
 Numeric editors display retained values outside a newly selected model's bounds
 as invalid. Opening, focusing or leaving the editor does not silently clamp the
 execution value. An explicit edit uses the existing model bounds and participates
-in the normal Undo/Redo history.
+in the normal Undo/Redo history. A model switch is one user edit, including
+updates that the selected model signals to downstream nodes. Reapplying a
+received signal during Undo or reload preserves the Redo history.
 This document describes the current frontend structure, ownership boundaries, data flow, persistence, and extension points. Update it in the same change when a subsystem moves or a public contract changes.
 
 ## System Boundary

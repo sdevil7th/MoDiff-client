@@ -274,9 +274,7 @@ export default function StudioPanel() {
         }
       : null);
   const canvasTransition = useStudioStore((state) => state.canvasTransition);
-  const templateGraphPreparing = Boolean(
-    canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId,
-  );
+  const templateGraphPreparing = Boolean(canvasTransition && canvasTransition.workflowTabId === activeWorkflowTabId);
   const graphInspectionSignature = useFlowStore(
     useShallow((state) => ({
       nodes: state.nodes

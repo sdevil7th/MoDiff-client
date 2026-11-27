@@ -1,5 +1,5 @@
 import type { Edge } from '@xyflow/react';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useMemo } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
@@ -25,11 +25,16 @@ export default function StageNodeControls({
 }) {
   const instance = node.data.blockInstanceV2!;
   const setup = visualOperationGroup(node) === 'setup';
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
   const { view, groups } = useMemo(() => {
     const view = blockViewModelV2(instance);
     const graph = blockOperationGraphV2(instance);
     const controlParams = setup
-      ? modelSetupControlParams(instance, graph, view.controlParams, edges)
+      ? modelSetupControlParams(instance, graph, view.controlParams, edges, {
+          workflowModelDescriptors,
+          studioModelCapabilities,
+        })
       : view.controlParams;
     const owners = new Set(
       graph.nodes
@@ -58,7 +63,7 @@ export default function StageNodeControls({
       };
     });
     return { view, groups };
-  }, [instance, setup, edges]);
+  }, [instance, setup, edges, workflowModelDescriptors, studioModelCapabilities]);
   return (
     <div className="nodrag nowheel grid min-w-0 grid-cols-1 gap-2">
       {setup ? <BlockOwnerChoices node={node} /> : null}

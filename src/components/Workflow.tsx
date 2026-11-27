@@ -259,8 +259,7 @@ function Workflow() {
   const migratedBlueprintIds = useRef<Set<string>>(new Set());
   const updateNodeInternals = useUpdateNodeInternals();
   const canvasSuspended = Boolean(
-    !workflowCanvasHydrated ||
-    (canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId),
+    !workflowCanvasHydrated || (canvasTransition && canvasTransition.workflowTabId === activeWorkflowTabId),
   );
   const requiresCompleteCompositeMount = nodes.some(
     (node) =>
@@ -1386,7 +1385,11 @@ function Workflow() {
       {canvasSuspended && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-3 py-2 text-sm font-semibold text-modiff-text shadow-modiff-node">
-            {workflowCanvasHydrated ? 'Building template graph' : 'Restoring workflow'}
+            {!workflowCanvasHydrated
+              ? 'Restoring workflow'
+              : canvasTransition?.type === 'task_graph_building'
+                ? 'Preparing workflow'
+                : 'Building template graph'}
           </div>
         </div>
       )}
