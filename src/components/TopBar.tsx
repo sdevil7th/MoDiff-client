@@ -107,7 +107,7 @@ type TopBarButtonProps = {
   disabled?: boolean;
   icon?: React.ReactNode;
   loading?: boolean;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   title?: string;
   testId?: string;
   expanded?: boolean;
@@ -240,7 +240,37 @@ function TopBar() {
     setTemplateBrowserOpen,
     setRunningState,
     setSettingsOpener,
+    settingsOpener,
+    modelManagerOpener,
+    templateBrowserOpen,
+    galleryLibraryOpen,
   } = useSettingsStore();
+  const toolbar = useRef<HTMLDivElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const dialogOpener = useRef<HTMLButtonElement | null>(null);
+  const toolbarDialogOpen = Boolean(settingsOpener || modelManagerOpener || templateBrowserOpen || galleryLibraryOpen);
+
+  function openToolbarDialog(event: React.MouseEvent<HTMLButtonElement>, open: () => void) {
+    dialogOpener.current = event.currentTarget;
+    open();
+  }
+
+  useEffect(() => {
+    if (toolbarDialogOpen) return;
+    const previous = dialogOpener.current;
+    dialogOpener.current = null;
+    if (!previous || previous.isConnected) return;
+    // Headless UI restores a surviving opener. A responsive toolbar can unmount it.
+    const frame = requestAnimationFrame(() => {
+      if (document.activeElement !== document.body || document.querySelector('[aria-modal="true"]')) return;
+      const label = previous.getAttribute('aria-label');
+      const replacement = Array.from(toolbar.current?.querySelectorAll('button') ?? []).find(
+        (button) => button.getAttribute('aria-label') === label && button.getClientRects().length > 0,
+      );
+      (replacement ?? moreButton.current)?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [toolbarDialogOpen]);
   const { sid, isConnected, connect, disconnect } = useWebsocketStore();
   const { currentTask, taskCount, fetchSupervisorTasks } = useTaskStore();
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
@@ -875,7 +905,7 @@ function TopBar() {
       )}
       <TopBarButton
         icon={<Boxes size={17} />}
-        onClick={() => setModelManagerOpener({ nodeId: null, fieldKey: null })}
+        onClick={(event) => openToolbarDialog(event, () => setModelManagerOpener({ nodeId: null, fieldKey: null }))}
         testId="topbar-models"
         title="Models"
       >
@@ -883,18 +913,22 @@ function TopBar() {
       </TopBarButton>
       <TopBarButton
         icon={<GalleryVerticalEnd size={17} />}
-        onClick={() => setTemplateBrowserOpen(true)}
+        onClick={(event) => openToolbarDialog(event, () => setTemplateBrowserOpen(true))}
         title="Templates"
         testId="topbar-templates"
       >
         {compact && 'Templates'}
       </TopBarButton>
-      <TopBarButton icon={<Settings size={17} />} onClick={() => setSettingsOpener(true)} title="Settings">
+      <TopBarButton
+        icon={<Settings size={17} />}
+        onClick={(event) => openToolbarDialog(event, () => setSettingsOpener(true))}
+        title="Settings"
+      >
         {compact && 'Settings'}
       </TopBarButton>
       <TopBarButton
         icon={<Image size={17} />}
-        onClick={() => setGalleryLibraryOpen(true)}
+        onClick={(event) => openToolbarDialog(event, () => setGalleryLibraryOpen(true))}
         testId="topbar-gallery"
         title="Gallery"
         tone="quiet"
@@ -910,7 +944,7 @@ function TopBar() {
     </>
   );
   return (
-    <div className="w-full text-modiff-text">
+    <div ref={toolbar} className="w-full text-modiff-text">
       <div className="flex min-h-[58px] items-center justify-between gap-1 px-2 py-2 sm:gap-2 sm:px-3">
         <div className="flex shrink-0 items-center gap-2">
           <img src="/assets/modiff-icon-128.png" alt="MoDiff" className="size-8 object-contain" />
@@ -1009,6 +1043,7 @@ function TopBar() {
 
           {compact ? (
             <ModiffButton
+              ref={moreButton}
               aria-label="More toolbar actions"
               aria-expanded={moreActions}
               aria-controls="more-toolbar-actions"

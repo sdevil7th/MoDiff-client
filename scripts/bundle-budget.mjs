@@ -493,10 +493,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 // Compared with the shipped bundle, accessible workspace drawers, shared stage controls,
-// task discovery and hardware reporting add 3,504 gzip bytes to the largest startup chunk.
+// task discovery and hardware reporting add 3,781 gzip bytes to the largest startup chunk.
 // Four entry chunks and the existing 64 KiB limit on each deferred chunk are preserved.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
-  3504 +
+  3781 +
   // The approved native Shap-E preview brings the largest chunk to 575069 gzip bytes.
   631 +
   // SSD weight-loading validation adds 28 measured startup gzip bytes.
@@ -820,9 +820,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the measured 384-byte selected-image authoring allowance above.
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
-// The same build measures 757,243 total startup bytes, up from 753,545.
+// The same build measures 757,520 total startup bytes, up from 753,545.
 const MAX_STARTUP_GZIP_BYTES =
-  3698 +
+  3975 +
   // The Shap-E preview and its Gallery descriptor add 634 bytes of startup JavaScript.
   634 +
   // The same change adds 27 overall startup gzip bytes.
@@ -1206,9 +1206,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 // Template previews, Gallery and setup stay deferred. Their aggregate moves from
-// 357,530 to 361,565 bytes, including the shared workflow-file picker.
+// 357,530 to 361,671 bytes, including the shared workflow-file picker.
 const MAX_DEFERRED_GZIP_BYTES =
-  4035 +
+  4141 +
   // The native turntable comparison adds 129 bytes and keeps 41 bytes of headroom.
   129 +
   // Stage discovery, action search and compatible mode changes (355589 -> 357408 gzip bytes).

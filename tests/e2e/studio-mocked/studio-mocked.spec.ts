@@ -165,7 +165,7 @@ for (const [width, imageWidth, imageHeight] of [
     await page.setViewportSize({ width, height: 1080 });
     await ensureFrontend();
     await installMockRoutes(page);
-    await page.route('**/showcases/h3-emerald-material-transfer.webp', (route) =>
+    await page.route('**/showcases/h3-old-town-human-cat.webp', (route) =>
       route.fulfill({
         contentType: 'image/svg+xml',
         body: `<svg xmlns="http://www.w3.org/2000/svg" width="${imageWidth}" height="${imageHeight}"><rect width="100%" height="100%" fill="#268252"/><rect x="2%" y="2%" width="96%" height="96%" fill="none" stroke="white" stroke-width="10"/></svg>`,
@@ -176,6 +176,7 @@ for (const [width, imageWidth, imageHeight] of [
     await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
     await openTemplateBrowser(page);
     const assertFitted = async (image: Locator) => {
+      await expect(image).toHaveAttribute('src', /h3-old-town-human-cat\.webp$/u);
       await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(imageWidth);
       const bounds = await image.evaluate((element) => {
         const image = element.getBoundingClientRect();
@@ -11594,7 +11595,9 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
     mockOptionalRuntimeJobState = 'ready';
     await error.getByRole('button', { name: 'Retry status', exact: true }).click();
     await expect(error).toHaveCount(0);
-    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    const completedProfile = disclosure.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0');
+    await expect(completedProfile.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    await expect(disclosure.getByRole('button', { name: 'Show other runtimes', exact: true })).toBeVisible();
     expect(reads).toBeGreaterThan(pausedReads);
     expect(mockOptionalRuntimeMutationCalls).toBe(0);
   });
@@ -11630,7 +11633,9 @@ for (const failure of ['disconnect', 'non-JSON503'] as const) {
     unavailable = false;
     mockOptionalRuntimeJobState = 'ready';
     await expect(error).toHaveCount(0);
-    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    const completedProfile = disclosure.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0');
+    await expect(completedProfile.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    await expect(disclosure.getByRole('button', { name: 'Show other runtimes', exact: true })).toBeVisible();
     expect(mockOptionalRuntimeMutationCalls).toBe(0);
   });
 }
@@ -15460,8 +15465,9 @@ async function openPublicFlux3Fp8rWorkflow(page: Page, keepAutomatic = false) {
     // placement through its real control before exercising a bounded plan.
     const device = (await publicFlux3FormatSetup(page)).getByLabel('Device', { exact: true });
     await device.click();
-    await page.getByRole('option', { name: 'cuda:0', exact: true }).click();
-    await expect(device).toHaveText('cuda:0');
+    const gpuLabel = 'Mock CUDA transport device · CUDA (cuda:0)';
+    await page.getByRole('option', { name: gpuLabel, exact: true }).click();
+    await expect(device).toHaveText(gpuLabel);
   }
   await waitForOperationGraphToSettle(page);
   return { fixture, forbiddenPosts };
@@ -17837,6 +17843,18 @@ test('mocked dialogs retain keyboard dismissal, token privacy and bounded settin
   ).toBe(true);
   await page.keyboard.press('Escape');
   await expect(settings).toHaveCount(0);
+  const more = page.getByRole('button', { name: 'More toolbar actions', exact: true });
+  await expect(more).toBeFocused();
+  await more.press('Enter');
+  await settingsOpener.click();
+  await expect(settings).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.locator('button[aria-label="More toolbar actions"]')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(settingsOpener).toBeFocused();
+  await settingsOpener.press('Enter');
+  await expect(settings).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(settingsOpener).toBeFocused();
   expect(mockDownloadCalls).toBe(0);
 });
@@ -18724,7 +18742,18 @@ test('Run recovery opens the exact required runtime and Auto inspection without 
   });
   await page.getByTestId('run-issues-dialog').getByRole('button', { name: 'Review runtime', exact: true }).click();
   releaseCatalog();
-  await expect(page.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0')).toBeFocused();
+  const focusedProfile = page.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0');
+  // Recovery is a single-use navigation request. Consuming it must not
+  // unmount the row that just received keyboard focus, even on an empty scope.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+        return useSettingsStore.getState().runRecoveryFocusRequest;
+      }),
+    )
+    .toBeNull();
+  await expect(focusedProfile).toBeFocused();
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
   // Seed a plain executable utility graph through the existing fixture. Its
@@ -20824,7 +20853,9 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     expect(sample.runDisabled).toBe(true);
     expect(sample.runTitle).toBe('Preparing graph');
   });
-  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  const readyTask = page.getByTestId('studio-task-model-summary');
+  await expect(readyTask).toContainText('Text to image');
+  await expect(readyTask).toContainText('Z-Image-Turbo');
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Graph ready · Auto check at Run');
   await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
   await expect(page.locator('.react-flow__node').getByRole('textbox', { name: 'Prompt *', exact: true })).toBeVisible();
@@ -30668,8 +30699,9 @@ async function sharedBlockAdoption(page: Page, workspace: 'auto' | 'expert') {
       ),
     )
     .toBeNull();
-  await ordinary.getByRole('banner').hover();
-  const ordinaryBounds = await ordinary.getByRole('banner').boundingBox();
+  const ordinaryHeader = ordinary.locator('header').first();
+  await ordinaryHeader.hover();
+  const ordinaryBounds = await ordinaryHeader.boundingBox();
   const rootBounds = await root.boundingBox();
   expect(ordinaryBounds).toBeTruthy();
   expect(rootBounds).toBeTruthy();

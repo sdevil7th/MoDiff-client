@@ -142,6 +142,13 @@ export default function App() {
   } = useSettingsStore();
   const leftVisible = isLeftPanelOpen && (!compact || activeDrawer === 'left');
   const rightVisible = isRightPanelOpen && (!compact || activeDrawer === 'right');
+  const [workspaceWasVisible, setWorkspaceWasVisible] = useState(rightVisible);
+  useEffect(() => {
+    if (rightVisible) setWorkspaceWasVisible(true);
+    else if (!isRightPanelOpen) setWorkspaceWasVisible(false);
+  }, [rightVisible, isRightPanelOpen]);
+  // Keep an open workspace's dialogs and draft state alive when a breakpoint hides its drawer.
+  const mountWorkspace = rightVisible || (isRightPanelOpen && workspaceWasVisible);
   const closeDrawer = () => {
     if (activeDrawer === 'left') setLeftPanelOpen(false);
     if (activeDrawer === 'right') setRightPanelOpen(false);
@@ -656,7 +663,7 @@ export default function App() {
               : 'relative max-w-[40%]',
           )}
         >
-          {rightVisible ? (
+          {mountWorkspace ? (
             <Suspense fallback={null}>
               <WorkspacePanel />
             </Suspense>

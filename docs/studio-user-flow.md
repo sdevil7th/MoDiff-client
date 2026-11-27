@@ -495,7 +495,7 @@ On shared-memory accelerators, Resource usage shows the accessible pool and dedi
 reservation separately. The compact gauge names the busiest measured resource. Storage
 shows free space for model downloads, managed Studio outputs, and default disk offload.
 Setup lists requirements for the inspected workflow first. Use **Show other runtimes**
-to explore additional installations.
+to explore additional installations. **Review runtime** opens the package named by a run issue and keeps its controls visible while they have keyboard focus.
 
 ### Reviewing a run and navigating the canvas
 

@@ -51,6 +51,7 @@ export default function RuntimeOptimizationsCard({
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const runtimeRequest = useNodesStore((state) => state.discoveryRequests.runtime);
   const [showOther, setShowOther] = useState(false);
+  const [focusedRecoveryProfile, setFocusedRecoveryProfile] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<OptimizationCatalog | null>(null);
   const [receipts, setReceipts] = useState<OptimizationReceipt[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -265,6 +266,11 @@ export default function RuntimeOptimizationsCard({
   const resetToBase = optionalRuntimeCatalog?.processLoadStatus === 'repair_required';
   const rollbackAvailable = Boolean(optionalRuntimeCatalog?.previousEnvironmentId || resetToBase);
   const runtimeBusy = runtimeJob !== null && !['ready', 'failed', 'cancelled'].includes(runtimeJob.status);
+  const pendingActivation =
+    runtimeJob?.operation === 'install' && runtimeJob.status === 'ready' && runtimeJob.result?.requiresActivation
+      ? runtimeJob
+      : null;
+
   const workerReady =
     runtimeRequest.status === 'success' &&
     runtimeStatus?.ready === true &&
@@ -352,7 +358,9 @@ export default function RuntimeOptimizationsCard({
                 showOther ||
                 requiredProfileIds.includes(profile.id) ||
                 focusProfiles.includes(profile.id) ||
-                (runtimeBusy && runtimeJob?.profileId === profile.id),
+                focusedRecoveryProfile === profile.id ||
+                (runtimeBusy && runtimeJob?.profileId === profile.id) ||
+                (pendingActivation?.profileId === profile.id && pendingActivation.specDigest === profile.specDigest),
             )
             .sort(
               (left, right) =>
@@ -361,12 +369,8 @@ export default function RuntimeOptimizationsCard({
             .map((profile) => {
               const staged = stagedOptionalRuntimeEnvironment(optionalRuntimeCatalog, profile);
               const completedEnvironment =
-                runtimeJob?.operation === 'install' &&
-                runtimeJob.status === 'ready' &&
-                runtimeJob.result?.requiresActivation &&
-                runtimeJob.profileId === profile.id &&
-                runtimeJob.specDigest === profile.specDigest
-                  ? runtimeJob.result?.environmentId
+                pendingActivation?.profileId === profile.id && pendingActivation.specDigest === profile.specDigest
+                  ? pendingActivation.result?.environmentId
                   : undefined;
               const canAct = profile.contractState === 'qualified' && profile.cutoverReady;
               const environmentId = completedEnvironment ?? staged;
@@ -386,6 +390,16 @@ export default function RuntimeOptimizationsCard({
                   className="grid gap-1 text-xs text-modiff-text"
                   data-testid={`optional-runtime-${profile.id}`}
                   data-run-recovery-profile={profile.id}
+                  onFocus={() => {
+                    // The one-shot recovery request clears after focus lands. Keep the
+                    // actual destination mounted while its row or controls have focus.
+                    if (focusProfiles.includes(profile.id)) setFocusedRecoveryProfile(profile.id);
+                  }}
+                  onBlur={(event) => {
+                    if (focusedRecoveryProfile === profile.id && !event.currentTarget.contains(event.relatedTarget)) {
+                      setFocusedRecoveryProfile(null);
+                    }
+                  }}
                   role="group"
                   aria-label={profile.label}
                   tabIndex={-1}
@@ -396,7 +410,11 @@ export default function RuntimeOptimizationsCard({
                     {requiredProfileIds
                       ? requiredProfileIds.includes(profile.id)
                         ? ' Required by this scope.'
-                        : ' Other optional runtime; not a requirement of this scope.'
+                        : focusedRecoveryProfile === profile.id || focusProfiles.includes(profile.id)
+                          ? ' Requested by the run that opened Setup.'
+                          : completedEnvironment
+                            ? ' Installed by the setup job; ready for activation.'
+                            : ' Other optional runtime; not a requirement of this scope.'
                       : ''}
                     {!canAct
                       ? ' Package actions are unavailable for this target. Use the supported base recipe or a separately qualified runtime/platform; installing arbitrary packages cannot enable it.'
