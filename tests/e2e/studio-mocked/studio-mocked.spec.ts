@@ -1538,6 +1538,9 @@ for (const [templateId, title] of [
         path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
       const clip = videoPreviewFixture(python, 320, 180);
       await page.route('**/media/preview?**', (route) => route.fulfill({ contentType: 'video/webm', body: clip }));
+      await expect(page.getByRole('button', { name: 'Fit workflow in view', exact: true })).toBeEnabled();
+      await expect(source).toBeInViewport();
+      await source.click();
       await source.fill('videos/review-clip.webm');
       await source.blur();
       await expect(input.locator('video')).toHaveCount(1);
@@ -40761,14 +40764,30 @@ it('fresh lyric template preserves its full composite branch brief through ordin
   test.setTimeout(180_000);
   // Delay the real stage editor past the old five-second geometry deadline. The 45-second song and nine-shot graph must survive a cold first visit.
   let delayedControls = false;
+  let loadingInteraction: { status: string | null; focusEnteredCanvas: boolean } | undefined;
   await page.route('**/src/components/StageNodeControls.tsx*', async (route) => {
     await page.locator('[data-node-layout-pending]').first().waitFor({ state: 'attached' });
+    const loadingCanvas = page.locator('.react-flow[inert]');
+    const status = page.getByRole('status').filter({ hasText: 'Building template graph' });
+    if ((await loadingCanvas.count()) && (await status.count())) {
+      // Even explicit focus on a mounted node must stay out of the hidden workspace.
+      await loadingCanvas.locator('.react-flow__node[tabindex="0"]').first().focus();
+      const canvasHasFocus = () => loadingCanvas.evaluate((element) => element.contains(document.activeElement));
+      const nodeReceivedFocus = await canvasHasFocus();
+      await page.keyboard.press('Tab');
+      loadingInteraction = {
+        status: await status.textContent(),
+        focusEnteredCanvas: nodeReceivedFocus || (await canvasHasFocus()),
+      };
+    }
     await new Promise((resolve) => setTimeout(resolve, 5_500));
     delayedControls = true;
     await route.continue();
   });
   const { mutations } = await openAudioStageTemplate(page, 'ace_step_lyric_music_video');
   expect(delayedControls).toBe(true);
+  expect(loadingInteraction).toEqual({ status: 'Building template graph', focusEnteredCanvas: false });
+  await expect(page.locator('.react-flow[inert]')).toHaveCount(0);
   const original = await audioApiSnapshot(page);
   const brief = STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_lyric_music_video')!.workflowBlockSettings!
     .lyricVideo!;

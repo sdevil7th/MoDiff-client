@@ -1216,6 +1216,7 @@ function Workflow() {
         </div>
       ) : null}
       <ReactFlow
+        inert={canvasSuspended}
         nodeTypes={nodeTypes}
         nodes={
           blockDragTarget
@@ -1383,7 +1384,7 @@ function Workflow() {
         </ModiffDialog>
       ) : null}
       {canvasSuspended && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-3 py-2 text-sm font-semibold text-modiff-text shadow-modiff-node">
             {!workflowCanvasHydrated
               ? 'Restoring workflow'
