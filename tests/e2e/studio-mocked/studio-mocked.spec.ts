@@ -40367,7 +40367,7 @@ const it = test.extend<Record<never, never>, { audioTemplateSchemaReady: boolean
 async function openAudioStageTemplate(
   page: Page,
   templateId: (typeof STUDIO_TEMPLATES)[number]['id'],
-  viaHook = false,
+  options: { viaHook?: boolean; waitForStageControlRelease?: () => Promise<void> } = {},
 ) {
   const mutations: string[] = [];
   const starterRequests: Record<string, unknown>[] = [];
@@ -40495,7 +40495,7 @@ async function openAudioStageTemplate(
       }),
     );
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  if (viaHook) {
+  if (options.viaHook) {
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
     await page.evaluate((id) => window.__MODIFF_E2E__!.applyTemplate(id), templateId);
   } else {
@@ -40510,6 +40510,7 @@ async function openAudioStageTemplate(
       const terms = page.getByRole('dialog', { name: 'Review model terms', exact: true });
       await terms.getByRole('button', { name: 'I have reviewed and agree \u2014 Create graph', exact: true }).click();
     }
+    await options.waitForStageControlRelease?.();
     // The nine-scene lyric recipe builds both branches and lays out the full graph before closing.
     await expect(browser).toHaveCount(0, templateId === 'ace_step_lyric_music_video' ? { timeout: 30_000 } : undefined);
   }
@@ -40827,26 +40828,35 @@ it('fresh lyric template preserves its full composite branch brief through ordin
   // Delay the real stage editor past the old five-second geometry deadline. The 45-second song and nine-shot graph must survive a cold first visit.
   let delayedControls = false;
   let loadingInteraction: { status: string | null; focusEnteredCanvas: boolean } | undefined;
-  await page.route('**/src/components/StageNodeControls.tsx*', async (route) => {
-    await page.locator('[data-node-layout-pending]').first().waitFor({ state: 'attached' });
-    const loadingCanvas = page.locator('.react-flow[inert]');
-    const status = page.getByRole('status').filter({ hasText: 'Building template graph' });
-    if ((await loadingCanvas.count()) && (await status.count())) {
-      // Even explicit focus on a mounted node must stay out of the hidden workspace.
-      await loadingCanvas.locator('.react-flow__node[tabindex="0"]').first().focus();
-      const canvasHasFocus = () => loadingCanvas.evaluate((element) => element.contains(document.activeElement));
-      const nodeReceivedFocus = await canvasHasFocus();
-      await page.keyboard.press('Tab');
-      loadingInteraction = {
-        status: await status.textContent(),
-        focusEnteredCanvas: nodeReceivedFocus || (await canvasHasFocus()),
-      };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5_500));
-    delayedControls = true;
-    await route.continue();
+  await page.route(
+    '**/src/components/StageNodeControls.tsx*',
+    async (route) => {
+      await page.locator('[data-node-layout-pending]').first().waitFor({ state: 'attached' });
+      const loadingCanvas = page.locator('.react-flow[inert]');
+      const status = page.getByRole('status').filter({ hasText: 'Building template graph' });
+      if ((await loadingCanvas.count()) && (await status.count())) {
+        // Even explicit focus on a mounted node must stay out of the hidden workspace.
+        await loadingCanvas.locator('.react-flow__node[tabindex="0"]').first().focus();
+        const canvasHasFocus = () => loadingCanvas.evaluate((element) => element.contains(document.activeElement));
+        const nodeReceivedFocus = await canvasHasFocus();
+        await page.keyboard.press('Tab');
+        loadingInteraction = {
+          status: await status.textContent(),
+          focusEnteredCanvas: nodeReceivedFocus || (await canvasHasFocus()),
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5_500));
+      await route.continue();
+      delayedControls = true;
+    },
+    { times: 1 },
+  );
+  const { mutations } = await openAudioStageTemplate(page, 'ace_step_lyric_music_video', {
+    // The first request starts after recipe creation has already begun. Count
+    // the deliberately held import separately from the normal dialog close.
+    waitForStageControlRelease: () =>
+      expect.poll(() => delayedControls, { timeout: 45_000, message: 'Release the delayed stage controls' }).toBe(true),
   });
-  const { mutations } = await openAudioStageTemplate(page, 'ace_step_lyric_music_video');
   expect(delayedControls).toBe(true);
   expect(loadingInteraction).toEqual({ status: 'Building template graph', focusEnteredCanvas: false });
   await expect(page.locator('.react-flow[inert]')).toHaveCount(0);
@@ -41019,7 +41029,9 @@ it('ACE selected max-one audio setup keeps its row editable and Remove Undo relo
 it('ACE audio variation hook keeps the current selected starter and task instead of legacy Auto authoring', async ({
   page,
 }) => {
-  const { fixture, mutations, starterRequests } = await openAudioStageTemplate(page, 'ace_step_audio_variation', true);
+  const { fixture, mutations, starterRequests } = await openAudioStageTemplate(page, 'ace_step_audio_variation', {
+    viaHook: true,
+  });
   const api = await audioApiSnapshot(page);
   const selected = fixture.selections.ace_step_audio_variation;
   if (!selected) throw new Error('The current audio variation selection is missing.');
