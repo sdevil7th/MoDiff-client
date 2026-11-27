@@ -1,3 +1,4 @@
+import { clickCanvasBackground } from '../canvasBackground';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { connect, ready, save } from './qwenDemoGestures';
 
@@ -197,7 +198,7 @@ test('video Generate follows its adapter and Sequence rejects an image-only load
   await connect(page, source, handle(sequence, 'target', 'pipeline'));
   await expect.poll(async () => (await graph(page)).edges).toHaveLength(1);
   await page.keyboard.press('Escape');
-  await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+  await clickCanvasBackground(page);
   await expect(page.getByTestId('selection-toolbar')).toBeHidden();
   await choose(page, loader, 'pipeline_class', 'WanPipeline');
   await expectMode(generate, 'text_to_video');

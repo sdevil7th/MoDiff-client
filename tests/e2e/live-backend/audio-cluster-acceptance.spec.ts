@@ -1,3 +1,4 @@
+import { clickCanvasBackground } from '../canvasBackground';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -162,7 +163,7 @@ async function reconnectExportThroughCanvas(page: Page, rootId: string) {
     // At fit-to-view a short export wire can sit entirely under its handles.
     // Move the output through the ordinary header gesture, not a forced click
     // through an occluding element or an injected edge selection.
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     const header = page.locator(`.react-flow__node[data-id="${fixture.target}"] header`).first();
     await header.click();
     const bounds = await header.boundingBox();

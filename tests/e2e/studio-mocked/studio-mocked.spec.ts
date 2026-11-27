@@ -1,3 +1,4 @@
+import { clickCanvasBackground } from '../canvasBackground';
 import { dragWireToCanvas } from '../dragWireToCanvas';
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -15990,7 +15991,7 @@ for (const task of ['text_to_image', 'edit_image'] as const)
     expect(appended.layout).toEqual(authored.layout);
     expect(appended.requestLayout).toEqual(authored.layout);
     expect(appended.parentEdges).toEqual(raw.parentEdges);
-    await page.locator('.react-flow__pane').click({ position: { x: 30, y: 120 } });
+    await clickCanvasBackground(page);
     await page.keyboard.press('Control+z');
     await expect.poll(read).toEqual(authored);
     await page.keyboard.press('Control+Shift+z');
@@ -35509,7 +35510,7 @@ for (const workspace of ['expert'] as const) {
       { value: '7319', isRandom: false },
       { value: '7319', isRandom: false },
     ]);
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     await page.keyboard.press('Control+z');
     await expect.poll(seedValues).toEqual([
       { value: 4109, isRandom: false },
@@ -35654,7 +35655,7 @@ for (const workspace of ['expert'] as const) {
       }
     }
     expect(replacedOperations).toEqual(replacementOperations);
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     await page.keyboard.press('Control+z');
     await expect.poll(read).toEqual(before);
     await page.keyboard.press('Control+Shift+z');
@@ -35674,7 +35675,7 @@ for (const workspace of ['expert'] as const) {
     expect(changed.definitionSnapshot).toEqual(before.definitionSnapshot);
     expect(changed.effectiveInterface).toEqual(before.effectiveInterface);
     expect(changed.values).toEqual(before.values);
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     await page.keyboard.press('Control+z');
     await expect.poll(read).toEqual(previous);
     await page.keyboard.press('Control+Shift+z');
@@ -35823,7 +35824,7 @@ for (const workspace of ['expert'] as const) {
     expect(
       changed.nodes.find((node) => node.id === 'shared-seed-block')!.data.blockInstanceV2!.definitionSnapshot,
     ).toEqual(before.nodes.find((node) => node.id === 'shared-seed-block')!.data.blockInstanceV2!.definitionSnapshot);
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     await page.keyboard.press('Control+z');
     await expect.poll(async () => (await read()).edges).toEqual(before.edges);
     await page.keyboard.press('Control+Shift+z');
@@ -37327,7 +37328,7 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and s
   await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);
-  await page.locator('.react-flow__pane').click({ position: { x: 35, y: 80 } });
+  await clickCanvasBackground(page);
   await page.keyboard.press('Control+z');
   await expect.poll(count).toBe(2);
   await page.keyboard.press('Control+Shift+z');
@@ -37432,7 +37433,7 @@ test('saved Encode Inputs repairs three native encoder sockets through the stage
   await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);
-  await page.locator('.react-flow__pane').click({ position: { x: 35, y: 80 } });
+  await clickCanvasBackground(page);
   await page.keyboard.press('Control+z');
   await expect.poll(count).toBe(3);
   await page.keyboard.press('Control+Shift+z');
