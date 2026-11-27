@@ -33662,9 +33662,12 @@ test('one-action custom import enables nodes and explicit reload updates the reg
   await page.mouse.move(pane.x + pane.width - 70, pane.y + 70, { steps: 18 });
   await page.mouse.up();
   const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
-  await expect(suggestions.getByRole('option', { name: 'M6 Echo', exact: true })).toBeVisible();
-  await suggestions.getByRole('option', { name: 'M6 Echo', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
+  const matchingInput = suggestions.getByRole('option', { name: 'M6 Echo Input · Text', exact: true });
+  await expect(matchingInput).toBeVisible();
+  await matchingInput.click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges))
+    .toMatchObject([{ source: id, sourceHandle: 'out', targetHandle: 'text' }]);
   await assertUnifiedWorkspace(page, 'auto');
   await page.getByLabel('Search nodes', { exact: true }).fill('M6 Echo');
   await expect(

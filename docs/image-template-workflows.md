@@ -60,7 +60,7 @@ while a direct-image encoder still needs its image connection. Saved operation
 hints cannot override this contract; unknown, connected or conflicting selectors
 retain the conservative registry requirements.
 
-The **Experimental** category includes **MiniMax H3 Image — Old Town: Human & Cat**.
+The **Image** collection features **MiniMax H3 Image — Old Town: Human & Cat**.
 It creates the same generic text-to-image stages, with a fictional adult and a
 cat as the foreground subjects and a detailed street background. Its pinned
 2048-square BF16 recipe uses Custom memory and SSD group offload. The Gallery
