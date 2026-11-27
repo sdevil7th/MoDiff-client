@@ -163,7 +163,7 @@ test('audio task switching updates an ordinary Generate consumer and survives Un
   expect(document.nodes.some((node) => node.id === generator[0] && !node.data.blockInstanceV2)).toBe(true);
   expect(generator[1].params.task_type.value).toBe('continuation');
   expect(posts.filter((url) => url === '/fields/action')).toEqual([]);
-  await page.locator('.react-flow__node [data-key$=":mode"] button[aria-haspopup=listbox]').click();
+  await page.locator('.react-flow__node').getByRole('button', { name: 'Mode', exact: true }).click();
   await page.getByRole('option', { name: 'text_to_audio', exact: true }).click();
   await expect
     .poll(
@@ -195,7 +195,7 @@ test('audio task switching updates an ordinary Generate consumer and survives Un
   );
   await page.getByTestId('topbar-save-workflow').click();
   expect((await saved).ok()).toBe(true);
-  await expect(page.getByText('Saved audio-continuation to My workflows', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved Audio continuation to My workflows', { exact: true })).toBeVisible();
   const metadataRequests = posts.filter((url) => url === '/fields/action').length;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 60_000 });
@@ -1404,5 +1404,41 @@ test('node and workflow libraries use compact stage rows and fit task rows to si
   const panelB = await panel.boundingBox();
   if (panelB!.width < 550) expect(second!.y).toBeGreaterThan(first!.y);
   expect(first!.width).toBeGreaterThan(Math.min(220, panelB!.width - 48));
+  const nav = panel.getByRole('navigation', { name: 'Workflow library' }).getByRole('button');
+  await expect(nav).toHaveCount(4);
+  const navRows = () =>
+    nav.evaluateAll((buttons) => {
+      const tops = buttons.map((button) => Math.round(button.getBoundingClientRect().top));
+      return tops.map((top) => tops.indexOf(top));
+    });
+  await expect.poll(navRows).toEqual([0, 0, 2, 2]);
   await panel.screenshot({ path: test.info().outputPath('workflows-library.png'), animations: 'disabled' });
+
+  const separator = page.getByTestId('left-panel-resize-handle');
+  const grip = await separator.boundingBox();
+  expect(grip).not.toBeNull();
+  const dragY = grip!.y + grip!.height / 2;
+  await page.mouse.move(grip!.x + grip!.width / 2, dragY);
+  await page.mouse.down();
+  await page.mouse.move(panelB!.x + 520, dragY, { steps: 15 });
+  await page.mouse.up();
+  await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThanOrEqual(500);
+  await expect.poll(navRows).toEqual([0, 0, 0, 0]);
+});
+
+test('example search matches the model and action in either order, including older directory-only model names', async ({
+  page,
+}) => {
+  await page.getByTestId('left-tab-workflows').click();
+  const panel = page.getByTestId('left-panel');
+  await panel.getByRole('button', { name: 'Example workflows', exact: true }).click();
+  const query = panel.getByRole('searchbox', { name: 'Search workflows', exact: true });
+  const example = panel.locator('[data-testid$="ace-step-audio-pipeline-audio-continuation-json"]');
+  for (const text of ['audio-continuation AceStepAudioPipeline', 'ACESTEPAUDIOPIPELINE continuation_audio']) {
+    await query.fill(text);
+    await expect(example).toHaveCount(1);
+    await expect(example).toBeVisible();
+  }
+  await query.fill('ace-step-audio-pipeline no-such-action');
+  await expect(example).toHaveCount(0);
 });

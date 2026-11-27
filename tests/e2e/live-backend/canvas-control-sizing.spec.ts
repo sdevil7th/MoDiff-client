@@ -1,18 +1,20 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function freshLauncher(page: Page) {
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  return page.getByRole('dialog', { name: 'Workflows', exact: true });
+}
 
 test('fresh image stages fit their open controls, preserve guidance settings and reopen at their saved sizes', async ({
   page,
 }) => {
   test.skip(process.env.MODIFF_NODE_UX_ISOLATED !== '1', 'Uses the isolated native SDXL task starter.');
   await page.setViewportSize({ width: 1500, height: 1000 });
-  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90000 });
-  const launcher = page.getByTestId('task-launcher');
-  await page.getByRole('tab', { name: 'Studio', exact: true }).waitFor();
-  if (!(await launcher.isVisible())) {
-    await page.getByRole('button', { name: 'Workflow library', exact: true }).click();
-  }
-  // The fresh-workflow dialog can finish mounting over the embedded task browser during startup.
-  await page.getByTestId('workflow-task-text_to_image').last().click();
+  const launcher = await freshLauncher(page);
+  await launcher
+    .getByRole('button', { name: /^Text to image /i })
+    .first()
+    .click();
   const encoder = page.locator('[data-testid^="encoding-controls-"]').first();
   const owner = page.getByRole('button', { name: 'Choose model', exact: true });
   await expect(owner).toContainText('Model');
@@ -46,4 +48,43 @@ test('fresh image stages fit their open controls, preserve guidance settings and
   await page.reload();
   await expect(owner).toBeVisible();
   await expect.poll(rects).toEqual(before);
+});
+
+test('a newly added Python node fits both of its authored prompt fields on first insertion', async ({ page }) => {
+  test.skip(
+    process.env.MODIFF_NODE_UX_ISOLATED !== '1' || process.env.MODIFF_RUN_CUSTOM_LIFECYCLE !== '1',
+    'Requires the isolated backend and its documented first-party example.',
+  );
+  const name = 'CanvasSizing' + Date.now();
+  let staged = false;
+  try {
+    const launcher = await freshLauncher(page);
+    await launcher.getByRole('button', { name: 'Empty workflow', exact: true }).click();
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
+    const dialog = page.getByTestId('custom-extensions-dialog');
+    await dialog.getByRole('button', { name: 'Advanced options', exact: true }).click();
+    await dialog.getByLabel('Extension source', { exact: true }).fill('examples/custom_nodes/PromptTools');
+    await dialog.getByLabel('Extension module name').fill(name);
+    const installed = page.waitForResponse((r) => r.url().endsWith('/custom_modules/add'));
+    await dialog.getByTestId('extension-source-form').getByRole('button', { name: 'Add node', exact: true }).click();
+    const response = await installed;
+    expect(response.ok()).toBe(true);
+    expect((await response.json()).error).toBeFalsy();
+    staged = true;
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByLabel('Search nodes', { exact: true }).fill(name);
+    await page
+      .getByTestId('node-group-custom-nodes')
+      .getByRole('button', { name: 'Prompt Prefix', exact: true })
+      .click();
+    const frame = page
+      .locator('.react-flow__node')
+      .filter({ has: page.getByRole('textbox', { name: 'Prefix', exact: true }) });
+    await expect(frame.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible();
+    const body = frame.locator('[data-node-body]');
+    await expect.poll(() => body.evaluate((n) => n.scrollHeight - n.clientHeight)).toBeLessThanOrEqual(2);
+  } finally {
+    if (staged) expect((await page.request.post('/custom_modules/' + name + '/disable', { data: {} })).ok()).toBe(true);
+  }
 });

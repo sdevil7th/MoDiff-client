@@ -329,7 +329,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const [readyOnly, setReadyOnly] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [manifest, setManifest] = useState<TemplateGalleryManifest | null>(null);
-  const [manifestStartupFailed, setManifestStartupFailed] = useState(false);
+  const [manifestLookup, setManifestLookup] = useState<'loading' | 'retry' | 'unavailable' | 'ready'>('loading');
+  const previewStatus = manifest ? 'missing' : manifestLookup === 'unavailable' ? 'unavailable' : 'loading';
   const [autoPlansStartupFailed, setAutoPlansStartupFailed] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [installingRepo, setInstallingRepo] = useState<string | null>(null);
@@ -373,17 +374,18 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
+    setManifestLookup('loading');
     void loadTemplateManifest()
       .then((payload) => {
         if (!cancelled) {
           setManifest(payload);
-          setManifestStartupFailed(false);
+          setManifestLookup('ready');
         }
       })
       .catch(() => {
         if (!cancelled) {
           setManifest(null);
-          setManifestStartupFailed(true);
+          setManifestLookup('retry');
         }
       });
     return () => {
@@ -396,7 +398,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       !open ||
       !shouldRetryStaticStartupRequest({
         attempted: manifestStartupRetryAttempted.current,
-        failed: manifestStartupFailed && templateManifestRequest.hasRejected(),
+        failed: manifestLookup === 'retry' && templateManifestRequest.hasRejected(),
       })
     ) {
       return;
@@ -409,17 +411,20 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
         .then((payload) => {
           if (!cancelled) {
             setManifest(payload);
-            setManifestStartupFailed(false);
+            setManifestLookup('ready');
           }
         })
-        .catch((error) => console.error(error));
+        .catch((error) => {
+          if (!cancelled) setManifestLookup('unavailable');
+          console.error(error);
+        });
     }, STARTUP_INDEX_RETRY_MS);
     return () => {
       cancelled = true;
       globalThis.clearTimeout(timeoutId);
       manifestStartupRetryAttempted.current = false;
     };
-  }, [manifestStartupFailed, open]);
+  }, [manifestLookup, open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1023,6 +1028,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                       featured={template === featured}
                       manualPreview={templates.length > 1 && template !== featured}
                       manifest={manifest}
+                      previewStatus={previewStatus}
                       readiness={readinessForTemplate(template)}
                       selected={selectedTemplateId === template.id}
                       template={template}
@@ -1094,6 +1100,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                   disabled={isApplying}
                   installingRepo={installingRepo}
                   manifest={manifest}
+                  previewStatus={previewStatus}
                   readiness={readinessForTemplate(selectedTemplate)}
                   runtimeEstimate={runtimeEstimateForTemplate(selectedTemplate)}
                   requiresTermsReview={templateNeedsTermsReview(selectedTemplate)}
@@ -1159,6 +1166,7 @@ function TemplateBrowserCard({
   featured,
   manualPreview,
   manifest,
+  previewStatus,
   onCreate,
   onReadinessAction,
   onView,
@@ -1173,6 +1181,7 @@ function TemplateBrowserCard({
   featured: boolean;
   manualPreview: boolean;
   manifest: TemplateGalleryManifest | null;
+  previewStatus: RecipePreviewStatus;
   onCreate: () => void;
   onReadinessAction: (readiness: TemplateReadinessResult) => void;
   onView: () => void;
@@ -1234,7 +1243,7 @@ function TemplateBrowserCard({
             thumbnailPath={thumbnailPath}
           />
         ) : (
-          <RecipePreviewPlaceholder />
+          <RecipePreviewPlaceholder status={previewStatus} />
         )}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-end gap-2 bg-gradient-to-b from-modiff-bg/80 to-transparent p-3">
           {hasUsageRestrictions ? (
@@ -1344,6 +1353,7 @@ function TemplateRecipeDetail({
   disabled,
   installingRepo,
   manifest,
+  previewStatus,
   onBack,
   onCreate,
   onInstallRepo,
@@ -1359,6 +1369,7 @@ function TemplateRecipeDetail({
   disabled: boolean;
   installingRepo: string | null;
   manifest: TemplateGalleryManifest | null;
+  previewStatus: RecipePreviewStatus;
   onBack: () => void;
   onCreate: () => void;
   onInstallRepo: (repoId: string, repair?: boolean, selection?: { revision?: string; files?: string[] }) => void;
@@ -1459,7 +1470,7 @@ function TemplateRecipeDetail({
             thumbnailPath={thumbnailPath}
           />
         ) : (
-          <RecipePreviewPlaceholder />
+          <RecipePreviewPlaceholder status={previewStatus} />
         )}
         {beforePath && !afterPath && (
           <a href={beforePath} className="text-xs text-modiff-blue underline" target="_blank" rel="noreferrer">
@@ -1604,11 +1615,18 @@ function TemplateRecipeDetail({
   );
 }
 
-function RecipePreviewPlaceholder() {
+type RecipePreviewStatus = 'loading' | 'missing' | 'unavailable';
+const previewStatusLabel: Record<RecipePreviewStatus, string> = {
+  loading: 'Loading preview…',
+  missing: 'No approved preview for this recipe',
+  unavailable: 'Preview temporarily unavailable',
+};
+
+function RecipePreviewPlaceholder({ status }: { status: RecipePreviewStatus }) {
   return (
     <div className="grid aspect-video place-content-center justify-items-center gap-2 rounded-modiff-panel border border-modiff-border bg-modiff-panel p-3 text-sm text-modiff-subtle-text">
       <Image aria-hidden="true" size={24} />
-      No approved preview for this recipe
+      {previewStatusLabel[status]}
     </div>
   );
 }

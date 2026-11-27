@@ -9,6 +9,8 @@ The browser groups recipes by task and lists **Advanced & planning** last. This 
 
 Each category opens with one featured recipe when sorting by recommendation. Its preview uses the current recipe's approved Gallery entry. Images with text, transcriptions and music videos can be found by their relevant medium. Template authors can nominate a category lead in `src/studio/templateBrowser.ts`. The browser uses another matching reviewed output when filters exclude the lead.
 
+The browser shows a loading message while it checks the Gallery index. A failed lookup retries once. If the retry also fails, reopening Templates checks again. The private-preview placeholder appears only after the index loads successfully and contains no approved output for the recipe.
+
 Approved supplementary showcases are listed in `src/studio/templateShowcases.json`.
 Their exact media and redacted recipe/review records use this same immutable
 Dataset, asset inventory, per-file rights ledger and publication verifier. Each

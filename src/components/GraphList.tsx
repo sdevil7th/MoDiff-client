@@ -35,6 +35,7 @@ import { GraphControlButton } from '../ui/GraphControls';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { workflowExampleDisplayName } from '../workflow/readWorkflowJson';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import { getWorkflowShowcases } from '../studio/templateShowcases';
@@ -131,6 +132,23 @@ function workflowTestId(value: string) {
 function workflowModelLabel(node: GraphData) {
   const profile = STUDIO_MODEL_PROFILES[node.modelType as StudioModelType];
   return profile?.displayName || profile?.family || node.modelType || '';
+}
+
+function exampleMatchesSearch(file: GraphData, query: string) {
+  // Older example indexes omit the model identity. Its directory still has
+  // the publisher's pipeline slug (e.g. ace-step-audio-pipeline).
+  const parentDirectory = file.path.split(/[\\/]/u).slice(-2, -1)[0];
+  return matchesSearchKeywords(query, [
+    file.name,
+    workflowExampleDisplayName(file.path, file.name),
+    file.modelType,
+    workflowModelLabel(file),
+    parentDirectory,
+    parentDirectory?.replace(/[-_ ]/gu, ''),
+    file.mode,
+    file.mediaKind,
+    ...(file.requiredArtifacts ?? []),
+  ]);
 }
 
 function GraphList() {
@@ -288,7 +306,7 @@ function GraphList() {
   const visibleSavedWorkflowRows = savedWorkflowRows.filter(
     (tab) =>
       (libraryTab === 'drafts' ? tab.intent === 'draft' : tab.intent !== 'draft') &&
-      tab.title.toLowerCase().includes(search.trim().toLowerCase()),
+      matchesSearchKeywords(search, [tab.title, tab.sourceLabel?.split(/[\\/]/u).pop()]),
   );
   // Each row owns an accessible action menu. Mounting an unbounded library
   // makes unrelated graph edits and run feedback expensive to render.
@@ -300,18 +318,7 @@ function GraphList() {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
       (file) =>
-        [
-          file.name,
-          workflowExampleDisplayName(file.path, file.name),
-          file.modelType,
-          workflowModelLabel(file),
-          file.mode?.replace(/_/g, ' '),
-          ...(file.requiredArtifacts ?? []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(search.trim().toLowerCase()) &&
+        exampleMatchesSearch(file, search) &&
         (mediaFilter === 'all' || file.mediaKind === mediaFilter) &&
         (modelFilter === 'all' || file.modelType === modelFilter) &&
         (modeFilter === 'all' || file.mode === modeFilter) &&
@@ -572,7 +579,7 @@ function GraphList() {
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+    <div className="@container/workflows flex h-full min-w-0 flex-col overflow-hidden">
       <header className="border-b border-modiff-border bg-modiff-surface px-3 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -587,7 +594,7 @@ function GraphList() {
       </header>
       <nav
         aria-label="Workflow library"
-        className="grid grid-cols-2 gap-0.5 border-b border-modiff-border bg-modiff-panel p-1.5"
+        className="grid grid-cols-2 gap-0.5 border-b border-modiff-border bg-modiff-panel p-1.5 @md/workflows:grid-cols-4"
       >
         {(
           [

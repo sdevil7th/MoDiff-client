@@ -7,7 +7,7 @@ const node = (page: Page, id: string) => page.locator(`.react-flow__node[data-id
 const handle = (card: Locator, direction: 'source' | 'target', field: string) =>
   card.locator(`.react-flow__handle.${direction}[data-handleid="${field}"]`);
 const optionField = (card: Locator, field: string) =>
-  card.locator(`[data-key="${field}"] button[aria-haspopup="listbox"]`);
+  card.locator(`[data-key="${field}"] button:is([aria-haspopup="listbox"], [aria-haspopup="dialog"])`);
 
 async function add(page: Page, name: string) {
   const search = page.getByLabel('Search nodes', { exact: true });
@@ -120,8 +120,13 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/', { waitUntil: 'commit', timeout: 60_000 });
   await ready(page);
   await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
-  const launcher = page.getByTestId('task-launcher');
-  if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
+  if (!(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.launcherDismissed))) {
+    const closeLauncher = page.getByRole('dialog', { name: 'Workflows', exact: true }).getByRole('button', {
+      name: 'Close',
+      exact: true,
+    });
+    await closeLauncher.click();
+  }
   if (!(await page.getByLabel('Search nodes', { exact: true }).isVisible()))
     await page.getByTestId('left-tab-nodes').click();
   await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();

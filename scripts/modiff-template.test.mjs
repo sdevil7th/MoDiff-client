@@ -4462,6 +4462,17 @@ test('template browser exposes the complete workflow catalog across task and ada
     ],
   );
 
+  const crossField = { category: 'all', modelType: 'all', difficulty: 'all', sort: 'recommended' };
+  for (const query of ['tabby minimax', 'MINIMAX / tabby']) {
+    assert.ok(
+      filterStudioTemplates(STUDIO_TEMPLATES, form, { ...crossField, query }).some(
+        (recipe) => recipe.id === 'minimax_h3_image_old_town_cat',
+      ),
+      query,
+    );
+  }
+  assert.deepEqual(filterStudioTemplates(STUDIO_TEMPLATES, form, { ...crossField, query: '///' }), []);
+
   const imageTemplates = filterStudioTemplates(STUDIO_TEMPLATES, form, {
     category: 'image',
     query: '',

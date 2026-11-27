@@ -56,7 +56,7 @@ test('fresh documented custom package enables and reloads through the rendered U
   });
   try {
     await page.setViewportSize({ width: 1600, height: 1000 });
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForCanvas();
     await expect(page.getByTestId('startup-workspace-gate')).toBeHidden({ timeout: 90_000 });
     const launcher = page.getByTestId('task-launcher');
@@ -119,9 +119,6 @@ test('fresh documented custom package enables and reloads through the rendered U
       exported: inserted.find((node) => node.data.action === 'ExportData')!.id,
     };
     const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
-    const customBody = node(ids.custom).locator('[data-node-body]');
-    await expect(customBody).toBeVisible();
-    expect(await customBody.evaluate((body) => body.scrollHeight - body.clientHeight)).toBeLessThanOrEqual(2);
     const handle = (id: string, field: string) => page.getByTestId(`node-handle-${id}-${field}`);
     const arrange = () => page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const fill = async (id: string, label: string, value: string) => {

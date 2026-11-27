@@ -1,3 +1,4 @@
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 import {
   AUDIO_STUDIO_MODES,
   isStudioModelVisibleInCatalog,
@@ -256,7 +257,7 @@ export function filterStudioTemplates(
       return false;
     if (filter.mode && filter.mode !== 'all' && template.mode !== filter.mode) return false;
     if (filter.difficulty !== 'all' && template.difficulty !== filter.difficulty) return false;
-    if (query && !templateSearchText(template).includes(query)) return false;
+    if (query && !matchesSearchKeywords(query, [templateSearchText(template)])) return false;
     return true;
   });
 

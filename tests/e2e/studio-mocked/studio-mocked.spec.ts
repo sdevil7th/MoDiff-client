@@ -11843,6 +11843,54 @@ test('Developer defers template indexes until first open and never refreshes the
   expect(requestCounts).toEqual(onceWhenNeeded);
 });
 
+test('delayed template previews show loading, approved artwork and honest private placeholders', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/template-gallery/manifest.json', async (route) => {
+    await pending;
+    await route.fallback();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+
+  const hero = page.getByTestId('template-browser-card-minimax_h3_image_old_town_cat');
+  await expect(hero).toContainText('Loading preview…');
+  await expect(hero).not.toContainText('No approved preview');
+  await hero.getByRole('button', { name: /^View details for /u }).click();
+  const detail = page.getByTestId('template-detail-minimax_h3_image_old_town_cat');
+  await expect(detail).toContainText('Loading preview…');
+  release();
+  await expect(detail.getByRole('img').first()).toHaveAttribute('src', /h3-old-town-human-cat/u);
+  await expect(detail).not.toContainText('Loading preview…');
+
+  await detail.getByRole('button', { name: 'Templates', exact: true }).click();
+  await page.getByTestId('template-browser-category-adapters').click();
+  const privateCard = page.getByTestId('template-browser-card-flux_lora_ghibli_story');
+  await expect(privateCard).toContainText('No approved preview for this recipe');
+});
+
+test('temporarily unavailable template previews recover when the browser reopens', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let attempts = 0;
+  await page.route('**/template-gallery/manifest.json', (route) => {
+    attempts++;
+    return attempts <= 2 ? route.fulfill({ status: 503, json: {} }) : route.fallback();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const hero = page.getByTestId('template-browser-card-minimax_h3_image_old_town_cat');
+  await expect(hero).toContainText('Preview temporarily unavailable');
+  expect(attempts).toBe(2);
+  await expect(hero).not.toContainText('No approved preview');
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await openTemplateBrowser(page);
+  await expect(hero.getByRole('img')).toHaveAttribute('src', /h3-old-town-human-cat/u);
+  expect(attempts).toBe(3);
+});
+
 test('template startup indexes recover once at the correct readiness signal without a modal refresh', async ({
   page,
 }) => {
@@ -36662,6 +36710,9 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
   await expect(page.getByTestId('saved-workflow-paged-0')).toBeVisible();
   const search = page.getByRole('searchbox', { name: 'Search workflows', exact: true });
   await search.fill('Saved library item 0999');
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByTestId('saved-workflow-paged-999')).toBeVisible();
+  await search.fill('0999_library SAVED');
   await expect(rows).toHaveCount(1);
   await expect(page.getByTestId('saved-workflow-paged-999')).toBeVisible();
   await search.fill('no saved workflow matches this');

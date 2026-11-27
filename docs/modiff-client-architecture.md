@@ -1062,6 +1062,10 @@ entries and catalog-only structural Blocks require Show implementation nodes.
 The Nodes sidebar groups ordinary stages by task and exposes alternative actions
 on the same row. Action search uses the backend catalog vocabulary. The Workflows
 sidebar groups starters by output, and its layout follows panel width.
+Examples search matches individual words across the title, action, model and
+repository. Older indexes can provide the model through their example directory.
+Saved workflows and drafts use the same keyword matching on their titles and
+source labels.
 Dragging a typed wire also searches model-specific operation contracts. An
 operation or saved stage boundary can supply the pipeline and task when the
 user has not selected them. Ambiguous boundaries leave that choice to the user.
