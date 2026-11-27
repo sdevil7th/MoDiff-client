@@ -76,6 +76,8 @@ for (const kind of ['local', 'hub', 'git'] as const) {
       await modal
         .getByLabel('Choose Python node file')
         .setInputFiles({ name: name + '.py', mimeType: 'text/x-python', buffer: Buffer.from(python) });
+      await expect(modal.getByText(`Selected: ${name}.py`)).toBeVisible();
+      await modal.getByRole('button', { name: 'Add node', exact: true }).click();
     } else {
       await modal.getByRole('button', { name: kind === 'hub' ? /Hugging Face/u : /^Git/u }).click();
       await modal

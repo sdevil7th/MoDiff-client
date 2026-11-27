@@ -1,5 +1,5 @@
 import type { NodeParams } from '../stores/useNodeStore';
-import type { BlockControlV2, BlockInstanceV2, BlockPortV2 } from '../studio/blockSchemaV2';
+import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { workflowTaskCategory } from './workflowTaskBrowser';
 import {
   COMBINED_INPUT_PROVIDER,
@@ -55,10 +55,38 @@ export function isFocusedStageNode(instance: BlockInstanceV2 | undefined) {
 }
 
 /** Rendering only: never remove a declared boundary or an existing connection. */
-export function encodingVisibleConnectors(params: Record<string, NodeParams>, outputs: BlockPortV2[]) {
-  // All declared sockets stay available for drag-to-add discovery, including Doc.
-  void outputs;
-  return params;
+export function encodingVisibleConnectors(
+  params: Record<string, NodeParams>,
+  instance: BlockInstanceV2,
+  showImplementation = false,
+): Record<string, NodeParams> {
+  const technical = new Map<string, { field: string; owner: string }>();
+  const { inputs, outputs } = instance.effectiveInterface.boundary;
+  for (const port of [...inputs.filter((input) => !input.required), ...outputs]) {
+    const field = port.binding.fieldOrPortId;
+    const node = instance.effectiveGraph.nodes.find((item) => item.nodeId === port.binding.nodeId);
+    const guidance = (node?.data.operationAuthoring as { operation?: { nodeType?: string } } | undefined)?.operation
+      ?.nodeType;
+    if (
+      field === 'doc' ||
+      field === 'route_state_in' ||
+      field === 'route_state_out' ||
+      (field === 'layers' && guidance === 'guidance_layers')
+    ) {
+      technical.set(port.portId, { field, owner: String(node?.data.label || port.binding.nodeId) });
+    }
+  }
+  const visible: Record<string, NodeParams> = {};
+  for (const [id, param] of Object.entries(params)) {
+    // Optional image encoding also supplies sockets before a real encoder exists in a text-only graph.
+    const optional = param.fieldOptions?.encodingImplementationOutput;
+    const port =
+      technical.get(id) ?? (typeof optional === 'string' ? { field: optional, owner: 'Image encoder' } : undefined);
+    if (port && !showImplementation && !param.isConnected) continue;
+    visible[id] =
+      port?.field === 'doc' && param.label === 'Doc' ? { ...param, label: `Documentation · ${port.owner}` } : param;
+  }
+  return visible;
 }
 
 /** EncodePrompt uses prompt_input ahead of prompt; preserve the local fallback. */

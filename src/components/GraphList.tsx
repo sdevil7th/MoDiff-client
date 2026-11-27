@@ -34,6 +34,7 @@ import {
 import { GraphControlButton } from '../ui/GraphControls';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
+import { workflowExampleDisplayName } from '../workflow/readWorkflowJson';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import { getWorkflowShowcases } from '../studio/templateShowcases';
@@ -48,6 +49,8 @@ import {
   saveDetachedWorkflowNow,
   subscribeBackendWorkflowChanges,
 } from '../studio/useWorkflowBackendSync';
+
+import WorkflowFileImportButton from './WorkflowFileImportButton';
 
 const DeveloperWorkflowLauncher = lazy(() => import('./DeveloperWorkflowLauncher'));
 
@@ -138,7 +141,10 @@ function GraphList() {
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
   const acknowledgedChanges = useRef(new Map<string, SavedWorkflowSummary | null>());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState('');
+  const [searchByView, setSearchByView] = useState<Partial<Record<typeof libraryTab, string>>>({});
+  const search = searchByView[libraryTab] ?? '';
+  const setSearch = (value: string) => setSearchByView((previous) => ({ ...previous, [libraryTab]: value }));
+  const [folderView, setFolderView] = useState(false);
   const [savedPage, setSavedPage] = useState(0);
   const [mediaFilter, setMediaFilter] = useState('all');
   const [modelFilter, setModelFilter] = useState('all');
@@ -296,6 +302,7 @@ function GraphList() {
       (file) =>
         [
           file.name,
+          workflowExampleDisplayName(file.path, file.name),
           file.modelType,
           workflowModelLabel(file),
           file.mode?.replace(/_/g, ' '),
@@ -323,6 +330,25 @@ function GraphList() {
     visibleGraphs,
   ]);
 
+  const exampleGroups = useMemo(() => {
+    const groups = new Map<string, GraphData[]>();
+    for (const file of allWorkflowFiles) {
+      const media = file.mediaKind?.replace(/_/g, ' ').trim() || 'Other';
+      const label = media.charAt(0).toUpperCase() + media.slice(1);
+      const files = groups.get(label);
+      if (files) files.push(file);
+      else groups.set(label, [file]);
+    }
+    return [...groups]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, children]) => ({
+        isDir: true,
+        path: `media:${name}`,
+        name,
+        children,
+      }));
+  }, [allWorkflowFiles]);
+
   const openWorkflow = useCallback(
     async (node: GraphData) => {
       if (node.isDir) return;
@@ -341,7 +367,12 @@ function GraphList() {
         const snapshot = example
           ? example.exampleWorkflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form)
           : workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form);
-        createWorkflowTab(node.name || 'Imported graph', snapshot, 'import', node.path);
+        createWorkflowTab(
+          workflowExampleDisplayName(node.path, node.name) || 'Imported graph',
+          snapshot,
+          'import',
+          node.path,
+        );
         if (example && !(await example.settleExampleWorkflowCanvas())) return;
         setRightPanelOpen(true);
         setRightPanelTab('studio');
@@ -512,7 +543,7 @@ function GraphList() {
               e.dataTransfer.effectAllowed = 'move';
             }}
           >
-            <span className="block truncate">{node.name}</span>
+            <span className="block truncate">{workflowExampleDisplayName(node.path, node.name)}</span>
             {node.modelType ? (
               <span className="block truncate text-xs text-modiff-subtle-text" title={node.modelType}>
                 {workflowModelLabel(node)}
@@ -527,7 +558,7 @@ function GraphList() {
           <ModiffIconButton
             size="compact"
             className="text-modiff-subtle-text opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            label={`Open ${node.name}`}
+            label={`Open ${workflowExampleDisplayName(node.path, node.name)}`}
             onClick={() => {
               void openWorkflow(node);
             }}
@@ -620,6 +651,23 @@ function GraphList() {
               <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">
                 {libraryTab === 'drafts' ? 'Recovery drafts — open and Save to keep in My workflows' : 'My workflows'}
               </h3>
+              {libraryTab === 'saved' && <WorkflowFileImportButton />}
+              {savedPageRows.length === 0 && (
+                <div className="my-2 space-y-2 text-sm text-modiff-subtle-text" role="status">
+                  <p>
+                    {search.trim()
+                      ? 'No workflows match this search.'
+                      : libraryTab === 'drafts'
+                        ? 'No recovery drafts.'
+                        : 'No saved workflows yet.'}
+                  </p>
+                  {search.trim() && (
+                    <ModiffButton size="dense" onClick={() => setSearch('')}>
+                      Clear workflow search
+                    </ModiffButton>
+                  )}
+                </div>
+              )}
               {lastSavedPage > 0 && (
                 <div className="mb-1 flex min-w-0 items-center justify-between gap-1 text-xs text-modiff-subtle-text">
                   <ModiffIconButton
@@ -754,6 +802,11 @@ function GraphList() {
                 ))}
               </div>
 
+              <div className="px-2 pb-2">
+                <ModiffButton size="dense" aria-pressed={folderView} onClick={() => setFolderView(!folderView)}>
+                  {folderView ? 'Group by media' : 'Browse source folders'}
+                </ModiffButton>
+              </div>
               {isLoading ? (
                 <div className="text-center text-sm text-modiff-subtle-text">Loading...</div>
               ) : (
@@ -791,10 +844,10 @@ function GraphList() {
                     </article>
                   ))}
                   {filteredGraphs.length > 0 ? (
-                    filteredGraphs.map((item) => renderDir(item, 0))
+                    (folderView || filtersActive ? filteredGraphs : exampleGroups).map((item) => renderDir(item, 0))
                   ) : visibleSavedWorkflowRows.length === 0 && showcases.length === 0 ? (
                     <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
-                      No saved, imported, or example workflows found.
+                      No example workflows match these filters.
                     </div>
                   ) : null}
                 </div>

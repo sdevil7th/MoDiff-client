@@ -216,7 +216,7 @@ export default function WorkflowSetupChecklist({
         ) : (
           <p className="text-xs">Requirements are unverified until scope inspection succeeds.</p>
         )}
-        <RuntimeOptimizationsCard requiredProfileIds={inspection ? profileIds : undefined} />
+        <RuntimeOptimizationsCard requiredProfileIds={profileIds} />
       </div>
       <div className="grid gap-2" role="group" aria-label="System prerequisites">
         <h4 className="text-sm font-semibold">4. System prerequisites</h4>

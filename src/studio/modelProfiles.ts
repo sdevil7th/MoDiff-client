@@ -1,5 +1,6 @@
 import type {
   StudioFormState,
+  StudioArtifactSelection,
   StudioInpaintContractStatus,
   StudioMode,
   StudioModelProfile,
@@ -899,7 +900,10 @@ export function getCatalogModelProfiles(
 
 export function getProfileForArtifactMode(profile: StudioModelProfile, mode: StudioMode): StudioModelProfile {
   const selection = profile.artifactSelections?.find((item) => item.modes.includes(mode));
-  if (!selection) return profile;
+  return selection ? withArtifactSelection(profile, selection) : profile;
+}
+
+function withArtifactSelection(profile: StudioModelProfile, selection: StudioArtifactSelection): StudioModelProfile {
   return {
     ...profile,
     defaultRepo: selection.repo,
@@ -909,10 +913,25 @@ export function getProfileForArtifactMode(profile: StudioModelProfile, mode: Stu
   };
 }
 
+function artifactSurfaceCategory(profile: StudioModelProfile, selection: StudioArtifactSelection) {
+  if (selection.modes.every((mode) => VIDEO_STUDIO_MODES.includes(mode) || mode === 'single_image_to_video'))
+    return 'Video';
+  if (selection.modes.every((mode) => AUDIO_STUDIO_MODES.includes(mode))) return 'Audio';
+  if (selection.modes.every((mode) => ['text_to_image', 'modular_text_to_image', 'unconditional_image'].includes(mode)))
+    return 'Image';
+  return profile.surfaceCategory;
+}
+
+export function modelInventoryRowKey(profile: StudioModelProfile) {
+  // Task selections sharing a class and repository have disjoint mode sets.
+  return JSON.stringify([profile.modelType, profile.defaultRepo, profile.modes, profile.revisionCandidates]);
+}
+
 export function expandArtifactSelectionProfiles(profile: StudioModelProfile): StudioModelProfile[] {
   if (!profile.artifactSelections?.length) return [profile];
   return profile.artifactSelections.map((selection) => ({
-    ...getProfileForArtifactMode(profile, selection.modes[0]!),
+    ...withArtifactSelection(profile, selection),
+    surfaceCategory: artifactSurfaceCategory(profile, selection),
     modes: [...selection.modes],
   }));
 }

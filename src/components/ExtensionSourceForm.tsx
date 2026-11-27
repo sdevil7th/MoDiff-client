@@ -27,12 +27,13 @@ export default function ExtensionSourceForm({
 }) {
   const [kind, setKind] = useState(initialKind);
   const [source, setSource] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [name, setName] = useState('');
   const [revision, setRevision] = useState('');
   const [error, setError] = useState<string | null>(null);
   const root = useNodesStore((state) => state.customModuleRoot);
   const fileInput = useRef<HTMLInputElement>(null);
-  const resolvedName = name.trim() || extensionName(source);
+  const resolvedName = name.trim() || extensionName(selectedFile?.name || source);
   return (
     <div className="grid gap-4" data-testid="extension-source-form">
       <div className="grid grid-cols-3 gap-2" role="group" aria-label="Source type">
@@ -46,6 +47,7 @@ export default function ExtensionSourceForm({
             onClick={() => {
               setKind(value);
               setSource('');
+              setSelectedFile(null);
               setRevision('');
               setError(null);
             }}
@@ -58,11 +60,11 @@ export default function ExtensionSourceForm({
       {kind === 'local' ? (
         <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
           <p className="text-sm">
-            Drop a Python node onto the canvas, or place a node file/package in your custom folder.
+            Choose a Python file from this computer, then select Add node to enable it on the backend.
           </p>
           <p className="break-all font-mono text-xs text-modiff-subtle-text">{root ?? 'custom/ on the backend'}</p>
           <p className="text-xs text-modiff-subtle-text">
-            New sources appear automatically in Custom nodes. Choose Load to enable them.
+            Files placed directly in this backend folder appear in Custom nodes. Select Load there to enable one.
           </p>
           <ModiffFileInput
             ref={fileInput}
@@ -73,15 +75,17 @@ export default function ExtensionSourceForm({
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = '';
-              if (file)
-                void pythonFileImport(file)
-                  .then(onAdd)
-                  .catch((failure: unknown) => setError(formatRequestError(failure, 'Node import failed.')));
+              if (file) {
+                setSelectedFile(file);
+                setSource('');
+                setError(null);
+              }
             }}
           />
           <ModiffButton disabled={busy} onClick={() => fileInput.current?.click()}>
             Choose Python file
           </ModiffButton>
+          {selectedFile ? <p className="break-all text-sm">Selected: {selectedFile.name}</p> : null}
         </div>
       ) : (
         <ModiffFieldShell label={kind === 'hub' ? 'Hugging Face repository' : 'Git repository URL'}>
@@ -101,7 +105,10 @@ export default function ExtensionSourceForm({
               aria-label="Extension source"
               value={source}
               disabled={busy}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(event) => {
+                setSelectedFile(null);
+                setSource(event.target.value);
+              }}
             />
           </ModiffFieldShell>
         ) : (
@@ -119,7 +126,7 @@ export default function ExtensionSourceForm({
           <ModiffInput
             aria-label="Extension module name"
             value={name}
-            placeholder={source ? resolvedName : 'Derived from source'}
+            placeholder={source || selectedFile ? resolvedName : 'Derived from source'}
             disabled={busy}
             onChange={(event) => setName(event.target.value)}
           />
@@ -140,15 +147,24 @@ export default function ExtensionSourceForm({
         tone="primary"
         fullWidth
         loading={busy}
-        disabled={busy || !source.trim() || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(resolvedName)}
-        onClick={() =>
-          void onAdd({
+        disabled={busy || (!selectedFile && !source.trim()) || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(resolvedName)}
+        onClick={async () => {
+          if (selectedFile) {
+            try {
+              const upload = await pythonFileImport(selectedFile);
+              await onAdd({ ...upload, name: resolvedName });
+            } catch (failure) {
+              setError(formatRequestError(failure, 'Node import failed.'));
+            }
+            return;
+          }
+          await onAdd({
             kind,
             source: source.trim(),
             name: resolvedName,
             ...(revision.trim() ? { revision: revision.trim() } : {}),
-          })
-        }
+          });
+        }}
       >
         Add node
       </ModiffButton>

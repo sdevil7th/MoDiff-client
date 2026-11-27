@@ -82,6 +82,17 @@ export function BlockOwnerChoices({
         <BlockModelTaskControls node={node} />
       </Suspense>
     ) : null;
+  const usePickerForTask = !inline && isFocusedStageNode(node.data.blockInstanceV2);
+  const ownerChoices = (
+    <OwnerChoices
+      key={`${loader.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
+      ownerId={loader.data.blockProjectionNodeId!}
+      blockId={ownerBlockId}
+      inline={inline}
+      pipelineClass={hint.operation.pipelineClass}
+      currentTask={hint.operation.task}
+    />
+  );
   return (
     <div className="grid gap-2">
       {loaders.length > 1 ? (
@@ -99,6 +110,7 @@ export function BlockOwnerChoices({
       ) : null}
       <Suspense fallback={<p role="status">Loading model choices…</p>}>
         <OperationModelPicker
+          taskControls={usePickerForTask ? ownerChoices : undefined}
           node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }}
           value={(() => {
             const value = loader.data.params.repo_id?.value ?? loader.data.params.model_id?.value;
@@ -110,14 +122,7 @@ export function BlockOwnerChoices({
           })()}
         />
       </Suspense>
-      <OwnerChoices
-        key={`${loader.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
-        ownerId={loader.data.blockProjectionNodeId!}
-        blockId={ownerBlockId}
-        inline={inline}
-        pipelineClass={hint.operation.pipelineClass}
-        currentTask={hint.operation.task}
-      />
+      {usePickerForTask ? null : ownerChoices}
       <Suspense fallback={null}>
         <VisualStageControls node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }} />
       </Suspense>

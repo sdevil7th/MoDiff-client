@@ -592,6 +592,24 @@ test('Custom readiness retains required safety artifacts and their exact reviewe
   assert.deepEqual(result.modelInstallTargets.find((item) => item.repoId === safety.id).files, safety.planned_files);
 });
 
+test('recipe preflight reports installed and required component versions from the selected runtime', () => {
+  const recipe = runnableCandidate(candidates.find((item) => item.id === 'cosmos3_super_text_to_image'));
+  const context = customContext(recipe);
+  const profile = context.studioModelCapabilities
+    .find((item) => item.modelType === recipe.modelType)
+    .executionProfiles.find((item) => item.id === recipe.executionSelection.executionProfileId);
+  profile.optionalRuntimeRequirement.state = 'wrong_version';
+  profile.optionalRuntimeRequirement.reason = 'optional_runtime_wrong_version';
+  context.optionalRuntimeCatalog.profiles[0].packages = [
+    { distribution: 'transformers', requiredVersion: '5.17.0', installedVersion: '5.13.0', status: 'wrong_version' },
+  ];
+  const result = readiness.getTemplateReadiness(recipe, context);
+  const issue = result.issues.find((item) => item.id === 'custom:optional-runtime');
+  assert.equal(result.status, 'needs_backend');
+  assert.match(issue.detail, /transformers requires 5\.17\.0.*5\.13\.0/);
+  assert.doesNotMatch(issue.detail, /wrong_version/);
+});
+
 test('Custom memory never waives broken base runtime, profile identity, optional activation, or required image inputs', () => {
   const template = candidates.find((item) => item.id === 'cosmos3_super_text_to_image');
   for (const mutate of [

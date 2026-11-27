@@ -3329,6 +3329,13 @@ test('generic public model inventory preserves native defaults and exact additio
     assert.ok(descriptor);
     const rows = inventory.workflowModelArtifactRows(descriptor);
     assert.deepEqual(
+      inventory.matchingWorkflowModelArtifactRows(descriptor, 'nvfp4').map((item) => item.weightFormat),
+      ['nvfp4'],
+    );
+    assert.deepEqual(inventory.matchingWorkflowModelArtifactRows(descriptor, 'unrelated'), []);
+    assert.equal(inventory.matchingWorkflowModelArtifactRows(descriptor, '').length, 3);
+
+    assert.deepEqual(
       rows.map((item) => item.weightFormat),
       ['native', 'fp8r', 'nvfp4'],
     );

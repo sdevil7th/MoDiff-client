@@ -411,6 +411,36 @@ test('discoverability reflects the encoder role and both declared upscale media 
   assert.equal(JSON.stringify({ encoder, upscaler }), before);
 });
 
+test('image task discovery leads with creative tasks and searches across modality and guidance aliases', () => {
+  const tasks = ['text_to_video', 'image_upscale', 'controlnet_ip_adapter', 'edit_image', 'text_to_image'];
+  const cards = browser.workflowTaskCards(tasks.map((task) => ({ task })));
+  assert.deepEqual(
+    cards.filter((card) => card.category === 'Image' && !card.specialist).map((card) => card.task),
+    ['text_to_image', 'edit_image', 'image_upscale'],
+  );
+  assert.deepEqual(
+    cards.filter((card) => browser.matchesWorkflowTask(card, 'video')).map((card) => card.task),
+    ['text_to_video'],
+  );
+  assert.deepEqual(
+    cards.filter((card) => browser.matchesWorkflowTask(card, 'ip-adapter')).map((card) => card.task),
+    ['controlnet_ip_adapter'],
+  );
+});
+
+test('video route labels explain the reference inputs and keep their executable identifiers', () => {
+  const routes = {
+    flf2v: 'Video from first and last frames',
+    first_last_frame_to_video_with_audio: 'Video and audio from first and last frames',
+    in_context_to_video: 'Generate video with a reference clip',
+  };
+  for (const card of browser.workflowTaskCards(Object.keys(routes).map((task) => ({ task })))) {
+    assert.equal(card.label, routes[card.task]);
+    assert.equal(card.category, 'Video');
+    assert.ok(browser.matchesWorkflowTask(card, card.task));
+  }
+});
+
 test('task browser groups modalities, deduplicates models and prefers available composable execution', () => {
   const choice = (id, task, overrides = {}) => ({
     id,

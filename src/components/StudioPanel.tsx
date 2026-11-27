@@ -1,3 +1,4 @@
+import { workflowTaskLabel } from '../workflow/workflowChoices';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useShallow } from 'zustand/react/shallow';
@@ -312,8 +313,24 @@ export default function StudioPanel() {
     !templateGraphPreparing &&
     ((!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence));
 
+  const graphModel = graphInspection.declaredModel;
+  const modelLabel = declaredGraphModelLabel(graphModel, workflowModelDescriptors);
+  const profile =
+    graphModel &&
+    studioModelCapabilities.find((candidate) =>
+      candidate.executionProfiles?.some(
+        (profile) =>
+          profile.id === graphModel.profileId &&
+          profile.default_repo === graphModel.repo &&
+          profile.pipeline_class === graphModel.pipeline,
+      ),
+    );
   const customGraphModelText =
-    declaredGraphModelLabel(graphInspection.declaredModel, workflowModelDescriptors) ??
+    (graphModel && modelLabel === graphModel.pipeline
+      ? profile
+        ? getStudioModelDisplayName(profile)
+        : graphModel.repo.split('/').pop()
+      : modelLabel) ??
     (graphInspection.modelRefs.length > 0
       ? `${new Set(graphInspection.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size} model refs`
       : 'Graph-defined');
@@ -809,18 +826,25 @@ export default function StudioPanel() {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
-                    {customGraphMode ? 'Current graph' : 'Current task'}
+                    {customGraphMode && !graphInspection.declaredTask ? 'Current graph' : 'Current task'}
                   </p>
                   <h2 className="truncate text-base font-bold text-modiff-text">
-                    {customGraphMode ? 'Custom graph' : STUDIO_MODE_LABELS[form.mode]}
+                    {customGraphMode
+                      ? graphInspection.declaredTask
+                        ? workflowTaskLabel(graphInspection.declaredTask)
+                        : 'Custom graph'
+                      : STUDIO_MODE_LABELS[form.mode]}
                   </h2>
                 </div>
                 <div className="min-w-0 text-right">
                   <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
-                    {customGraphMode ? 'Graph models' : 'Selected model'}
+                    {customGraphMode && !graphModel ? 'Graph models' : 'Selected model'}
                   </p>
                   <div className="flex items-center justify-end gap-1">
-                    <h3 className="truncate text-base font-bold text-hf-yellow">
+                    <h3
+                      title={customGraphMode ? graphModel?.repo : undefined}
+                      className="truncate text-base font-bold text-hf-yellow"
+                    >
                       {customGraphMode ? customGraphModelText : selectedModelName}
                     </h3>
                     {!customGraphMode && (

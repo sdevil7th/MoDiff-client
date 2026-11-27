@@ -85,11 +85,11 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `61dd5a3bdb95833180c67fdb6af98a8599b0586b`.
+CI backend contract: `ae44ef9592b69f45d36fa01b25ad6d702d6cbda0`.
 
 Both CI jobs use this immutable backend revision. It includes the weight-loading
-controls that the client verifies when it opens saved recipes. Hardware coverage
-is recorded separately.
+controls for saved recipes and the model readiness and storage fields used by the
+client. Hardware coverage is recorded separately.
 
 The 3 November Linux video testing deployment used backend
 `496f3aed56ce1c6a868549df310c68e765712ce3` and client

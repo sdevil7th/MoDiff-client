@@ -272,7 +272,7 @@ function RawModelSelectField(props: FieldProps) {
           type="button"
           onClick={handleOpenModels}
           disabled={props.disabled || isLoading}
-          label="Choose model"
+          label={`Browse models for ${props.label}`}
         >
           <Library size={16} />
         </GraphIconButton>

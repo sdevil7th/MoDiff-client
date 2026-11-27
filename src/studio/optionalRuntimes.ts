@@ -40,6 +40,12 @@ export type OptionalRuntimeProfileStatus = {
   overlayStatus: 'active' | 'missing' | 'repair_required' | 'staged' | 'staged_unchecked';
   satisfiesProfiles: Array<{ profileId: string; specDigest: string }>;
   baseIncluded: boolean;
+  packages?: Array<{
+    distribution: string;
+    requiredVersion: string;
+    installedVersion?: string;
+    status: 'missing' | 'present_unqualified' | 'wrong_version';
+  }>;
 };
 
 export type OptionalRuntimeCatalog = {
@@ -538,8 +544,21 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     satisfiesProfiles.length
   )
     invalid();
+  const rawPackages = item.packages ?? [];
+  if (!Array.isArray(rawPackages) || rawPackages.length > 256) invalid();
+  const packages = rawPackages.map((rawPackage) => {
+    const pkg = record(rawPackage);
+    return {
+      distribution: string(pkg.distribution)!,
+      requiredVersion: string(pkg.requiredVersion)!,
+      installedVersion: pkg.installedVersion === undefined ? undefined : string(pkg.installedVersion)!,
+      status: string(pkg.status, /^(?:missing|present_unqualified|wrong_version)$/) as
+        'missing' | 'present_unqualified' | 'wrong_version',
+    };
+  });
   return {
     ...(item as unknown as OptionalRuntimeProfileStatus),
+    packages,
     satisfiesProfiles,
     baseIncluded: item.baseIncluded === true,
   };
@@ -717,7 +736,10 @@ export function optionalRuntimeSetupStatus(
 ) {
   if (!['active', 'base'].includes(catalog.processLoadStatus))
     return `${catalog.processLoadStatus.replace(/_/g, ' ')}. Follow the existing setup operation or refresh status.`;
-  if (profile.contractState !== 'qualified' || !profile.cutoverReady) return `unavailable (${profile.contractState}).`;
+  if (profile.contractState === 'candidate_unqualified')
+    return 'unavailable — this runtime has not yet been qualified for the target.';
+  if (profile.contractState !== 'qualified' || !profile.cutoverReady)
+    return 'unavailable — installation and activation have not been enabled for this target.';
   if (profile.overlayStatus === 'active') {
     const exact =
       catalog.processLoadStatus === 'active' &&

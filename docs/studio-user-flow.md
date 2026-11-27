@@ -484,3 +484,30 @@ This test avoids claiming real model support when only the UI is available. Use 
 14. Stop the dev processes with the repository stop script and confirm unrelated listeners are left untouched.
 
 For automated UI coverage, run `npm run check:ui`. It uses mocked backend routes and proves client behavior without downloading or executing a real model.
+
+The Models window separates local files from supported model variants. A metadata-only
+or incomplete Hub snapshot stays visible for diagnosis. A verified selection confirms
+the selected files; running the workflow also depends on its requirements. Search
+accepts a repository, variant label, or task. The download view shows the cache
+destination and available capacity when the server reports it.
+
+On shared-memory accelerators, Resource usage shows the accessible pool and dedicated
+reservation separately. The compact gauge names the busiest measured resource. Storage
+shows free space for model downloads, managed Studio outputs, and default disk offload.
+Setup lists requirements for the inspected workflow first. Use **Show other runtimes**
+to explore additional installations.
+
+### Reviewing a run and navigating the canvas
+
+Select a completed run in Queue or Session activity to see that run’s output. Use
+**Open workflow** in the preview to inspect its stages. A result in Gallery has
+a **Download** menu for the available file and recipe formats. **Result details**
+opens its generation settings and provenance. Restoring a result uses its saved
+workflow name when available.
+
+On a narrow screen, the canvas keeps its width as the libraries and workspace
+open one at a time. **More toolbar actions** contains file, setup and export
+controls. Use **Ctrl+K** (or **Command+K**), type a command and press Enter.
+The arrow keys move through available commands. Keyboard users can jump to
+the canvas from the first navigation link or resize a desktop panel by focusing
+its separator and pressing the left or right arrow.

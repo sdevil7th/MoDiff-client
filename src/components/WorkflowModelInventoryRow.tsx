@@ -11,6 +11,7 @@ import type { useNodesStore } from '../stores/useNodeStore';
 /** Generic backend identities never pass through the legacy Studio form or Auto profile table. */
 export default function WorkflowModelInventoryRow({
   descriptor,
+  visibleRows,
   cache,
   local,
   diagnostics,
@@ -21,6 +22,7 @@ export default function WorkflowModelInventoryRow({
   onInstall,
 }: {
   descriptor: WorkflowModelDescriptor;
+  visibleRows?: ReturnType<typeof workflowModelArtifactRows>;
   cache: unknown[];
   local: unknown[];
   diagnostics: ModelCacheDiagnostics | null;
@@ -31,7 +33,7 @@ export default function WorkflowModelInventoryRow({
   onInstall: (target: StudioAutoResourceInstallTarget) => Promise<void>;
 }) {
   const [selectionId, setSelectionId] = useState('');
-  const rows = workflowModelArtifactRows(descriptor);
+  const rows = visibleRows ?? workflowModelArtifactRows(descriptor);
   const row = rows.find((item) => item.id === selectionId) ?? rows[0]!;
   const { status, installTarget, reason } = workflowModelArtifactStatus(row, descriptor, cache, local, diagnostics);
   const repo = row.selection?.repo ?? descriptor.repo;

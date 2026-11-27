@@ -504,3 +504,11 @@ Layers wire. A connected Layers socket stays visible. Undoing the removal or
 reconnecting the same supported model restores the authored settings. The
 editor applies the same presentation rules to older saved workflows and
 uses the current registry to check which model identities the Guider accepts.
+
+## Opening and inspecting a workflow
+
+New task starters fit the visible graph after its stages are measured. Use **Fit workflow in view** to see the whole graph, or select stages and use **Focus selected stages**. These actions move the canvas view and preserve your stage positions.
+
+An ordinary stage displays its working ports and wired outputs. **Show implementation ports** reveals available diagnostics, route state and guidance-layer settings. Connecting one keeps its socket visible when the other implementation ports are hidden. **Choose model** on Model Setup opens supported models for the current task. **Change model / task** in the same dialog previews compatible substitutions and the affected wires. Device selectors use the reported accelerator name alongside the exact runtime device ID when available.
+
+When creating a reusable Block, review the suggested inputs, outputs and editable settings under **Customize Block interface**. Existing external wires keep their ports. Other available ports or settings can be enabled before saving. In **Add custom node**, **Choose Python file** selects a file on your browser computer. **Add node** sends the selected file to the backend and enables it. Local paths entered under **Advanced options** refer to the backend machine.

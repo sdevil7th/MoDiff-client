@@ -2,7 +2,7 @@
 
 import { useSettingsStore } from './stores/useSettingsStore';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { useSnackbar } from './ui/snackbar';
 import { AppWindow, Boxes, GalleryVerticalEnd, LayoutTemplate, Workflow as WorkflowIcon } from 'lucide-react';
 
@@ -26,6 +26,7 @@ import { useRunIssueStore } from './stores/useRunIssueStore.ts';
 import { modiffLayout } from './theme';
 import { cx } from './utils/classNames';
 import { ModiffIconButton } from './ui';
+import { useCompactWorkspace } from './ui/useCompactWorkspace';
 import { openRunActivity } from './studio/runActivity.ts';
 import { useAutoResourcePlanSync } from './studio/useAutoResourcePlanSync.ts';
 import { useWorkflowBackendSync } from './studio/useWorkflowBackendSync.ts';
@@ -102,6 +103,8 @@ function LeftRailButton({
   return (
     <ModiffIconButton
       label={label}
+      aria-expanded={active}
+      aria-controls="modiff-library"
       data-testid={testId}
       className={cx(
         'h-[50px] w-[54px] rounded-none text-modiff-subtle-text hover:bg-modiff-surface-hover hover:text-modiff-text focus-visible:outline-inset',
@@ -117,6 +120,7 @@ function LeftRailButton({
 export default function App() {
   useAutoResourcePlanSync();
   useWorkflowBackendSync();
+  const compact = useCompactWorkspace();
 
   const {
     isLeftPanelOpen,
@@ -124,6 +128,7 @@ export default function App() {
     leftPanelWidth,
     leftPanelTabIndex,
     rightPanelWidth,
+    activeDrawer,
     templateBrowserOpen,
     galleryLibraryOpen,
     mediaViewerOpener,
@@ -135,6 +140,38 @@ export default function App() {
     setRightPanelWidth,
     setRightPanelTab,
   } = useSettingsStore();
+  const leftVisible = isLeftPanelOpen && (!compact || activeDrawer === 'left');
+  const rightVisible = isRightPanelOpen && (!compact || activeDrawer === 'right');
+  const closeDrawer = () => {
+    if (activeDrawer === 'left') setLeftPanelOpen(false);
+    if (activeDrawer === 'right') setRightPanelOpen(false);
+  };
+  const resizeByKey = (event: ReactKeyboardEvent, side: 'left' | 'right') => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const step = event.key === 'ArrowLeft' ? -24 : 24;
+    const limit = Math.floor(window.innerWidth * 0.4);
+    if (side === 'left') setLeftPanelWidth(Math.min(limit, leftPanelWidth + step));
+    else setRightPanelWidth(Math.min(limit, rightPanelWidth - step));
+  };
+
+  useEffect(() => {
+    const openCommands = (event: KeyboardEvent) => {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== 'k' ||
+        document.querySelector('[aria-modal="true"]')
+      )
+        return;
+      event.preventDefault();
+      const settings = useSettingsStore.getState();
+      settings.setRightPanelOpen(true);
+      settings.setRightPanelTab('studio');
+      settings.setCommandPaletteOpen(true);
+    };
+    window.addEventListener('keydown', openCommands);
+    return () => window.removeEventListener('keydown', openCommands);
+  }, []);
 
   const { connect: websocketConnect, disconnect: websocketDisconnect } = useWebsocketStore();
   const websocketConnected = useWebsocketStore((state) => state.isConnected);
@@ -446,7 +483,7 @@ export default function App() {
 
   const handleTabChange = useCallback(
     (index: number) => {
-      if (index === leftPanelTabIndex && isLeftPanelOpen) {
+      if (index === leftPanelTabIndex && leftVisible) {
         setLeftPanelOpen(false);
         setLeftPanelTabIndex(-1);
       } else {
@@ -454,22 +491,45 @@ export default function App() {
         setLeftPanelTabIndex(index);
       }
     },
-    [setLeftPanelTabIndex, setLeftPanelOpen, leftPanelTabIndex, isLeftPanelOpen],
+    [setLeftPanelTabIndex, setLeftPanelOpen, leftPanelTabIndex, leftVisible],
   );
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-modiff-bg text-modiff-text">
+      <a
+        href="#workflow-canvas"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-modiff-panel focus:p-2"
+      >
+        Jump to workflow canvas
+      </a>
       {/* Top Navigation Bar */}
-      <div className="h-[58px] flex-none bg-modiff-surface text-modiff-text">
+      <div className="min-h-[58px] flex-none bg-modiff-surface text-modiff-text">
         <TopBar />
       </div>
 
       {/* Main Content Area */}
-      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+      <div
+        className="relative flex min-h-0 flex-1 flex-row overflow-hidden"
+        onKeyDown={(event) => {
+          if (
+            compact &&
+            activeDrawer &&
+            event.key === 'Escape' &&
+            !event.defaultPrevented &&
+            !document.querySelector('[aria-modal="true"], [role="menu"], [role="listbox"]')
+          ) {
+            closeDrawer();
+            document.getElementById('workflow-canvas')?.focus();
+          }
+        }}
+      >
         {/* Icon Tab Bar */}
-        <div className="flex w-[54px] flex-none flex-col items-center justify-center bg-modiff-bg">
+        <nav
+          aria-label="Libraries"
+          className="flex w-[54px] flex-none flex-col items-center justify-center bg-modiff-bg"
+        >
           <LeftRailButton
-            active={leftPanelTabIndex === 0}
+            active={leftVisible && leftPanelTabIndex === 0}
             label="Node library"
             onClick={() => handleTabChange(0)}
             testId="left-tab-nodes"
@@ -478,7 +538,7 @@ export default function App() {
           </LeftRailButton>
 
           <LeftRailButton
-            active={leftPanelTabIndex === 1}
+            active={leftVisible && leftPanelTabIndex === 1}
             label="Templates library"
             onClick={() => handleTabChange(1)}
             testId="left-tab-templates"
@@ -487,7 +547,7 @@ export default function App() {
           </LeftRailButton>
 
           <LeftRailButton
-            active={leftPanelTabIndex === 2}
+            active={leftVisible && leftPanelTabIndex === 2}
             label="Gallery"
             onClick={() => handleTabChange(2)}
             testId="left-tab-assets"
@@ -496,7 +556,7 @@ export default function App() {
           </LeftRailButton>
 
           <LeftRailButton
-            active={leftPanelTabIndex === 3}
+            active={leftVisible && leftPanelTabIndex === 3}
             label="Models library"
             onClick={() => handleTabChange(3)}
             testId="left-tab-models"
@@ -505,18 +565,25 @@ export default function App() {
           </LeftRailButton>
 
           <LeftRailButton
-            active={leftPanelTabIndex === 4}
+            active={leftVisible && leftPanelTabIndex === 4}
             label="Workflow library"
             onClick={() => handleTabChange(4)}
             testId="left-tab-workflows"
           >
             <WorkflowIcon size={20} />
           </LeftRailButton>
-        </div>
+        </nav>
 
         {/* Left Panel */}
         <div
-          className="relative min-w-0 w-[var(--modiff-left-panel-width)] flex-none overflow-y-auto overflow-x-hidden border-r border-modiff-border bg-modiff-bg"
+          id="modiff-library"
+          hidden={!leftVisible}
+          className={cx(
+            'min-w-0 w-[var(--modiff-left-panel-width)] flex-none overflow-y-auto overflow-x-hidden border-r border-modiff-border bg-modiff-bg',
+            compact
+              ? 'absolute inset-y-0 left-[54px] z-20 max-w-[calc(100%-3.5rem)] shadow-modiff-panel'
+              : 'relative max-w-[40%]',
+          )}
           data-testid="left-panel"
         >
           <Suspense
@@ -538,17 +605,36 @@ export default function App() {
           </Suspense>
 
           {/* Resize handle */}
-          <div
-            className="absolute right-0 top-0 h-full w-[6px] cursor-col-resize hover:bg-modiff-focus/25"
-            data-testid="left-panel-resize-handle"
-            onMouseDown={(e) => startResize('left', e)}
-          />
+          {!compact && (
+            <div
+              role="separator"
+              aria-label="Library width"
+              aria-orientation="vertical"
+              aria-valuenow={leftPanelWidth}
+              aria-valuemin={240}
+              tabIndex={0}
+              onKeyDown={(event) => resizeByKey(event, 'left')}
+              className="absolute right-0 top-0 h-full w-[6px] cursor-col-resize hover:bg-modiff-focus/25"
+              data-testid="left-panel-resize-handle"
+              onMouseDown={(e) => startResize('left', e)}
+            />
+          )}
         </div>
 
         {/* Main Content */}
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <WorkflowTabsBar />
-          <div className="relative min-h-0 flex-1" data-canvas-workspace>
+          <div
+            id="workflow-canvas"
+            role="region"
+            aria-label="Workflow canvas"
+            tabIndex={-1}
+            className="relative min-h-0 flex-1"
+            data-canvas-workspace
+            onFocus={(event) => {
+              if (compact && event.target === event.currentTarget) closeDrawer();
+            }}
+          >
             <Workflow />
             {startupComplete && workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
               <Suspense fallback={null}>
@@ -557,19 +643,35 @@ export default function App() {
             )}
             <RunSessionShelf />
           </div>
-        </div>
+        </main>
 
         {/* Right Panel */}
-        <div className="relative w-[var(--modiff-right-panel-width)] flex-none overflow-y-auto overflow-x-hidden bg-modiff-bg">
-          {isRightPanelOpen ? (
+        <div
+          id="modiff-workspace"
+          hidden={!rightVisible}
+          className={cx(
+            'w-[var(--modiff-right-panel-width)] flex-none overflow-y-auto overflow-x-hidden bg-modiff-bg',
+            compact
+              ? 'absolute inset-y-0 right-0 z-20 max-w-[calc(100%-3.5rem)] border-l border-modiff-border shadow-modiff-panel'
+              : 'relative max-w-[40%]',
+          )}
+        >
+          {rightVisible ? (
             <Suspense fallback={null}>
               <WorkspacePanel />
             </Suspense>
           ) : null}
 
           {/* Resize handle */}
-          {isRightPanelOpen && (
+          {rightVisible && !compact && (
             <div
+              role="separator"
+              aria-label="Workspace width"
+              aria-orientation="vertical"
+              aria-valuenow={rightPanelWidth}
+              aria-valuemin={320}
+              tabIndex={0}
+              onKeyDown={(event) => resizeByKey(event, 'right')}
               className="absolute left-0 top-0 h-full w-[6px] cursor-col-resize hover:bg-modiff-focus/25"
               onMouseDown={(e) => startResize('right', e)}
             />

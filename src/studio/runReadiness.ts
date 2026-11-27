@@ -1368,6 +1368,12 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
   );
   const connectedOutputNodeIds = new Set(connectedOutputNodes.map((node) => node.id));
   const modelRefs = inspectedModelReferences(executableNodes);
+  const tasks = new Set(
+    executableNodes.flatMap((node) => {
+      const operation = operationAuthoring(node)?.operation;
+      return operationOwnsModel(operation) && operation.task ? [operation.task] : [];
+    }),
+  );
   const issues = [
     ...collectUserBlockCompositionIssues(),
     ...collectGraphStructureIssues(executionGraph),
@@ -1393,6 +1399,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
       connected: connectedOutputNodeIds.has(node.id),
     })),
     modelRefs,
+    declaredTask: tasks.size === 1 ? tasks.values().next().value : undefined,
     declaredModel: declaredGraphModel({ nodes: executableNodes, edges }, modelRefs),
     blockingIssues: issues.filter((item) => item.blocking),
   };

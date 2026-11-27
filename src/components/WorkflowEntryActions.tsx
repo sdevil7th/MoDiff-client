@@ -1,6 +1,7 @@
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
+import WorkflowFileImportButton from './WorkflowFileImportButton';
 import { ModiffButton } from '../ui';
 
 /** Shared document actions; workspace choice never creates another graph format. */
@@ -27,8 +28,9 @@ export default function WorkflowEntryActions({ templates = false }: { templates?
             useSettingsStore.getState().setLeftPanelOpen(true);
           }}
         >
-          Open workflow
+          Open saved workflow
         </ModiffButton>
+        <WorkflowFileImportButton onImported={dismiss} />
         {templates ? (
           <ModiffButton
             onClick={() => {

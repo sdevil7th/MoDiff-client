@@ -31,6 +31,8 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { outputWorkflowTitle } from '../studio/outputContracts';
+import { ModiffMenuRoot, ModiffMenuTrigger, ModiffMenuSurface, ModiffMenuAction } from '../ui/menus';
 import { outputTaskDisplay } from '../studio/outputTaskDisplay';
 import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
 import { outputText, outputTextType, textOutputViewerOpener } from '../studio/outputText';
@@ -45,7 +47,15 @@ import {
   downloadPngWithWorkflowMetadata,
   readWorkflowPackageFile,
 } from '../studio/workflowPackage';
-import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
+import {
+  ImageFrame,
+  ModiffBadge,
+  ModiffButton,
+  ModiffDisclosure,
+  ModiffChip,
+  ModiffFileInput,
+  ModiffIconButton,
+} from '../ui';
 import { PreviewMediaFrame } from '../ui/PreviewFrame';
 import { cx } from '../utils/classNames';
 import { imageUrlLightboxOpener, outputImageLightboxOpener } from '../utils/mediaViewer';
@@ -119,7 +129,12 @@ function GalleryMedia({
   if (outputTextType(output)) {
     return (
       <PreviewMediaFrame kind="text" testId="gallery-output-text">
-        <pre className="w-full whitespace-pre-wrap break-words p-3 font-mono text-xs text-modiff-text">
+        <pre
+          className={cx(
+            'w-full overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs text-modiff-text',
+            maxHeight === 210 && 'max-h-[210px]',
+          )}
+        >
           <code>{outputText(output)}</code>
         </pre>
       </PreviewMediaFrame>
@@ -147,7 +162,8 @@ function GalleryMedia({
           controlsList="nodownload noremoteplayback"
           className={cx(
             'block h-full w-full bg-modiff-media-backdrop object-contain',
-            maxHeight ? 'max-h-[460px]' : false,
+            maxHeight === 210 && 'max-h-[210px]',
+            maxHeight === 460 && 'max-h-[460px]',
           )}
         />
       </div>
@@ -186,6 +202,7 @@ function GalleryMedia({
 
 export default function OutputGalleryPanel({ modalView = false }: { modalView?: boolean }) {
   const [assetKind, setAssetKind] = useState<GalleryAssetKind>('generated');
+  const tabs = useStudioStore((state) => state.workflowTabs);
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState<GalleryView>('grid');
   const [selectedOutputIds, setSelectedOutputIds] = useState<string[]>([]);
@@ -538,7 +555,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           ))}
         </div>
       ) : (
-        <div className="grid gap-2">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] items-start gap-3">
           {filteredOutputs.map((output, index) => {
             const previous = filteredOutputs[index + 1];
             const selected = selectedOutputIds.includes(output.id);
@@ -550,17 +567,23 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
               >
                 <GalleryMedia
                   output={output}
-                  maxHeight={420}
+                  maxHeight={210}
                   onImageClick={() => {
                     setSelectedOutputIds([output.id]);
                     setView('inspect');
                   }}
                 />
                 <div className="p-2">
-                  <GalleryMeta output={output} modelLabel={modelLabelFor(output)} />
-                  <p className="mt-1 max-h-10 overflow-hidden text-sm text-modiff-text">
-                    {output.prompt || 'No prompt recorded'}
+                  <h3 className="break-words text-sm font-bold">
+                    {outputWorkflowTitle(output, tabs.find((tab) => tab.id === output.workflowTabId)?.title)}
+                  </h3>
+                  <p className="text-xs text-modiff-subtle-text">
+                    {new Date(output.createdAt).toLocaleString()} · {modelLabelFor(output)}
                   </p>
+                  {output.prompt && <p className="mt-1 line-clamp-2 text-sm text-modiff-text">{output.prompt}</p>}
+                  <ModiffDisclosure className="mt-1 text-xs text-modiff-subtle-text" label="Result details">
+                    <GalleryMeta output={output} modelLabel={modelLabelFor(output)} />
+                  </ModiffDisclosure>
                   <div className="mt-2 flex flex-wrap gap-1">
                     <GalleryIconButton
                       title={
@@ -603,69 +626,86 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     >
                       <Heart size={15} className={output.favorite ? 'fill-hf-yellow text-hf-yellow' : undefined} />
                     </GalleryIconButton>
-                    <GalleryIconButton
-                      title={
-                        outputTextType(output)
-                          ? `Download ${outputTextType(output)}`
-                          : isAudioOutput(output)
-                            ? 'Download audio'
-                            : isVideoOutput(output)
-                              ? 'Download video'
-                              : 'Download image'
-                      }
-                      data-testid={`gallery-download-image-${index}`}
-                      onClick={() => {
-                        const textType = outputTextType(output);
-                        if (textType) {
-                          void exportMedia(
-                            output.url,
-                            `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
-                            'text',
-                            null,
-                            { format: 'original' },
-                          ).catch((error) =>
-                            enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
-                          );
-                          return;
-                        }
-                        const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
-                        setMediaExportOpener({
-                          source: output.url,
-                          filename: `modiff-${outputModelKey(output)}-${output.id}${
-                            kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
-                          }`,
-                          kind,
-                          defaultFormat: kind === 'audio' ? 'wav' : kind === 'video' ? 'mp4' : 'png',
-                          title: `Download ${kind}`,
-                        });
-                      }}
-                    >
-                      <Download size={15} />
-                    </GalleryIconButton>
-                    <GalleryIconButton
-                      title="Download metadata package"
-                      data-testid={`gallery-download-package-${index}`}
-                      onClick={() => downloadOutputPackage(output)}
-                    >
-                      <Download size={15} />
-                    </GalleryIconButton>
-                    {isImageOutput(output) && (
-                      <GalleryIconButton
-                        title="Download PNG package"
-                        data-testid={`gallery-download-png-package-${index}`}
-                        onClick={() => {
-                          void downloadOutputPngPackage(output)
-                            .then(() =>
-                              enqueueSnackbar('PNG package exported', { variant: 'success', autoHideDuration: 1800 }),
-                            )
-                            .catch((error) =>
-                              enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
-                            );
-                        }}
-                      >
-                        <Download size={15} />
-                      </GalleryIconButton>
-                    )}
+                    <ModiffMenuRoot>
+                      <ModiffMenuTrigger>
+                        <ModiffButton
+                          size="compact"
+                          icon={<Download size={14} />}
+                          data-testid={`gallery-download-menu-${index}`}
+                        >
+                          Download
+                        </ModiffButton>
+                      </ModiffMenuTrigger>
+                      <ModiffMenuSurface anchor="bottom start">
+                        {' '}
+                        <ModiffMenuAction
+                          title={
+                            outputTextType(output)
+                              ? `Download ${outputTextType(output)}`
+                              : isAudioOutput(output)
+                                ? 'Download audio'
+                                : isVideoOutput(output)
+                                  ? 'Download video'
+                                  : 'Download image'
+                          }
+                          data-testid={`gallery-download-image-${index}`}
+                          onClick={() => {
+                            const textType = outputTextType(output);
+                            if (textType) {
+                              void exportMedia(
+                                output.url,
+                                `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
+                                'text',
+                                null,
+                                { format: 'original' },
+                              ).catch((error) =>
+                                enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
+                              );
+                              return;
+                            }
+                            const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
+                            setMediaExportOpener({
+                              source: output.url,
+                              filename: `modiff-${outputModelKey(output)}-${output.id}${
+                                kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
+                              }`,
+                              kind,
+                              defaultFormat: kind === 'audio' ? 'wav' : kind === 'video' ? 'mp4' : 'png',
+                              title: `Download ${kind}`,
+                            });
+                          }}
+                        >
+                          {outputTextType(output) ? 'Original text or JSON' : 'Media file…'}
+                        </ModiffMenuAction>
+                        <ModiffMenuAction
+                          title="Download metadata package"
+                          data-testid={`gallery-download-package-${index}`}
+                          onClick={() => downloadOutputPackage(output)}
+                        >
+                          Workflow metadata (JSON)
+                        </ModiffMenuAction>
+                        {isImageOutput(output) && (
+                          <ModiffMenuAction
+                            title="Download PNG package"
+                            data-testid={`gallery-download-png-package-${index}`}
+                            onClick={() => {
+                              void downloadOutputPngPackage(output)
+                                .then(() =>
+                                  enqueueSnackbar('PNG package exported', {
+                                    variant: 'success',
+                                    autoHideDuration: 1800,
+                                  }),
+                                )
+                                .catch((error) =>
+                                  enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
+                                );
+                            }}
+                          >
+                            Image with workflow (PNG)
+                          </ModiffMenuAction>
+                        )}
+                      </ModiffMenuSurface>
+                    </ModiffMenuRoot>
                     <GalleryIconButton
                       title="Restore workflow"
                       data-testid={`gallery-restore-${index}`}
@@ -716,22 +756,6 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           })}
         </div>
       )}
-
-      {activeAssetKind === 'generated' ? (
-        <div className="mt-4">
-          <h2 className="mb-2 text-sm font-bold text-modiff-text">Version tree</h2>
-          <div className="grid gap-1">
-            {outputs.slice(0, 12).map((output) => (
-              <LineageButton
-                key={`lineage-${output.id}`}
-                output={output}
-                modelLabel={modelLabelFor(output)}
-                onClick={() => openOutput(output)}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

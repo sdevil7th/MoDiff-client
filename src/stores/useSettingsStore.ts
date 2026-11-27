@@ -99,6 +99,8 @@ export type WorkflowFocusRequest = {
 
 // values not saved to localStorage. TODO: make this a separate store?
 interface SettingsStateVolatile {
+  activeDrawer: 'left' | 'right' | null;
+  commandPaletteOpen: boolean;
   fileBrowserOpener: fileBrowserParams | null;
   //modelManagerOpener: { nodeId: string, fieldKey: string, fileTypes: string[], path: string } | null;
   modelManagerOpener: { nodeId: string | null; fieldKey: string | null; focus?: FocusedModelManagerTarget } | null;
@@ -125,6 +127,7 @@ interface SettingsStateVolatile {
 }
 
 interface SettingsActions {
+  setCommandPaletteOpen: (open: boolean) => void;
   setWorkflowLibraryView: (view: SettingsStateVolatile['workflowLibraryView']) => void;
   setLeftPanelOpen: (open: boolean) => void;
   setLeftPanelWidth: (width: number) => void;
@@ -190,6 +193,8 @@ const defaultState: SettingsState = {
 };
 
 const defaultVolatileState: SettingsStateVolatile = {
+  activeDrawer: null,
+  commandPaletteOpen: false,
   fileBrowserOpener: null,
   modelManagerOpener: null,
   alertOpener: null,
@@ -218,10 +223,19 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
 
       // Actions
       setWorkflowLibraryView: (view) => set({ workflowLibraryView: view }),
-      setLeftPanelOpen: (open: boolean) => set({ isLeftPanelOpen: open }),
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+      setLeftPanelOpen: (open: boolean) =>
+        set((state) => ({
+          isLeftPanelOpen: open,
+          activeDrawer: open ? 'left' : state.activeDrawer === 'left' ? null : state.activeDrawer,
+        })),
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: Math.max(LEFT_PANEL_WIDTH_MIN, width) }),
       setLeftPanelTabIndex: (index: number) => set({ leftPanelTabIndex: index }),
-      setRightPanelOpen: (open: boolean) => set({ isRightPanelOpen: open }),
+      setRightPanelOpen: (open: boolean) =>
+        set((state) => ({
+          isRightPanelOpen: open,
+          activeDrawer: open ? 'right' : state.activeDrawer === 'right' ? null : state.activeDrawer,
+        })),
       setRightPanelWidth: (width: number) => set({ rightPanelWidth: Math.max(RIGHT_PANEL_WIDTH_MIN, width) }),
       setRightPanelTab: (tab: WorkspacePanelTab) => set({ rightPanelTab: tab }),
 

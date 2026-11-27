@@ -59,7 +59,7 @@ export default function CustomExtensionsPanel({
           aria-pressed={view === 'add'}
           onClick={() => setView('add')}
         >
-          Add node
+          Choose source
         </ModiffButton>
         <ModiffButton
           className="aria-pressed:border-hf-yellow aria-pressed:text-hf-yellow"

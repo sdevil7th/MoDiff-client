@@ -26,6 +26,7 @@ import {
   coerceStudioTemplateId,
   isRecord,
   optionalNullableString,
+  outputWorkflowTitle,
   safeCloneJson,
 } from '../studio/outputContracts';
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
@@ -2524,7 +2525,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         };
 
         get().createWorkflowTab(
-          output.templateLabel || output.prompt.slice(0, 28) || 'Gallery workflow',
+          outputWorkflowTitle(output, get().workflowTabs.find((tab) => tab.id === output.workflowTabId)?.title),
           snapshot,
           'gallery',
           output.id,

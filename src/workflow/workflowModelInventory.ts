@@ -257,6 +257,29 @@ export function workflowModelArtifactRows(descriptor: {
   ];
 }
 
+/** Exact variant searches must also select the matching repository inside its row. */
+export function matchingWorkflowModelArtifactRows(
+  descriptor: Parameters<typeof workflowModelArtifactRows>[0] & { pipeline: string },
+  search: string,
+) {
+  const rows = workflowModelArtifactRows(descriptor);
+  const query = search.trim().toLowerCase();
+  if (!query) return rows;
+  const matching = rows.filter((row) =>
+    [
+      row.selection?.repo ?? descriptor.repo,
+      row.label,
+      row.weightFormat,
+      ...(row.selection && 'modes' in row.selection && Array.isArray(row.selection.modes) ? row.selection.modes : []),
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(query),
+  );
+  if (matching.length) return matching;
+  return `${descriptor.label} ${descriptor.pipeline} ${descriptor.repo}`.toLowerCase().includes(query) ? rows : [];
+}
+
 export function workflowModelArtifactStatus(
   row: ReturnType<typeof workflowModelArtifactRows>[number],
   descriptor: { repo: string; label: string; inventory?: WorkflowModelInventory },

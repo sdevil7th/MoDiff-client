@@ -411,7 +411,7 @@ async function openRunActivityUnsafe(target: RunActivityTarget): Promise<RunActi
   }
   const openTab = workflowTabId ? studio.workflowTabs.find((tab) => tab.id === workflowTabId) : undefined;
 
-  if (openTab) {
+  if (openTab && (target.status !== 'completed' || target.preferWorkflow)) {
     showWorkflow(openTab.id, nodeId, target, localTask, requestRevision);
     if (target.status === 'failed') {
       const issues = useRunIssueStore.getState();
@@ -528,6 +528,10 @@ async function openRunActivityUnsafe(target: RunActivityTarget): Promise<RunActi
     return complete('preview');
   }
 
+  if (target.status === 'completed' && openTab) {
+    showWorkflow(openTab.id, nodeId, target, localTask, requestRevision);
+    return complete('workflow');
+  }
   if (target.status === 'completed') {
     enqueueSnackbar('Run completed, but no previewable output was generated. Showing its Queue details.', {
       variant: 'info',

@@ -626,15 +626,18 @@ export type TemplateCardMedia = {
  * base-template preview. Conversely, a stale, revoked, or mismatched manifest
  * entry must not contribute any generated card media.
  *
- * A template-owned thumbnail remains an editorial fallback for recipes that
- * do not yet have a qualifying generated proof.
+ * The browser sets currentRecipeOnly so historical and editorial artwork cannot
+ * appear as current recipe output. Metadata consumers can still request the legacy fallback.
  */
 export function getTemplateCardMedia(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
+  options: { currentRecipeOnly?: boolean } = {},
 ): TemplateCardMedia {
   const manifestEntry =
-    findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
+    findManifestEntry(template, manifest) ??
+    (!options.currentRecipeOnly ? findHistoricalTemplateManifestEntry(template, manifest) : undefined);
+  if (!manifestEntry && options.currentRecipeOnly) return {};
   const retainedPreview = isRetainedVideoPreview(template, manifestEntry);
   const bundledSourcePreview =
     template.outputKinds?.[0] === 'audio'
@@ -648,9 +651,13 @@ export function getTemplateCardMedia(
     : (manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath);
   const thumbnailPath =
     templateManifestPath(manifestPoster) ??
-    templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath);
+    (!options.currentRecipeOnly
+      ? templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath)
+      : undefined);
   const selectedAudioExample =
-    template.outputKinds?.[0] === 'audio' ? templateManifestPath(template.example?.outputPath) : undefined;
+    !options.currentRecipeOnly && template.outputKinds?.[0] === 'audio'
+      ? templateManifestPath(template.example?.outputPath)
+      : undefined;
   const generatedOutputPath =
     templateManifestPath(manifestEntry?.afterPath ?? manifestEntry?.outputPath) ?? selectedAudioExample;
   const isVideo = template.outputKinds?.[0] === 'video' || manifestEntry?.mediaType === 'video';

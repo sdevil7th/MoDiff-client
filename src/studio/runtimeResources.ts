@@ -14,7 +14,15 @@ export type RuntimeResourceProcess = {
   rssBytes: number | null;
 };
 
+export const storageDestinationLabels = {
+  modelCache: 'Model download cache',
+  outputs: 'Studio outputs',
+  offload: 'Default disk offload',
+} as const;
+type Destination = { path: string; freeBytes: number | null };
+type StorageDestinations = Partial<Record<keyof typeof storageDestinationLabels, Destination>>;
 export type RuntimeStorageResource = {
+  destinations?: StorageDestinations;
   activePercent: number | null;
   activitySource: string | null;
   detectionSource: string | null;
@@ -33,6 +41,10 @@ export type RuntimeAcceleratorResource = {
   backend: string;
   device: string;
   index: number | null;
+  accessibleMemoryFreeBytes?: number | null;
+  accessibleMemoryTotalBytes?: number | null;
+  dedicatedMemoryFreeBytes?: number | null;
+  dedicatedMemoryTotalBytes?: number | null;
   memoryFreeBytes: number | null;
   memoryKind: 'dedicated' | 'shared' | 'unified' | 'system' | 'unknown';
   memoryTotalBytes: number | null;
@@ -91,6 +103,13 @@ export function parseRuntimeResourceSnapshot(value: unknown): RuntimeResourceSna
   const system = record(payload.system) ?? {};
   const process = record(payload.process) ?? {};
   const storage = record(payload.storage) ?? {};
+  const destinations: StorageDestinations = {};
+  const reportedDestinations = record(storage.destinations);
+  for (const role of Object.keys(storageDestinationLabels) as (keyof StorageDestinations)[]) {
+    const entry = record(reportedDestinations?.[role]);
+    const path = text(entry?.path);
+    if (path) destinations[role] = { path, freeBytes: finite(entry?.freeBytes) };
+  }
   const currentRun = record(payload.currentRun);
   const activeDevice = text(payload.activeDevice);
   const accelerators = Array.isArray(payload.accelerators)
@@ -107,6 +126,10 @@ export function parseRuntimeResourceSnapshot(value: unknown): RuntimeResourceSna
             backend: text(accelerator.backend) ?? 'unknown',
             device,
             index: finite(accelerator.index),
+            accessibleMemoryFreeBytes: finite(accelerator.accessibleMemoryFreeBytes),
+            accessibleMemoryTotalBytes: finite(accelerator.accessibleMemoryTotalBytes),
+            dedicatedMemoryFreeBytes: finite(accelerator.dedicatedMemoryFreeBytes),
+            dedicatedMemoryTotalBytes: finite(accelerator.dedicatedMemoryTotalBytes),
             memoryFreeBytes: finite(accelerator.memoryFreeBytes),
             memoryKind: memoryKind(accelerator.memoryKind),
             memoryTotalBytes: finite(accelerator.memoryTotalBytes),
@@ -142,6 +165,7 @@ export function parseRuntimeResourceSnapshot(value: unknown): RuntimeResourceSna
     sampledAt: finite(payload.sampledAt) ?? Date.now() / 1000,
     schemaVersion: 1,
     storage: {
+      destinations,
       activePercent: finite(storage.activePercent),
       activitySource: text(storage.activitySource),
       detectionSource: text(storage.detectionSource),
@@ -182,21 +206,35 @@ export function formatResourcePercent(value: number | null) {
   return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
 }
 
-export function runtimeResourcePressure(snapshot: RuntimeResourceSnapshot | null) {
+export function acceleratorMemoryPercent(active?: RuntimeAcceleratorResource) {
+  if (!active) return null;
+  if (active.memoryKind === 'shared' || active.memoryKind === 'unified') {
+    const total = active.accessibleMemoryTotalBytes;
+    const free = active.accessibleMemoryFreeBytes;
+    return total && total > 0 && free != null ? (100 * (total - free)) / total : null;
+  }
+  return active.memoryUsedBytes != null && active.memoryTotalBytes != null && active.memoryTotalBytes > 0
+    ? (100 * active.memoryUsedBytes) / active.memoryTotalBytes
+    : null;
+}
+
+export function runtimeResourceMetric(snapshot: RuntimeResourceSnapshot | null) {
   if (!snapshot) return null;
   const active = snapshot.accelerators.find((item) => item.active) ?? snapshot.accelerators[0];
-  const gpuMemoryPercent =
-    active?.memoryUsedBytes !== null &&
-    active?.memoryUsedBytes !== undefined &&
-    active.memoryTotalBytes !== null &&
-    active.memoryTotalBytes > 0
-      ? (active.memoryUsedBytes / active.memoryTotalBytes) * 100
-      : null;
-  return Math.max(
-    snapshot.system.cpuPercent ?? 0,
-    snapshot.system.ramPercent ?? 0,
-    snapshot.storage.activePercent ?? 0,
-    active?.utilizationPercent ?? 0,
-    gpuMemoryPercent ?? 0,
-  );
+  const readings = [
+    ['CPU', snapshot.system.cpuPercent],
+    ['RAM', snapshot.system.ramPercent],
+    ['Disk', snapshot.storage.activePercent],
+    ['GPU', active?.utilizationPercent],
+    ['GPU memory', acceleratorMemoryPercent(active)],
+  ] as const;
+  let highest: { label: string; value: number } | null = null;
+  for (const [label, value] of readings) {
+    if (value != null && (highest === null || value > highest.value)) highest = { label, value };
+  }
+  return highest;
+}
+
+export function runtimeResourcePressure(snapshot: RuntimeResourceSnapshot | null) {
+  return runtimeResourceMetric(snapshot)?.value ?? null;
 }

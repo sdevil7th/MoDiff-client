@@ -68,6 +68,9 @@ export function optionalEncodingPorts(
               : port.semanticName.replace(/_/gu, ' ').replace(/\b\w/gu, (c) => c.toUpperCase()),
           type: port.types.length === 1 ? port.types[0] : port.types,
           display: port.direction,
+          ...(port.direction === 'output' && ['doc', 'route_state_out'].includes(port.name ?? port.semanticName)
+            ? { fieldOptions: { encodingImplementationOutput: port.name ?? port.semanticName } }
+            : {}),
           ...(port.direction === 'input' ? { isInput: true } : {}),
           ...(port.roles.includes('component') ? { signalCompatibility: { role: port.semanticName } } : {}),
           required: false,

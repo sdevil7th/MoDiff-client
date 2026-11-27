@@ -1,3 +1,4 @@
+import type { RuntimePackageStatus } from '../stores/useNodeStore';
 import type { OptionDescriptor } from './types';
 import type { NodeParamOptions, NodeParams } from '../stores/useNodeStore';
 import type { CustomNodeType } from '../stores/useFlowStore';
@@ -259,4 +260,19 @@ export function runtimeOptionValues(options: unknown, { includeDisabled = false 
         entry.type === 'option' && (includeDisabled || !entry.disabled),
     )
     .map((entry) => entry.value);
+}
+
+/** Keep the PyTorch device ID intact on disk while naming the physical device in the picker. */
+export function workflowDeviceLabel(value: string, fallback: string, torch: RuntimePackageStatus | undefined) {
+  if (value === 'cpu') return 'CPU';
+  const match = /^(cuda|mps|xpu)(?::(\d+))?$/u.exec(value);
+  if (!match || !torch) return fallback;
+  const [, type = '', index] = match;
+  const devices = type === 'cuda' ? torch.cuda_devices : type === 'mps' ? torch.mps_devices : torch.xpu_devices;
+  const device = devices?.find((item) => item.index === Number(index ?? 0));
+  const name = device?.name || (type === 'cuda' && Number(index ?? 0) === 0 ? torch.cuda_device_name : undefined);
+  if (!name) return fallback;
+  const backend = device && 'backend' in device && typeof device.backend === 'string' ? device.backend : '';
+  const platform = type === 'cuda' && /amd|radeon|rocm|hip/iu.test(name + ' ' + backend) ? 'ROCm' : type.toUpperCase();
+  return `${name} · ${platform} (${value})`;
 }

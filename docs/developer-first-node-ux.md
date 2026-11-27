@@ -25,7 +25,7 @@ Add/Load/Reload authorizes trusted Python in one action. Validation and dependen
 errors are visible; dependencies are never installed implicitly. This is not a
 sandbox or malware scanner.
 
-Drop a structured `.py` file on the canvas, or use Choose Python file. A canvas
+Drop a structured `.py` file on the canvas, or use **Choose Python file** and then **Add node**. Selecting a local file alone keeps it on the browser computer. A canvas
 drop inserts its node, or offers a dropdown when it declares several nodes.
 Dropping inside an expanded Block uses the existing Block adoption transaction.
 Undo removes the insertion, not installed source files. If the workflow changes

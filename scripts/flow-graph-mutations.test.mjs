@@ -1824,6 +1824,39 @@ test('native creation retains deliberately renamed interfaces as explicit contra
   );
 });
 
+test('suggested new Block interface retains external wires, omits internal sockets, and survives save/reopen', async () => {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const { draft } = await groupingFixture(false);
+  const suggested = creation.suggestNewBlockInterface(draft);
+  const block = {
+    ...draft.block,
+    inputs: draft.block.inputs.filter((p) => suggested.exposedInputIds.has(p.id)),
+    outputs: draft.block.outputs.filter((p) => suggested.exposedOutputIds.has(p.id)),
+    exposedParams: draft.block.exposedParams.filter((p) => suggested.exposedParamIds.has(p.id)),
+  };
+  assert.ok(block.outputs.length < draft.block.outputs.length, 'the internally consumed model need not be exposed');
+  assert.equal(block.outputs.length, 2);
+  const selfContained = creation.suggestNewBlockInterface({ ...draft, edges: [] });
+  assert.ok(
+    ![...selfContained.exposedOutputIds].some(
+      (id) => draft.block.outputs.find((p) => p.id === id)?.paramKey === 'model',
+    ),
+  );
+  assert.ok(
+    [...selfContained.exposedOutputIds].some(
+      (id) => draft.block.outputs.find((p) => p.id === id)?.paramKey === 'image',
+    ),
+  );
+  const prepared = creation.prepareUserBlockCreationV2(draft, block);
+  const restored = blockSchemaModule.normalizeBlockDefinitionV2(JSON.parse(JSON.stringify(prepared.definition)));
+  assert.deepEqual(
+    restored.boundary.outputs.map((p) => p.portId),
+    block.outputs.map((p) => p.id),
+  );
+  assert.equal(restored.boundary.mode, 'explicit');
+  assert.throws(() => creation.prepareUserBlockCreationV2(draft, { ...block, outputs: [] }), /externally connected/);
+});
+
 test('cycle validation supports expanded internal reconnects without adding external projection edges', async () => {
   const { prepared } = await groupingFixture(true);
   const { connectionCreatesExecutionCycle } = await server.ssrLoadModule('/src/workflow/connectionCycle.ts');

@@ -50,6 +50,14 @@ after(async () => {
   delete globalThis.sessionStorage;
   delete globalThis.window;
 });
+test('example filename fallback names the workflow and preserves authored labels', async () => {
+  const { workflowExampleDisplayName } = await server.ssrLoadModule('/src/workflow/readWorkflowJson.ts');
+  assert.equal(workflowExampleDisplayName('examples/image-filter.json', 'image-filter'), 'Image filter');
+  assert.equal(workflowExampleDisplayName('examples/image-filter.json', 'Image filter · 調色'), 'Image filter · 調色');
+  assert.equal(workflowExampleDisplayName('examples/video_outpaint.json'), 'Video outpaint');
+  assert.equal(workflowExampleDisplayName('examples/image-filter.json', 'Studio Premiere'), 'Studio Premiere');
+});
+
 function tab(id) {
   return studio.getState().workflowTabs.find((x) => x.id === id);
 }
@@ -734,7 +742,6 @@ for (const scenario of [
   test(`workflow import viewport: ${scenario.name} retains the graph and reports success`, async () => {
     const previousFlow = flow.getState();
     const previousStudio = studio.getState();
-    const previousReader = globalThis.FileReader;
     const previousFetch = globalThis.fetch;
     const currentViewport = { x: 25, y: -30, zoom: 0.75 };
     const operationAuthoring = {
@@ -826,15 +833,15 @@ for (const scenario of [
         return null;
       }
       renderToStaticMarkup(React.createElement(ImportProbe));
-      globalThis.FileReader = class {
-        readAsText() {
-          this.onload({ target: { result: JSON.stringify(value) } });
-        }
-      };
       const before = studio.getState().workflowTabs.length;
       await handleDrop({
         preventDefault() {},
-        dataTransfer: { files: { length: 1, item: () => ({ name: 'Imported.json', type: 'application/json' }) } },
+        dataTransfer: {
+          files: {
+            length: 1,
+            item: () => new File([JSON.stringify(value)], 'Imported.json', { type: 'application/json' }),
+          },
+        },
       });
       assert.equal(studio.getState().workflowTabs.length, before + 1);
       assert.deepEqual(
@@ -870,7 +877,6 @@ for (const scenario of [
     } finally {
       flow.setState(previousFlow);
       studio.setState(previousStudio);
-      globalThis.FileReader = previousReader;
       globalThis.fetch = previousFetch;
     }
   });

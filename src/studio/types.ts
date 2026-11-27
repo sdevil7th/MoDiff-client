@@ -570,6 +570,7 @@ export type GraphInspectionSummary = {
     paramKey: string;
   }>;
   /** Display-only identity of a single literal selector in the executable graph. */
+  declaredTask?: string;
   declaredModel?: { pipeline: string; repo: string; profileId: string };
   blockingIssues: RunReadinessIssue[];
 };

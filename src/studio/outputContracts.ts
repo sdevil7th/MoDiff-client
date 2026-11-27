@@ -554,3 +554,11 @@ export function coerceStudioPreviewSlot(value: unknown): StudioPreviewSlot | nul
     updatedAt: numberValue(value.updatedAt, 0),
   };
 }
+
+/** Display name for a result or its restored tab; never used as execution evidence. */
+export function outputWorkflowTitle(output: StudioOutput, tabTitle?: string) {
+  const hints = isRecord(output.apiGraphSnapshot) ? output.apiGraphSnapshot.runtimeHints : undefined;
+  const recorded = isRecord(hints) ? hints.workflowTitle : undefined;
+  if (typeof recorded === 'string' && recorded.trim()) return recorded.trim();
+  return tabTitle?.trim() || output.templateLabel || output.prompt.trim().slice(0, 40) || 'Workflow result';
+}

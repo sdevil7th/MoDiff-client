@@ -12,10 +12,16 @@ import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffSearchInput } from '.
 import { enqueueSnackbar } from '../ui/snackbar';
 import { formatRequestError } from '../utils/requestJson';
 import { workflowChoices, workflowTaskLabel } from '../workflow/workflowChoices';
-import { WORKFLOW_CATEGORIES, workflowTaskCards, type WorkflowCategory } from '../workflow/workflowTaskBrowser';
+import {
+  WORKFLOW_CATEGORIES,
+  matchesWorkflowTask,
+  workflowTaskCards,
+  type WorkflowCategory,
+} from '../workflow/workflowTaskBrowser';
 import { requestTaskStarter } from '../workflow/operationStarterRequest';
 import { preferredTaskModel } from '../workflow/taskModelPreferences';
 import { createWorkflowDraft } from '../workflow/workflowDraft';
+import WorkflowFileImportButton from './WorkflowFileImportButton';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
 
 const CustomExtensionsDialog = lazy(() => import('./CustomExtensionsDialog'));
@@ -38,6 +44,7 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
   const cards = useMemo(() => workflowTaskCards(choices), [choices]);
   const [category, setCategory] = useState<WorkflowCategory | 'All'>('Image');
   const [query, setQuery] = useState('');
+  const [moreTasks, setMoreTasks] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
@@ -90,7 +97,13 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       useStudioStore.getState().detachManagedGraph();
       prepareWorkflowForManualInsertion();
       const id = useStudioStore.getState().activeWorkflowTabId;
-      if (id) useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
+      if (id) {
+        useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
+        const now = Date.now();
+        useSettingsStore
+          .getState()
+          .setWorkflowFocusRequest({ workflowTabId: id, nodeId: null, requestId: now, requestedAt: now });
+      }
       useStudioStore.getState().saveActiveWorkflowTab(true);
       if (unbound) enqueueSnackbar(message, { variant: 'info', autoHideDuration: 8000 });
     } catch (e) {
@@ -102,12 +115,16 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       }
     }
   }
-  const visible = cards.filter(
+  const searching = query.trim().length > 0;
+  const matches = cards.filter(
     (c) =>
-      (category === 'All' || c.category === category) &&
+      (searching || category === 'All' || c.category === category) &&
       (!downloaded || c.downloaded) &&
-      `${c.label} ${c.task} ${c.description}`.toLowerCase().includes(query.trim().toLowerCase()),
+      matchesWorkflowTask(c, query),
   );
+  const hasMoreTasks =
+    !searching && matches.some((card) => card.specialist) && matches.some((card) => !card.specialist);
+  const visible = hasMoreTasks && !moreTasks ? matches.filter((card) => !card.specialist) : matches;
   if (customSource)
     return (
       <Suspense fallback={null}>
@@ -141,8 +158,9 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
             }}
             disabled={Boolean(busy)}
           >
-            Open workflow
+            Open saved workflow
           </ModiffButton>
+          <WorkflowFileImportButton onImported={dismiss} />
           <ModiffButton
             onClick={() => {
               dismiss();
@@ -165,14 +183,26 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
         {(['All', ...WORKFLOW_CATEGORIES] as const).map((name) => (
           <ModiffButton
             key={name}
-            tone={category === name ? 'primary' : 'secondary'}
-            aria-pressed={category === name}
-            onClick={() => setCategory(name)}
+            tone={(!searching && category === name) || (searching && name === 'All') ? 'primary' : 'secondary'}
+            aria-pressed={searching ? name === 'All' : category === name}
+            onClick={() => {
+              setCategory(name);
+              setQuery('');
+              setMoreTasks(false);
+            }}
           >
             {name}
           </ModiffButton>
         ))}
       </div>
+      {searching && (
+        <p className="text-sm text-modiff-subtle-text" role="status">
+          {WORKFLOW_CATEGORIES.map((name) => ({ name, count: matches.filter((item) => item.category === name).length }))
+            .filter(({ count }) => count > 0)
+            .map(({ name, count }) => `${name} (${count})`)
+            .join(' · ')}
+        </p>
+      )}
       <ModiffCheckbox checked={downloaded} onCheckedChange={setDownloaded} label="With downloaded models" />
       {error ? <p role="alert">{error}</p> : null}
       {busy ? <p role="status">Creating {workflowTaskLabel(busy).toLowerCase()} workflow…</p> : null}
@@ -189,12 +219,21 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
           >
             <span className="block">
               <span className="block font-semibold">{card.label}</span>
-              <span className="mt-1 block text-sm font-normal text-modiff-subtle-text">{card.description}</span>
+              {card.description && (
+                <span className="mt-1 block text-sm font-normal text-modiff-subtle-text">{card.description}</span>
+              )}
             </span>
           </ModiffButton>
         ))}
       </div>
-      {!visible.length ? (
+      {hasMoreTasks && (
+        <ModiffButton aria-expanded={moreTasks} onClick={() => setMoreTasks(!moreTasks)}>
+          {moreTasks
+            ? 'Hide additional image tasks'
+            : `More image tasks and guidance (${matches.filter((card) => card.specialist).length})`}
+        </ModiffButton>
+      )}
+      {!matches.length ? (
         <p role="status">
           {capabilitiesStatus.status === 'loading'
             ? 'Loading workflows…'

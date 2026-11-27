@@ -16,6 +16,7 @@ import {
   ListPlus,
   LoaderCircle,
   MemoryStick,
+  MoreHorizontal,
   Package,
   PanelRightClose,
   PanelRightOpen,
@@ -78,6 +79,7 @@ import {
   ModiffMenuTrigger,
   ModiffTooltip,
 } from '../ui';
+import { useCompactWorkspace } from '../ui/useCompactWorkspace';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
 import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
 
@@ -108,6 +110,8 @@ type TopBarButtonProps = {
   onClick?: () => void;
   title?: string;
   testId?: string;
+  expanded?: boolean;
+  controls?: string;
   tone?: 'primary' | 'quiet' | 'danger' | 'active' | 'success' | 'error';
 };
 
@@ -120,12 +124,16 @@ function TopBarButton({
   onClick,
   title,
   testId,
+  expanded,
+  controls,
   tone = 'quiet',
 }: TopBarButtonProps) {
   return (
     <ModiffButton
       title={title}
       aria-label={title}
+      aria-expanded={expanded}
+      aria-controls={controls}
       data-testid={testId}
       disabled={disabled}
       loading={loading}
@@ -218,6 +226,9 @@ function aggregateDownloadPercent(downloads: ReturnType<typeof useNodesStore.get
 const selectPolicyNodes = createDurableNodesSelector();
 
 function TopBar() {
+  const compact = useCompactWorkspace();
+  const [moreActions, setMoreActions] = useState(false);
+  const drawer = useSettingsStore((state) => state.activeDrawer);
   const {
     isRightPanelOpen,
     setRightPanelOpen,
@@ -642,342 +653,387 @@ function TopBar() {
     if (graphBindingDivergence) detachManagedGraph();
   }, [detachManagedGraph, graphBindingDivergence]);
 
-  return (
-    <div className="flex h-full w-full items-center justify-between gap-3 overflow-x-auto overflow-y-hidden px-4 py-2 text-modiff-text">
-      <div className="flex flex-none items-center gap-2">
-        <img src="/assets/modiff-icon-128.png" alt="MoDiff" className="h-9 w-9 flex-none object-contain" />
-        <div className="mr-2 text-lg font-bold leading-none tracking-normal">MoDiff</div>
-
-        <TopBarButton icon={<FilePlus2 size={16} />} onClick={handleNewClick} testId="topbar-new-workflow">
-          New
+  const workspaceVisible = isRightPanelOpen && (!compact || drawer === 'right');
+  const files = (
+    <>
+      <TopBarButton icon={<FilePlus2 size={16} />} onClick={handleNewClick} testId="topbar-new-workflow">
+        New
+      </TopBarButton>
+      <div className="flex items-center">
+        <TopBarButton
+          disabled={!activeWorkflowTab || savingWorkflow}
+          icon={<Save size={16} />}
+          loading={savingWorkflow}
+          onClick={() => {
+            void persistCurrentWorkflow();
+          }}
+          title={
+            activeWorkflowTab ? `Save ${activeWorkflowTab.title} to My workflows (Ctrl/⌘+S)` : 'No workflow to save'
+          }
+          testId="topbar-save-workflow"
+          className="rounded-r-none"
+        >
+          Save
         </TopBarButton>
-        <div className="flex items-center">
-          <TopBarButton
-            disabled={!activeWorkflowTab || savingWorkflow}
-            icon={<Save size={16} />}
-            loading={savingWorkflow}
-            onClick={() => {
-              void persistCurrentWorkflow();
-            }}
-            title={
-              activeWorkflowTab ? `Save ${activeWorkflowTab.title} to My workflows (Ctrl/⌘+S)` : 'No workflow to save'
-            }
-            testId="topbar-save-workflow"
-            className="rounded-r-none"
-          >
-            Save
-          </TopBarButton>
-          <ModiffMenuRoot>
-            <ModiffMenuTrigger>
-              <ModiffIconButton
-                label="Workflow save options"
-                disabled={!activeWorkflowTab}
-                size="normal"
-                tone="ghost"
-                className="rounded-none border border-transparent bg-modiff-panel/60"
-                data-testid="topbar-save-workflow-options"
-              >
-                <ChevronDown size={14} />
-              </ModiffIconButton>
-            </ModiffMenuTrigger>
-            <ModiffMenuSurface anchor="bottom start" className="min-w-52" data-testid="topbar-save-workflow-menu">
-              <ModiffMenuAction
-                onClick={() => void persistCurrentWorkflow()}
-                icon={<Save size={16} />}
-                data-testid="topbar-save-current-workflow"
-              >
-                Save
-                <span className="ml-auto text-modiff-label text-modiff-subtle-text">Ctrl/⌘+S</span>
-              </ModiffMenuAction>
-              <ModiffMenuAction
-                onClick={() => openSaveAs('library')}
-                icon={<SaveAll size={16} />}
-                data-testid="topbar-save-workflow-as"
-              >
-                Save as…
-                <span className="ml-auto text-modiff-label text-modiff-subtle-text">Ctrl/⌘+Shift+S</span>
-              </ModiffMenuAction>
-              <ModiffMenuAction
-                onClick={() => openSaveAs('file')}
-                icon={<FileJson2 size={16} />}
-                data-testid="topbar-save-workflow-file"
-              >
-                Save JSON copy…
-              </ModiffMenuAction>
-            </ModiffMenuSurface>
-          </ModiffMenuRoot>
-        </div>
         <ModiffMenuRoot>
           <ModiffMenuTrigger>
-            <ModiffButton
-              icon={<Download size={16} />}
+            <ModiffIconButton
+              label="Workflow save options"
+              disabled={!activeWorkflowTab}
               size="normal"
               tone="ghost"
-              className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
-              data-testid="topbar-export"
+              className="rounded-none border border-transparent bg-modiff-panel/60"
+              data-testid="topbar-save-workflow-options"
             >
-              Export
-              <ChevronDown size={14} aria-hidden="true" />
-            </ModiffButton>
+              <ChevronDown size={14} />
+            </ModiffIconButton>
           </ModiffMenuTrigger>
-          <ModiffMenuSurface anchor="bottom start" className="min-w-52" data-testid="topbar-export-menu">
+          <ModiffMenuSurface anchor="bottom start" className="min-w-52" data-testid="topbar-save-workflow-menu">
             <ModiffMenuAction
-              onClick={handleWorkflowPackageExportClick}
-              data-testid="topbar-export-workflow-package"
-              icon={<Package size={16} />}
+              onClick={() => void persistCurrentWorkflow()}
+              icon={<Save size={16} />}
+              data-testid="topbar-save-current-workflow"
             >
-              Workflow package
+              Save
+              <span className="ml-auto text-modiff-label text-modiff-subtle-text">Ctrl/⌘+S</span>
             </ModiffMenuAction>
             <ModiffMenuAction
-              disabled={!latestWorkflowOutput}
-              onClick={handleLatestOutputPackageExportClick}
-              data-testid="topbar-export-latest-output"
-              icon={<Image size={16} />}
-              title={
-                latestWorkflowOutput
-                  ? 'Export the latest active workflow output package'
-                  : 'No active workflow output yet'
-              }
+              onClick={() => openSaveAs('library')}
+              icon={<SaveAll size={16} />}
+              data-testid="topbar-save-workflow-as"
             >
-              Latest output package
+              Save as…
+              <span className="ml-auto text-modiff-label text-modiff-subtle-text">Ctrl/⌘+Shift+S</span>
             </ModiffMenuAction>
             <ModiffMenuAction
-              onClick={handleOpenGalleryClick}
-              data-testid="topbar-export-open-gallery"
-              icon={<GalleryVerticalEnd size={16} />}
+              onClick={() => openSaveAs('file')}
+              icon={<FileJson2 size={16} />}
+              data-testid="topbar-save-workflow-file"
             >
-              Open Gallery
+              Save JSON copy…
             </ModiffMenuAction>
-            <>
-              <ModiffMenuSeparator />
-              <ModiffMenuAction
-                onClick={handleRawWorkflowExportClick}
-                data-testid="topbar-export-raw-workflow"
-                icon={<FileJson2 size={16} />}
-              >
-                Workflow JSON
-              </ModiffMenuAction>
-              <ModiffMenuAction
-                disabled={!sid}
-                onClick={handleApiExportClick}
-                data-testid="topbar-export-api-graph"
-                title="Executable backend API graph JSON"
-                icon={<FileJson2 size={16} />}
-              >
-                API graph JSON
-              </ModiffMenuAction>
-              <ModiffMenuAction
-                disabled={!sid}
-                onClick={() => setServiceExportOpen(true)}
-                data-testid="topbar-export-service"
-                icon={<Package size={16} />}
-              >
-                Service package
-              </ModiffMenuAction>
-            </>
           </ModiffMenuSurface>
         </ModiffMenuRoot>
       </div>
-
-      <div className="flex flex-none items-center gap-2">
-        <ModiffTooltip
-          content={
-            <div className="max-w-72 space-y-1">
-              <div className="font-semibold">Memory: {formResourceMode === 'auto' ? 'Automatic' : 'Custom'}</div>
-              <div>Automatic chooses supported placement and offload settings. Custom keeps your node settings.</div>
-              {customGraphAutoUnavailable ? <div>{customGraphAutoUnavailableReason}</div> : null}
-            </div>
-          }
-        >
-          {(tooltipProps) => (
-            <ModiffButton
-              {...tooltipProps}
-              aria-label={`Memory policy: ${formResourceMode === 'auto' ? 'Automatic' : 'Custom'}. Click to switch.`}
-              aria-pressed={formResourceMode === 'auto'}
-              data-testid="topbar-resource-policy"
-              className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
-              icon={<MemoryStick size={16} />}
-              onClick={() => {
-                const next = formResourceMode === 'auto' ? 'expert' : 'auto';
-                if (next === 'auto' && customGraphAutoUnavailable) {
-                  enqueueSnackbar(customGraphAutoUnavailableReason, { variant: 'warning' });
-                  return;
-                }
-                handleResourceModeChange(next);
-              }}
-              size="normal"
-              tone="ghost"
-            >
-              {formResourceMode === 'auto' ? 'Auto' : 'Custom'}
-            </ModiffButton>
-          )}
-        </ModiffTooltip>
-        <TopBarButton
-          disabled={graphFixPlan.issues.length === 0}
-          icon={
-            !graphFix.module && !graphFix.error && graphFixNodes.length > 0 ? (
-              <LoaderCircle size={16} className="animate-spin" />
-            ) : (
-              <WandSparkles size={16} />
-            )
-          }
-          onClick={openGraphFixDialog}
-          title={
-            graphFix.error ??
-            (!graphFix.module && graphFixNodes.length > 0
-              ? 'Loading graph fixes…'
-              : graphFixPlan.issues.length > 0
-                ? `Fix ${graphFixPlan.issues.length} graph ${graphFixPlan.issues.length === 1 ? 'issue' : 'issues'}`
-                : 'No deterministic graph fixes available')
-          }
-          testId="graph-fix"
-          tone={graphFixPlan.issues.length > 0 ? 'active' : 'quiet'}
-        ></TopBarButton>
-        <div className="flex items-center">
-          <TopBarButton
-            disabled={runDisabled}
-            icon={
-              isRepeating || autoResourceCheckActive || isSubmittingRun ? (
-                <LoaderCircle size={16} className="animate-spin" />
-              ) : (
-                <ExecuteIcon size={16} />
-              )
-            }
-            onClick={() => {
-              void handleExecuteClick();
-            }}
-            tone="primary"
+      <ModiffMenuRoot>
+        <ModiffMenuTrigger>
+          <ModiffButton
+            icon={<Download size={16} />}
+            size="normal"
+            tone="ghost"
+            className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
+            data-testid="topbar-export"
+          >
+            Export
+            <ChevronDown size={14} aria-hidden="true" />
+          </ModiffButton>
+        </ModiffMenuTrigger>
+        <ModiffMenuSurface anchor="bottom start" className="min-w-52" data-testid="topbar-export-menu">
+          <ModiffMenuAction
+            onClick={handleWorkflowPackageExportClick}
+            data-testid="topbar-export-workflow-package"
+            icon={<Package size={16} />}
+          >
+            Workflow package
+          </ModiffMenuAction>
+          <ModiffMenuAction
+            disabled={!latestWorkflowOutput}
+            onClick={handleLatestOutputPackageExportClick}
+            data-testid="topbar-export-latest-output"
+            icon={<Image size={16} />}
             title={
-              runReadiness.isPreparing
-                ? 'Preparing graph'
-                : isSubmittingRun
-                  ? 'Submitting graph to the queue'
-                  : (blockingRunIssue?.message ??
-                    (isConnected
-                      ? selectedExecuteOption.id === 'run' && queueIsBusy
-                        ? 'Queue current graph without interrupting active work'
-                        : 'Run current graph'
-                      : 'Backend is not connected'))
+              latestWorkflowOutput
+                ? 'Export the latest active workflow output package'
+                : 'No active workflow output yet'
             }
-            testId="studio-run"
-            className="rounded-r-none border-r-modiff-on-accent/10"
           >
-            {autoResourceCheckActive || isSubmittingRun
-              ? selectedExecuteOption.id === 'run' && queueIsBusy
-                ? 'Queueing...'
-                : 'Starting...'
-              : selectedExecuteOption.label}
-          </TopBarButton>
-          <ModiffMenuRoot>
-            <ModiffMenuTrigger>
-              <ModiffIconButton
-                label="Run mode"
-                disabled={!isConnected || isSubmittingRun}
-                size="normal"
-                tone="primary"
-                className="rounded-none"
-              >
-                <ChevronDown size={16} />
-              </ModiffIconButton>
-            </ModiffMenuTrigger>
-            <ModiffMenuSurface anchor="bottom end" className="min-w-36" data-testid="run-mode-menu">
-              {visibleExecuteOptions.map((option, index) => {
-                const Icon = option.Icon;
-                return (
-                  <ModiffMenuAction
-                    key={option.id}
-                    data-testid={`run-mode-${option.id}`}
-                    selected={executeButtonIndex === index}
-                    onClick={() => handleExecuteOptionClick(index)}
-                    icon={<Icon size={16} />}
-                  >
-                    {option.label}
-                  </ModiffMenuAction>
-                );
-              })}
-            </ModiffMenuSurface>
-          </ModiffMenuRoot>
-        </div>
-
-        <TopBarButton
-          disabled={stopDisabled}
-          icon={<Square size={16} />}
-          onClick={() => {
-            void handleStopClick();
-          }}
-          title={isConnected ? 'Stop' : 'Stop run and restart unresponsive backend'}
-          tone="danger"
-        />
-        <ProgressBadge progress={currentTask?.progress ?? 0} taskCount={taskCount} />
-      </div>
-
-      <div className="flex flex-none items-center gap-2">
-        <TopBarButton
-          icon={isRightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          title={isRightPanelOpen ? 'Collapse workspace' : 'Open workspace'}
-          testId="topbar-toggle-workspace"
-          onClick={() => setRightPanelOpen(!isRightPanelOpen)}
-          tone={isRightPanelOpen ? 'active' : 'quiet'}
-        />
-        <ModiffIconButton
-          label="Workflow resources"
-          title="Assess this workflow’s resources"
-          data-testid="topbar-workflow-resources"
-          onClick={() => {
-            useSettingsStore.getState().setRightPanelTab('compatibility');
-            useSettingsStore.getState().setRightPanelOpen(true);
-          }}
-        >
-          <Info size={15} />
-        </ModiffIconButton>
-        <RuntimeResourceMonitor active={Boolean(currentTask)} connected={isConnected} />
-        {(activeDownloadCount > 0 || failedDownloadCount > 0) && (
-          <TopBarButton
-            icon={
-              activeDownloadCount > 0 ? (
-                <LoaderCircle size={17} className="animate-spin" />
-              ) : (
-                <CloudDownload size={17} />
-              )
-            }
-            onClick={handleShowDownloads}
-            title="Model downloads"
-            testId="topbar-download-activity"
-            tone={failedDownloadCount > 0 ? 'error' : 'active'}
+            Latest output package
+          </ModiffMenuAction>
+          <ModiffMenuAction
+            onClick={handleOpenGalleryClick}
+            data-testid="topbar-export-open-gallery"
+            icon={<GalleryVerticalEnd size={16} />}
           >
-            {activeDownloadCount > 0
-              ? `${activeDownloadCount} ${downloadPercent !== null ? `${downloadPercent}%` : 'downloading'}`
-              : `${failedDownloadCount} failed`}
-          </TopBarButton>
+            Open Gallery
+          </ModiffMenuAction>
+          <>
+            <ModiffMenuSeparator />
+            <ModiffMenuAction
+              onClick={handleRawWorkflowExportClick}
+              data-testid="topbar-export-raw-workflow"
+              icon={<FileJson2 size={16} />}
+            >
+              Workflow JSON
+            </ModiffMenuAction>
+            <ModiffMenuAction
+              disabled={!sid}
+              onClick={handleApiExportClick}
+              data-testid="topbar-export-api-graph"
+              title="Executable backend API graph JSON"
+              icon={<FileJson2 size={16} />}
+            >
+              API graph JSON
+            </ModiffMenuAction>
+            <ModiffMenuAction
+              disabled={!sid}
+              onClick={() => setServiceExportOpen(true)}
+              data-testid="topbar-export-service"
+              icon={<Package size={16} />}
+            >
+              Service package
+            </ModiffMenuAction>
+          </>
+        </ModiffMenuSurface>
+      </ModiffMenuRoot>
+    </>
+  );
+  const policies = (
+    <>
+      <ModiffTooltip
+        content={
+          <div className="max-w-72 space-y-1">
+            <div className="font-semibold">Memory: {formResourceMode === 'auto' ? 'Automatic' : 'Custom'}</div>
+            <div>Automatic chooses supported placement and offload settings. Custom keeps your node settings.</div>
+            {customGraphAutoUnavailable ? <div>{customGraphAutoUnavailableReason}</div> : null}
+          </div>
+        }
+      >
+        {(tooltipProps) => (
+          <ModiffButton
+            {...tooltipProps}
+            aria-label={`Memory policy: ${formResourceMode === 'auto' ? 'Automatic' : 'Custom'}. Click to switch.`}
+            aria-pressed={formResourceMode === 'auto'}
+            data-testid="topbar-resource-policy"
+            className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
+            icon={<MemoryStick size={16} />}
+            onClick={() => {
+              const next = formResourceMode === 'auto' ? 'expert' : 'auto';
+              if (next === 'auto' && customGraphAutoUnavailable) {
+                enqueueSnackbar(customGraphAutoUnavailableReason, { variant: 'warning' });
+                return;
+              }
+              handleResourceModeChange(next);
+            }}
+            size="normal"
+            tone="ghost"
+          >
+            {formResourceMode === 'auto' ? 'Auto' : 'Custom'}
+          </ModiffButton>
         )}
+      </ModiffTooltip>
+      <TopBarButton
+        disabled={graphFixPlan.issues.length === 0}
+        icon={
+          !graphFix.module && !graphFix.error && graphFixNodes.length > 0 ? (
+            <LoaderCircle size={16} className="animate-spin" />
+          ) : (
+            <WandSparkles size={16} />
+          )
+        }
+        onClick={openGraphFixDialog}
+        title={
+          graphFix.error ??
+          (!graphFix.module && graphFixNodes.length > 0
+            ? 'Loading graph fixes…'
+            : graphFixPlan.issues.length > 0
+              ? `Fix ${graphFixPlan.issues.length} graph ${graphFixPlan.issues.length === 1 ? 'issue' : 'issues'}`
+              : 'No deterministic graph fixes available')
+        }
+        testId="graph-fix"
+        tone={graphFixPlan.issues.length > 0 ? 'active' : 'quiet'}
+      ></TopBarButton>
+    </>
+  );
+  const tools = (
+    <>
+      <ModiffIconButton
+        label="Workflow resources"
+        title="Assess this workflow’s resources"
+        data-testid="topbar-workflow-resources"
+        onClick={() => {
+          useSettingsStore.getState().setRightPanelTab('compatibility');
+          useSettingsStore.getState().setRightPanelOpen(true);
+        }}
+      >
+        <Info size={15} />
+      </ModiffIconButton>
+      <RuntimeResourceMonitor active={Boolean(currentTask)} connected={isConnected} />
+      {(activeDownloadCount > 0 || failedDownloadCount > 0) && (
         <TopBarButton
-          icon={<Boxes size={17} />}
-          onClick={() => setModelManagerOpener({ nodeId: null, fieldKey: null })}
-          testId="topbar-models"
-          title="Models"
-        />
-        <TopBarButton
-          icon={<GalleryVerticalEnd size={17} />}
-          onClick={() => setTemplateBrowserOpen(true)}
-          title="Templates"
-          testId="topbar-templates"
-        />
-        <TopBarButton icon={<Settings size={17} />} onClick={() => setSettingsOpener(true)} title="Settings" />
-        <TopBarButton
-          icon={<Image size={17} />}
-          onClick={() => setGalleryLibraryOpen(true)}
-          testId="topbar-gallery"
-          title="Gallery"
-          tone="quiet"
-        />
-        <TopBarButton
-          icon={isConnected ? <Wifi size={17} /> : <WifiOff size={17} />}
-          onClick={handleConnect}
-          title={isConnected ? 'Connected' : 'Disconnected'}
-          tone={isConnected ? 'success' : 'error'}
-        />
-      </div>
+          icon={
+            activeDownloadCount > 0 ? <LoaderCircle size={17} className="animate-spin" /> : <CloudDownload size={17} />
+          }
+          onClick={handleShowDownloads}
+          title="Model downloads"
+          testId="topbar-download-activity"
+          tone={failedDownloadCount > 0 ? 'error' : 'active'}
+        >
+          {activeDownloadCount > 0
+            ? `${activeDownloadCount} ${downloadPercent !== null ? `${downloadPercent}%` : 'downloading'}`
+            : `${failedDownloadCount} failed`}
+        </TopBarButton>
+      )}
+      <TopBarButton
+        icon={<Boxes size={17} />}
+        onClick={() => setModelManagerOpener({ nodeId: null, fieldKey: null })}
+        testId="topbar-models"
+        title="Models"
+      >
+        {compact && 'Models'}
+      </TopBarButton>
+      <TopBarButton
+        icon={<GalleryVerticalEnd size={17} />}
+        onClick={() => setTemplateBrowserOpen(true)}
+        title="Templates"
+        testId="topbar-templates"
+      >
+        {compact && 'Templates'}
+      </TopBarButton>
+      <TopBarButton icon={<Settings size={17} />} onClick={() => setSettingsOpener(true)} title="Settings">
+        {compact && 'Settings'}
+      </TopBarButton>
+      <TopBarButton
+        icon={<Image size={17} />}
+        onClick={() => setGalleryLibraryOpen(true)}
+        testId="topbar-gallery"
+        title="Gallery"
+        tone="quiet"
+      >
+        {compact && 'Outputs'}
+      </TopBarButton>
+      <TopBarButton
+        icon={isConnected ? <Wifi size={17} /> : <WifiOff size={17} />}
+        onClick={handleConnect}
+        title={isConnected ? 'Connected' : 'Disconnected'}
+        tone={isConnected ? 'success' : 'error'}
+      />
+    </>
+  );
+  return (
+    <div className="w-full text-modiff-text">
+      <div className="flex min-h-[58px] items-center justify-between gap-1 px-2 py-2 sm:gap-2 sm:px-3">
+        <div className="flex shrink-0 items-center gap-2">
+          <img src="/assets/modiff-icon-128.png" alt="MoDiff" className="size-8 object-contain" />
+          <span className="hidden text-lg font-bold sm:inline">MoDiff</span>
+          {!compact && files}
+        </div>
+        <div className="flex items-center gap-1 sm:gap-2">
+          {!compact && policies}
+          <div className="flex items-center">
+            <TopBarButton
+              disabled={runDisabled}
+              icon={
+                isRepeating || autoResourceCheckActive || isSubmittingRun ? (
+                  <LoaderCircle size={16} className="animate-spin" />
+                ) : (
+                  <ExecuteIcon size={16} />
+                )
+              }
+              onClick={() => {
+                void handleExecuteClick();
+              }}
+              tone="primary"
+              title={
+                runReadiness.isPreparing
+                  ? 'Preparing graph'
+                  : isSubmittingRun
+                    ? 'Submitting graph to the queue'
+                    : (blockingRunIssue?.message ??
+                      (isConnected
+                        ? selectedExecuteOption.id === 'run' && queueIsBusy
+                          ? 'Queue current graph without interrupting active work'
+                          : 'Run current graph'
+                        : 'Backend is not connected'))
+              }
+              testId="studio-run"
+              className="rounded-r-none border-r-modiff-on-accent/10"
+            >
+              {autoResourceCheckActive || isSubmittingRun
+                ? selectedExecuteOption.id === 'run' && queueIsBusy
+                  ? 'Queueing...'
+                  : 'Starting...'
+                : selectedExecuteOption.label}
+            </TopBarButton>
+            <ModiffMenuRoot>
+              <ModiffMenuTrigger>
+                <ModiffIconButton
+                  label="Run mode"
+                  disabled={!isConnected || isSubmittingRun}
+                  size="normal"
+                  tone="primary"
+                  className="rounded-none"
+                >
+                  <ChevronDown size={16} />
+                </ModiffIconButton>
+              </ModiffMenuTrigger>
+              <ModiffMenuSurface anchor="bottom end" className="min-w-36" data-testid="run-mode-menu">
+                {visibleExecuteOptions.map((option, index) => {
+                  const Icon = option.Icon;
+                  return (
+                    <ModiffMenuAction
+                      key={option.id}
+                      data-testid={`run-mode-${option.id}`}
+                      selected={executeButtonIndex === index}
+                      onClick={() => handleExecuteOptionClick(index)}
+                      icon={<Icon size={16} />}
+                    >
+                      {option.label}
+                    </ModiffMenuAction>
+                  );
+                })}
+              </ModiffMenuSurface>
+            </ModiffMenuRoot>
+          </div>
 
+          <TopBarButton
+            disabled={stopDisabled}
+            icon={<Square size={16} />}
+            onClick={() => {
+              void handleStopClick();
+            }}
+            title={isConnected ? 'Stop' : 'Stop run and restart unresponsive backend'}
+            tone="danger"
+          />
+          <ProgressBadge progress={currentTask?.progress ?? 0} taskCount={taskCount} />
+        </div>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <TopBarButton
+            icon={workspaceVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+            title={workspaceVisible ? 'Collapse workspace' : 'Open workspace'}
+            testId="topbar-toggle-workspace"
+            expanded={workspaceVisible}
+            controls="modiff-workspace"
+            onClick={() => setRightPanelOpen(!workspaceVisible)}
+            tone={workspaceVisible ? 'active' : 'quiet'}
+          />
+
+          {compact ? (
+            <ModiffButton
+              aria-label="More toolbar actions"
+              aria-expanded={moreActions}
+              aria-controls="more-toolbar-actions"
+              tone="ghost"
+              icon={<MoreHorizontal size={18} />}
+              onClick={() => setMoreActions(!moreActions)}
+            >
+              <span className="hidden sm:inline">More</span>
+            </ModiffButton>
+          ) : (
+            tools
+          )}
+        </div>
+      </div>
+      {compact && moreActions && (
+        <nav
+          id="more-toolbar-actions"
+          aria-label="More toolbar actions"
+          className="flex flex-wrap items-center gap-1 border-t border-modiff-border bg-modiff-panel px-2 py-2"
+        >
+          {files}
+          {policies}
+          {tools}
+        </nav>
+      )}
       <Suspense fallback={null}>
         {serviceExportOpen && (
           <ServiceExportDialog getGraph={buildTopBarWorkflowPackage} onClose={() => setServiceExportOpen(false)} />

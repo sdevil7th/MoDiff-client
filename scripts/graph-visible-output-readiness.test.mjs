@@ -175,7 +175,9 @@ test('the graph names only an unambiguous owner with literal model selectors', (
   };
   flow.getState().replaceGraph({ nodes: [loader], edges: [] });
   const before = structuredClone(flow.getState().toObject());
-  const declared = readiness.inspectCurrentGraph().declaredModel;
+  const summary = readiness.inspectCurrentGraph();
+  assert.equal(summary.declaredTask, 'text_to_video_with_audio');
+  const declared = summary.declaredModel;
   assert.deepEqual(declared, {
     pipeline,
     repo: 'publisher/example',

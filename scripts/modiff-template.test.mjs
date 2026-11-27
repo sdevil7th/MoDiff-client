@@ -7939,6 +7939,18 @@ test('shared pipeline classes resolve one exact Expert artifact per workflow mod
       },
     ],
   };
+  const sharedRepoVariants = profilesModule.expandArtifactSelectionProfiles({
+    ...profile,
+    artifactSelections: [
+      { ...profile.artifactSelections[0], repo: 'example/same', modes: ['text_to_image'] },
+      { ...profile.artifactSelections[1], repo: 'example/same', modes: ['image_to_video'] },
+    ],
+  });
+  assert.deepEqual(
+    sharedRepoVariants.map((entry) => entry.surfaceCategory),
+    ['Image', 'Video'],
+  );
+  assert.equal(new Set(sharedRepoVariants.map(profilesModule.modelInventoryRowKey)).size, 2);
   const variants = profilesModule.expandArtifactSelectionProfiles(profile);
   assert.deepEqual(
     variants.map(({ modes, defaultRepo, revisionCandidates, downloadFiles }) => ({

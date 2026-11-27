@@ -254,6 +254,9 @@ const TASK_LABELS: Record<string, string> = {
   edit_image: 'Image edit',
   inpaint: 'Inpaint',
   outpaint: 'Outpaint',
+  flf2v: 'Video from first and last frames',
+  first_last_frame_to_video_with_audio: 'Video and audio from first and last frames',
+  in_context_to_video: 'Generate video with a reference clip',
   control_image: 'Image conditioning',
   multi_image_reference_edit: 'Edit with image references',
 };

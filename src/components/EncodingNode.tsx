@@ -13,6 +13,7 @@ import EncodingNodeControls from './EncodingNodeControls';
 import GuidanceNodeControls from './GuidanceNodeControls';
 import EncodingNodeMenu from './EncodingNodeMenu';
 import NodeContent from './NodeContent';
+import { ModiffButton } from '../ui';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
@@ -35,6 +36,7 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   const [inspectOpen, setInspectOpen] = useState(false);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [showPorts, setShowPorts] = useState(false);
   useNodesStore((state) => state.operationContracts);
   useNodesStore((state) => state.pipelineSupport);
   const edges = useFlowStore(
@@ -42,22 +44,22 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   );
   const setValue = useFlowStore((state) => state.setBlockInstanceValueV2);
   const ensureProjection = useFlowStore((state) => state.ensureBlockProjectionV2);
-  const params = encodingVisibleConnectors(
-    Object.fromEntries(
-      Object.entries(nodeConnectorParams(node)).map(([id, param]) => [
-        id,
-        {
-          ...param,
-          isConnected: edges.some(
-            (edge) =>
-              (edge.source === node.id && edge.sourceHandle === id) ||
-              (edge.target === node.id && edge.targetHandle === id),
-          ),
-        },
-      ]),
-    ),
-    instance.effectiveInterface.boundary.outputs,
+  const allPorts = Object.fromEntries(
+    Object.entries(nodeConnectorParams(node)).map(([id, param]) => [
+      id,
+      {
+        ...param,
+        isConnected: edges.some(
+          (edge) =>
+            (edge.source === node.id && edge.sourceHandle === id) ||
+            (edge.target === node.id && edge.targetHandle === id),
+        ),
+      },
+    ]),
   );
+  const basicPorts = encodingVisibleConnectors(allPorts, instance);
+  const extraPortCount = Object.keys(allPorts).length - Object.keys(basicPorts).length;
+  const params = showPorts ? encodingVisibleConnectors(allPorts, instance, true) : basicPorts;
   const update = useCallback(
     (id: string, value: unknown, key?: keyof NodeParams) => {
       if (key === undefined || key === 'value') setValue(node.id, id, value as BlockJsonValue);
@@ -104,6 +106,15 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
                 mode="connectors"
               />
               <BlockCrossingPortsV2 nodeId={node.id} />
+              {extraPortCount > 0 ? (
+                <ModiffButton
+                  className="nodrag nowheel"
+                  aria-expanded={showPorts}
+                  onClick={() => setShowPorts(!showPorts)}
+                >
+                  {showPorts ? 'Hide' : 'Show'} implementation ports ({extraPortCount})
+                </ModiffButton>
+              ) : null}
             </>
           ),
           setSize: (width, height) =>

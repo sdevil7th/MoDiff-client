@@ -146,6 +146,7 @@ for (const route of ['native-image', 'standard-mask'] as const) {
         mimeType: 'text/x-python',
         buffer: Buffer.from('MODIFF_RUNTIME_ROLE = "data"\n' + code),
       });
+      await modal.getByRole('button', { name: 'Add node', exact: true }).click();
       await expect(modal.getByRole('status')).toContainText('Added and enabled');
       await modal.getByRole('button', { name: 'Close', exact: true }).click();
       customKey = `custom.${name}.LightPaletteDirector`;
@@ -262,6 +263,7 @@ test('custom audio source transformation delivers a shorter faded clip', async (
     mimeType: 'text/x-python',
     buffer: await readFile('../MoDiff/examples/custom_nodes/AudioEnvelope.py'),
   });
+  await modal.getByRole('button', { name: 'Add node', exact: true }).click();
   await expect(modal.getByRole('status')).toContainText('Added and enabled');
   await modal.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(async (file) => {

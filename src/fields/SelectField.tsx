@@ -6,7 +6,8 @@ import fieldAction from '../utils/fieldAction';
 import { LoaderCircle } from 'lucide-react';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 import { FieldFrame, ModiffFieldShell, ModiffMultiSelect, ModiffSelect, type ModiffSelectOption } from '../ui';
-import { runtimeOptionEntries, type RuntimeOptionEntry } from '../studio/runtimeOptions';
+import { useNodesStore } from '../stores/useNodeStore';
+import { runtimeOptionEntries, workflowDeviceLabel, type RuntimeOptionEntry } from '../studio/runtimeOptions';
 
 const OFFLOAD_LABELS: Record<string, string> = {
   none: 'Off',
@@ -35,6 +36,8 @@ export default function SelectField(props: FieldProps) {
     typeof binding.fieldOrPortId === 'string'
       ? binding.fieldOrPortId
       : props.fieldKey;
+  const deviceField = fieldKey === 'device' || fieldKey === 'execution_device';
+  const torch = useNodesStore((state) => (deviceField ? state.runtimeStatus?.packages?.torch : undefined));
   const multiple = Boolean(props.fieldOptions?.multiple);
   const placeholder = asString(props.fieldOptions?.placeholder);
   const currValue = multiple
@@ -49,7 +52,14 @@ export default function SelectField(props: FieldProps) {
 
   const entries: RuntimeOptionEntry[] = runtimeOptionEntries(props.options)
     .map((entry) =>
-      entry.type === 'option' ? { ...entry, label: productOptionLabel(fieldKey, entry.value, entry.label) } : entry,
+      entry.type === 'option'
+        ? {
+            ...entry,
+            label: deviceField
+              ? workflowDeviceLabel(entry.value, entry.label, torch)
+              : productOptionLabel(fieldKey, entry.value, entry.label),
+          }
+        : entry,
     )
     .filter((entry) => fieldKey !== 'offload_mode' || entry.type === 'header' || entry.value !== 'auto_cpu');
 

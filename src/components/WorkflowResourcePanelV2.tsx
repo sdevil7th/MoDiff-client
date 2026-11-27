@@ -96,8 +96,7 @@ export default function WorkflowResourcePanelV2() {
         Workflow resources
       </h2>
       <p className="text-xs text-modiff-subtle-text">
-        Memory → Automatic chooses supported technical settings. Custom keeps your configured settings. Creator and
-        Developer workspaces can use either memory policy; changing workspace preserves this workflow’s settings.
+        Automatic chooses memory settings for the selected workflow and hardware. Choose Custom to set them yourself.
       </p>
       <p className="text-xs text-modiff-subtle-text">
         A loader’s Auto Offload controls where its weights reside. Repeat/Loop controls repeated runs. They are separate

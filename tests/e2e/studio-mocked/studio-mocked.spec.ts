@@ -28,21 +28,26 @@ import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 import { audioPreviewFixture, videoPreviewFixture } from './mediaInputPreviewFixture';
 
-test('recommended showcases lead with accepted MiniMax media while retaining its separate recipe notice', async ({
-  page,
-}) => {
+test('recommended is a shortlist with a ready filter and a separate model showcase', async ({ page }) => {
   await bootMockedTemplateBrowser(page);
   const cards = page.getByTestId(/^template-browser-card-/u);
   await expect(cards.first()).toHaveAttribute('data-testid', 'template-browser-card-minimax_h3_image_old_town_cat');
-  await expect(cards.first().getByText('Approved showcase · separate recipe')).toBeVisible();
-  await expect(cards.first().locator('img').first()).toHaveAttribute('src', /h3-emerald-material-transfer\.webp/u);
-  await expect(cards.first().locator('img').first()).toHaveCSS('object-fit', 'contain');
+  expect(await cards.count()).toBeLessThanOrEqual(8);
+  await expect(cards.first().locator('img[src*="h3-emerald-material-transfer"]')).toHaveCount(0);
   await expect(page.getByTestId('template-browser-card-minimax_music3_chamber_pop')).toBeVisible();
   await cards
     .first()
     .getByRole('button', { name: /^View details for /u })
     .click();
-  await expect(page.getByTestId('template-approved-showcase')).toContainText('template defaults below are unchanged');
+  const modelShowcase = page.getByTestId('template-approved-showcase');
+  await modelShowcase.getByRole('button').click();
+  await expect(modelShowcase.locator('img')).toHaveAttribute('src', /h3-emerald-material-transfer/u);
+  const detail = page.getByTestId('template-detail-minimax_h3_image_old_town_cat');
+  await expect(detail.getByRole('heading', { level: 2 })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Ready on this machine' }).click();
+  await expect(page.getByTestId('template-browser-card-minimax_h3_image_old_town_cat')).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Ready on this machine' }).click();
+  await expect(cards.first()).toHaveAttribute('data-testid', 'template-browser-card-minimax_h3_image_old_town_cat');
 });
 
 for (const [templateId, search, file] of [
@@ -58,12 +63,12 @@ for (const [templateId, search, file] of [
     });
     await page.getByTestId('template-browser-search').fill(search);
     const card = page.getByTestId(`template-browser-card-${templateId}`);
-    await expect(card.getByText('Approved showcase · separate recipe')).toBeVisible();
-    await expect(card.locator('img').first()).toHaveAttribute('src', new RegExp(file.replaceAll('.', '\\.')));
-    await expect(card.locator('img').first()).toHaveCSS('object-fit', 'contain');
+    await expect(card.locator(`img[src$="${file}"]`)).toHaveCount(0);
     await card.getByRole('button', { name: /^View details for /u }).click();
     const review = page.getByTestId('template-approved-showcase');
-    await expect(review).toContainText('template defaults below are unchanged');
+    await review.getByRole('button').click();
+    await expect(review.locator('img')).toHaveAttribute('src', new RegExp(file.replaceAll('.', '\\.')));
+    await expect(review).toContainText('A separate recipe created this model showcase');
     await expect(review.getByRole('link')).toHaveAttribute('href', /\/showcases\/[a-z0-9.-]+\.json$/u);
     await expect(review.getByRole('link')).toHaveAttribute('rel', 'noreferrer');
     expect(writes).toBe(0);
@@ -11090,6 +11095,7 @@ test('resource monitor explains paused allocator readings and restores measured 
         sampledAt: Date.now() / 1000,
         system: { cpuPercent: 18, ramPercent: 37.5 },
         process: {},
+        storage: { destinations: { modelCache: { path: '/models/secondary-volume', freeBytes: 80 * 1024 ** 3 } } },
         activeDevice: 'cuda:0',
         accelerators: [
           {
@@ -11097,7 +11103,10 @@ test('resource monitor explains paused allocator readings and restores measured 
             name: 'Observed GPU',
             backend: 'rocm',
             memoryKind: 'shared',
-            memoryTotalBytes: 16 * 1024 ** 3,
+            memoryTotalBytes: 2 * 1024 ** 3,
+            accessibleMemoryTotalBytes: 98 * 1024 ** 3,
+            accessibleMemoryFreeBytes: 90 * 1024 ** 3,
+            dedicatedMemoryTotalBytes: 2 * 1024 ** 3,
             memoryFreeBytes: null,
             memoryUsedBytes: null,
             utilizationPercent: 42,
@@ -11120,6 +11129,11 @@ test('resource monitor explains paused allocator readings and restores measured 
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.getByTestId('topbar-resource-monitor').click();
   const popover = page.getByTestId('topbar-resource-popover');
+  await expect(popover).toContainText('98.0 GiB');
+  await expect(popover).toContainText('Dedicated reservation');
+  await expect(popover).toContainText('2.00 GiB');
+  await expect(popover).toContainText('/models/secondary-volume');
+  await expect(popover).toContainText('80.0 GiB free');
   await expect(popover).toContainText('Allocator readings are paused during generation');
   await expect(popover).toContainText('42% (sysfs)');
   await expect(popover.getByText('MoDiff allocated', { exact: true }).locator('..')).toContainText('—');
@@ -11363,12 +11377,12 @@ test('optional runtime setup is GET-only and keeps a pending target non-actionab
       pipelineClass: 'ZImagePipeline',
     },
   });
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
   const profile = disclosure.getByText(/Hugging Face Transformers \+ PEFT/);
   await expect(disclosure).toBeVisible();
   await expect(profile).toContainText('Linux x86-64');
   await expect(profile).toContainText('unavailable');
-  await expect(profile).toContainText('candidate_unqualified');
+  await expect(profile).toContainText('has not yet been qualified');
   await expect(disclosure.getByRole('button', { name: /install|activate/i })).toHaveCount(0);
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
 
@@ -11415,7 +11429,9 @@ test('qualified optional runtime setup requires consent and supports progress, c
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
   });
 
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
+  await expect(disclosure.getByRole('button', { name: 'Install', exact: true })).toHaveCount(0);
+  await disclosure.getByRole('button', { name: 'Show other runtimes' }).click();
   const install = disclosure.getByRole('button', { name: 'Install', exact: true });
   await expect(install).toBeVisible();
   await install.click();
@@ -11472,7 +11488,7 @@ test('base image generation and LoRA dependencies do not expose legacy optional 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await dismissTaskLauncher(page);
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
   await expect(disclosure).toContainText('Image generation and LoRA support are included in the base installation.');
   await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
   await expect(disclosure.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0')).toHaveCount(0);
@@ -11498,7 +11514,7 @@ test('optional runtime activation survives refresh and worker disconnection with
   };
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await openSetup();
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
   const progress = disclosure.getByTestId('optional-runtime-progress');
   await expect(progress).toContainText('Validating the runtime');
   await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toHaveCount(0);
@@ -11563,7 +11579,7 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
     await dismissTaskLauncher(page);
     await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
     const error = disclosure.getByTestId('optional-runtime-status-error');
     await expect(error).toContainText('Last known progress', { timeout: 3_000 });
     if (failure === 'identity') await expect(error).toContainText('job identity changed');
@@ -11604,7 +11620,7 @@ for (const failure of ['disconnect', 'non-JSON503'] as const) {
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
     await dismissTaskLauncher(page);
     await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
     const error = disclosure.getByTestId('optional-runtime-status-error');
     await expect(error).toContainText('Retrying', { timeout: 3_000 });
     await expect(error).toContainText('Last known progress');
@@ -11632,7 +11648,7 @@ test('a broken optional runtime can explicitly reset to base when legacy activat
   await dismissTaskLauncher(page);
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
 
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const disclosure = page.getByRole('region', { name: 'Optional runtimes', exact: true });
   const rollback = disclosure.getByRole('button', { name: 'Reset to base', exact: true });
   await expect(rollback).toBeVisible();
   await rollback.click();
@@ -12000,6 +12016,8 @@ test('template browser keeps compact layouts, opens card details, and loads 12-c
     await expect(cardDetailsAction).toHaveAttribute('aria-pressed', 'false');
     await expect(cardDetailsAction).not.toHaveAttribute('aria-current');
     await cardDetailsAction.focus();
+    await expect(cards.first()).toHaveAttribute('data-inspected', 'false');
+    await cardDetailsAction.press('Enter');
     await expect(cards.first()).toHaveAttribute('data-inspected', 'true');
     await expect(cardDetailsAction).toHaveAttribute('aria-pressed', 'true');
     const detail = page.locator('[data-testid^="template-detail-"]').first();
@@ -12061,6 +12079,7 @@ test('template browser keeps compact layouts, opens card details, and loads 12-c
   await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
   await page.setViewportSize({ width: 2048, height: 1024 });
   await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
   await assertLayout({ width: 2048, height: 1024 });
 });
 
@@ -12073,6 +12092,7 @@ test('template details use one narrow scroll pane and split only when the modal 
   await page.setViewportSize({ width: 1280, height: 720 });
   await bootMockedTemplateBrowser(page);
 
+  await page.getByTestId('template-browser-category-all').click();
   const firstCard = page.locator('[data-testid^="template-browser-card-"]').first();
   const templateId = (await firstCard.getAttribute('data-testid'))!.replace('template-browser-card-', '');
   // Readiness can reorder Recommended cards between this read and the click.
@@ -12163,7 +12183,7 @@ test('template details use one narrow scroll pane and split only when the modal 
   expect(independentScroll.gallery).toBe(0);
 });
 
-test('template browser attaches Recommended infinite scroll when the dialog portal first mounts', async ({ page }) => {
+test('template browser attaches catalog infinite scroll when the dialog portal first mounts', async ({ page }) => {
   mockInstalledRepos.clear();
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -12173,15 +12193,9 @@ test('template browser attaches Recommended infinite scroll when the dialog port
   await expect(page.getByTestId('template-browser-category-recommended')).toHaveAttribute('aria-pressed', 'true');
   const cards = page.locator('[data-testid^="template-browser-card-"]');
   const gallery = page.getByTestId('template-browser-gallery-scroll');
-  // Approved featured cards can render before the independent manifest request
-  // settles. The infinite-scroll assertion needs the loaded catalogue count.
-  await expect
-    .poll(async () =>
-      Number((await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0),
-    )
-    .toBeGreaterThan(12);
+  await page.getByTestId('template-browser-category-all').click();
   const totalTemplates = Number(
-    (await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0,
+    (await page.getByTestId('template-browser-category-all').textContent())?.match(/\d+/)?.[0] ?? 0,
   );
   expect(totalTemplates).toBeGreaterThan(12);
 
@@ -14211,9 +14225,9 @@ test('Experimental public cards create the exact FLUX3 Ceramic Radio graph throu
   await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(2);
   const template = STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image')!;
   const previousWorkflow = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
-  await expect(page.getByTestId(`template-browser-card-${template.id}`)).toContainText(
-    'Approved showcase · separate recipe',
-  );
+  await expect(
+    page.getByTestId(`template-browser-card-${template.id}`).locator('img[src*="flux3-pine-lake-mountains"]'),
+  ).toHaveCount(0);
   await page.getByTestId(`template-browser-create-card-${template.id}`).click();
   await expect(search).toHaveCount(0);
   await expect
@@ -15248,14 +15262,16 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       const setup = page
         .locator('.react-flow__node')
         .filter({ has: page.getByRole('button', { name: 'Choose model', exact: true }) });
-      await setup.getByRole('button', { name: 'Change model / task', exact: true }).click();
-      await setup.getByLabel('Replacement pipeline', { exact: true }).click();
+      await setup.getByRole('button', { name: 'Choose model', exact: true }).click();
+      const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+      await picker.getByRole('button', { name: 'Change model / task', exact: true }).click();
+      await picker.getByLabel('Replacement pipeline', { exact: true }).click();
       const pipeline = variant === 'flux3-klein' ? 'Flux3DistilledModularPipeline' : 'Flux3ModularPipeline';
       await page.getByRole('option', { name: pipeline, exact: true }).click();
-      await setup.getByLabel('Replacement model', { exact: true }).click();
+      await picker.getByLabel('Replacement model', { exact: true }).click();
       const repo = `black-forest-labs/flux-3-image-${variant.replace('flux3-', '')}`;
       await page.getByRole('option', { name: new RegExp(`${repo}$`, 'u') }).click();
-      await setup.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+      await picker.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
       const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
       const expected = {
         executionProfileId: `${variant}:official-provider:v1`,
@@ -15265,7 +15281,7 @@ for (const task of ['text_to_image', 'edit_image'] as const)
       await expect(review.getByRole('heading', { name: 'Review model / task change', exact: true })).toBeVisible();
       await review.getByRole('button', { name: 'Cancel', exact: true }).click();
       expect(await read()).toEqual(before);
-      await setup.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+      await picker.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
       await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
       const changed = await read();
@@ -16694,7 +16710,9 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await page.getByTestId('template-browser-category-adapters').click();
   await expect(page.getByTestId('template-browser-use-flux_lora_oil_painting')).toBeVisible();
   await expect(page.getByTestId('template-browser-use-flux_lora_retro_comic')).toBeVisible();
-  await expect(page.getByTestId('template-browser-card-flux_lora_ghibli_story')).toContainText('No preview yet');
+  await expect(page.getByTestId('template-browser-card-flux_lora_ghibli_story')).toContainText(
+    'No approved preview for this recipe',
+  );
   await expect(page.getByTestId('template-usage-warning-flux_lora_ghibli_story')).toBeVisible();
   await expect(page.getByTestId('template-usage-warning-flux_lora_oil_painting')).toBeVisible();
   await expect(page.getByTestId('template-browser-create-card-flux_lora_ghibli_story')).toContainText('Review terms');
@@ -16714,7 +16732,7 @@ test('mocked Studio keeps model health contextual while exposing every authored 
     .toBe('flux_lora_ghibli_story');
   await page.getByTestId('left-open-template-browser').click();
   await page.getByTestId('template-browser-category-adapters').click();
-  await expect(page.getByTestId('template-browser-create-card-flux_lora_ghibli_story')).toContainText('Use template');
+  await expect(page.getByTestId('template-browser-create-card-flux_lora_ghibli_story')).toContainText('Open workflow');
   await page.getByTestId('template-browser-category-all').click();
   await page.getByTestId('template-browser-search').fill('flux');
   await expect(page.getByTestId('template-browser-use-flux_schnell_text_to_image')).toBeVisible();
@@ -16849,7 +16867,7 @@ test('restricted template installation requires the revision-bound terms acknowl
   expect(mockInstalledRepos.has('ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA')).toBe(true);
 
   await expect(page.getByTestId('template-browser-create-ace_step_chinese_new_year_lora')).toContainText(
-    'Use template',
+    'Open workflow',
   );
 });
 
@@ -16870,6 +16888,7 @@ test('Workflows panel exposes raw workflow roots in the unified editor', async (
   await page.getByTestId('left-tab-workflows').click();
   await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
   await expect(page.getByTestId('workflow-list')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Browse source folders' }).click();
   await expect(page.getByTestId('workflow-source-Saved')).toBeVisible();
   await expect(page.getByTestId('workflow-source-Imported')).toBeVisible();
   await expect(page.getByTestId('workflow-source-modiff')).toBeVisible();
@@ -16991,7 +17010,8 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
       return current.flow.visibleNodeCount;
     })
     .toBeGreaterThan(0);
-  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Text to image');
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Z-Image-Turbo');
   expect(
     await page.evaluate(async () => {
       const [{ useFlowStore }, { blockOperationGraphV2 }] = await Promise.all([
@@ -17477,7 +17497,9 @@ test('mocked full Gallery exposes generated and imported asset controls', async 
   await expect(page.getByTestId('gallery-kind-generated')).toContainText('Generated 2');
   await expect(page.getByTestId('gallery-kind-imported')).toContainText('Imported 1');
   await expect(page.getByTestId('gallery-output-0')).toBeVisible();
+  await page.getByTestId('gallery-download-menu-0').click();
   await expect(page.getByTestId('gallery-download-package-0')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('gallery-restore-0')).toBeVisible();
   await expect(page.getByTestId('gallery-rerun-0')).toBeVisible();
   await expect(page.getByTestId('gallery-delete-0')).toBeVisible();
@@ -17703,12 +17725,12 @@ test('mocked Model Manager keeps navigation usable while filtering and refreshin
   await expect(dialog.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
   await expect(dialog.getByTestId('model-manager-installed')).toContainText('Z-Image-Turbo');
   const initialPlanCalls = planCalls;
-  const installedTab = dialog.getByRole('tab', { name: 'Installed', exact: true });
+  const installedTab = dialog.getByRole('tab', { name: 'Local files', exact: true });
   await installedTab.click();
   await expect(dialog.getByTestId('model-manager-supported')).toHaveCount(0);
   const search = dialog.getByLabel('Filter models and artifacts');
   await search.fill('not-an-installed-repository');
-  await expect(dialog).toContainText('No installed models match this search.');
+  await expect(dialog).toContainText('No local files match this search.');
   await dialog
     .getByTestId('model-manager-installed')
     .getByRole('button', { name: 'Clear search', exact: true })
@@ -17736,7 +17758,7 @@ test('mocked Model Manager keeps navigation usable while filtering and refreshin
     });
     const scrolledToolbar = await toolbar.boundingBox();
     expect(scrolledToolbar!.y).toBeCloseTo(initialToolbar!.y, 0);
-    await dialog.getByRole('tab', { name: 'Installed', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Local files', exact: true }).click();
     expect(await dialog.locator('[data-dialog-scroll-body]').evaluate((element) => element.scrollTop)).toBe(0);
     await dialog.getByRole('tab', { name: 'All models', exact: true }).click();
     const panel = await dialog.boundingBox();
@@ -18136,6 +18158,43 @@ test('mocked Expert Model Manager gates the exact MiniMax Music 3 snapshot on re
     files,
   });
   await expect.poll(() => mockDownloadCalls).toBe(1);
+});
+
+test('exact model search removes unrelated variants and identifies metadata-only image snapshots', async ({ page }) => {
+  const repo = 'nvidia/Cosmos3-Super-Text2Image-4Step';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/hf_cache**', (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: repo,
+          revisions: [{ hash: 'abc' }],
+          size: 3195,
+          installed: false,
+          complete: false,
+          repair_required: true,
+          metadata_only: true,
+        },
+      ],
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await assertUnifiedWorkspace(page, 'expert');
+  await page.getByTestId('topbar-models').click();
+  const dialog = page.getByTestId('model-manager-dialog');
+  const search = dialog.getByLabel('Filter models and artifacts');
+  await search.fill('MiniMax');
+  await search.fill(repo.split('/')[1]!);
+  const local = dialog.getByTestId('model-manager-installed');
+  await expect(local).toContainText('Metadata only');
+  await expect(local).toContainText('Image');
+  const rows = dialog.getByTestId('model-manager-supported').locator('article');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveAttribute('data-model-repo', repo);
+  await expect(rows.getByText('Image', { exact: true })).toBeVisible();
 });
 
 test('mocked Expert Model Manager keeps shared pipeline workflow artifacts separate and exact', async ({ page }) => {
@@ -20198,7 +20257,7 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await expect(page.getByText('Exact', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Use recipe', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('template-browser-create-card-qwen_low_vram_product_concept')).toContainText(
-    'Use template',
+    'Open workflow',
   );
   const recommendedCount = Number(
     (await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0,
@@ -20262,7 +20321,10 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
       .poll(
         async () =>
           (await card.locator('img, video').count()) > 0 ||
-          (await card.getByText('No preview yet', { exact: true }).first().isVisible()),
+          (await card
+            .getByText(/No preview yet|No approved preview for this recipe/u)
+            .first()
+            .isVisible()),
       )
       .toBe(true);
   }
@@ -20320,7 +20382,9 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     'hardware looks usable',
   );
   await expect(page.getByTestId('template-detail-qwen_outpaint_aspect_template')).toContainText('Included inputs');
-  await expect(page.getByTestId('template-browser-create-qwen_outpaint_aspect_template')).toContainText('Use template');
+  await expect(page.getByTestId('template-browser-create-qwen_outpaint_aspect_template')).toContainText(
+    'Open workflow',
+  );
   await page
     .getByTestId('template-detail-qwen_outpaint_aspect_template')
     .getByRole('button', { name: 'Templates' })
@@ -27501,7 +27565,7 @@ test('opaque adapter metadata drives repository, mode, task, and input choices w
 
   await repositoryField.getByRole('combobox').fill('');
   await repositoryField.getByRole('combobox').blur();
-  await repositoryField.getByRole('button', { name: 'Choose model', exact: true }).click();
+  await repositoryField.getByRole('button', { name: /^Browse models for /u }).click();
   const picker = page.getByRole('dialog', { name: 'Choose model for Repository', exact: true });
   const search = picker.getByRole('searchbox', { name: 'Search installed models' });
   await search.fill('missing');
@@ -32993,7 +33057,9 @@ test('mocked Gallery displays encoded video geometry and preserves requested con
     ]);
   });
   await page.getByTestId('topbar-gallery').click();
-  await expect(page.getByTestId('gallery-output-0')).toContainText('592x832 | 129 frames | 24fps');
+  const card = page.getByTestId('gallery-output-0');
+  await card.getByRole('button', { name: 'Result details', exact: true }).click();
+  await expect(card).toContainText('592x832 | 129 frames | 24fps');
   await page.getByTestId('gallery-view-inspect').click();
   const inspect = page.getByTestId('gallery-inspect-view');
   await expect(inspect).toContainText('592x832 | 129 frames | 24fps');
@@ -33177,6 +33243,7 @@ test('Gallery displays the observed native model and exports its exact recorded 
   await page.getByTestId('topbar-gallery').click();
   await expect(page.getByTestId('gallery-output-0')).toContainText(model!.label);
   const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('gallery-download-menu-0').click();
   await page.getByTestId('gallery-download-package-0').click();
   const download = await downloadPromise;
   const exportedPath = await download.path();
@@ -33508,10 +33575,56 @@ for (const [task, , count, output] of [
         };
       }, output);
     await expect.poll(read).toEqual({ count, connected: true, binding: null });
+    let savedView: { x: number; y: number; zoom: number } | undefined;
+    let savedTransform: string | undefined;
+    const canvasTransform = () =>
+      page.locator('.react-flow__viewport').evaluate((element) => getComputedStyle(element).transform);
+    if (task === 'text_to_image') {
+      const pane = page.locator('.react-flow').first();
+      await expect
+        .poll(() =>
+          pane.evaluate((canvas) => {
+            const rect = canvas.getBoundingClientRect();
+            const nodes = [...canvas.querySelectorAll('.react-flow__node')].filter(
+              (node) => node.getBoundingClientRect().width,
+            );
+            return (
+              nodes.length > 0 &&
+              nodes.every((node) => {
+                const bounds = node.getBoundingClientRect();
+                return (
+                  bounds.left >= rect.left - 2 &&
+                  bounds.top >= rect.top - 2 &&
+                  bounds.right <= rect.right + 2 &&
+                  bounds.bottom <= rect.bottom + 2
+                );
+              })
+            );
+          }),
+        )
+        .toBe(true);
+      const initialZoom = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().viewport.zoom);
+      await pane.locator('.react-flow__node header').first().click();
+      await page.getByRole('button', { name: 'Focus selected stages', exact: true }).click();
+      await expect
+        .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().viewport.zoom))
+        .toBeGreaterThan(initialZoom);
+      savedTransform = await canvasTransform();
+      await page.evaluate(async () => {
+        const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+        useStudioStore.getState().saveActiveWorkflowTab();
+      });
+      savedView = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().viewport);
+    }
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
     await expect(modal).toHaveCount(0);
     await expect.poll(read).toEqual({ count, connected: true, binding: null });
+    if (savedTransform) await expect.poll(canvasTransform).toBe(savedTransform);
+    if (savedView)
+      await expect
+        .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().viewport))
+        .toEqual(savedView);
   });
 }
 
@@ -34140,7 +34253,7 @@ test('Developer Workflows abandons pending creation when switching documents', a
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
   await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
   await expect(modal.getByLabel('Search workflow tasks')).toBeVisible();
-  await modal.getByRole('button', { name: 'Open workflow', exact: true }).click();
+  await modal.getByRole('button', { name: 'Open saved workflow', exact: true }).click();
   await expect(page.getByLabel('Search workflows')).toBeVisible();
 });
 
@@ -36740,6 +36853,40 @@ test('restored Block preview renders its current task instead of artifacts retai
   expect(oldRequests).toBe(0);
 });
 
+test('workflow library separates local file import, search and saved entries', async ({ page }) => {
+  await openDeveloperWorkflows(page);
+  const launcher = page.getByTestId('task-launcher');
+  await expect(launcher.getByRole('button', { name: 'Import workflow file' })).toBeVisible();
+  await launcher.getByRole('button', { name: 'Open saved workflow' }).click();
+  const saved = page.getByTestId('my-workflows');
+  await expect(saved.getByRole('button', { name: 'Import workflow file' })).toBeVisible();
+  await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
+  const search = page.getByRole('searchbox', { name: 'Search workflows', exact: true });
+  await search.fill('nonexistent-example-suffix');
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await expect(search).toHaveValue('');
+  await search.fill('no-such-saved-workflow');
+  await expect(saved).toContainText('No workflows match this search.');
+  await saved.getByRole('button', { name: 'Clear workflow search' }).click();
+  await expect(search).toHaveValue('');
+  await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
+  await expect(search).toHaveValue('nonexistent-example-suffix');
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  const input = saved.locator('input[type=file]');
+  await input.setInputFiles({
+    name: 'invalid.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"wrong":true}'),
+  });
+  await expect(page.getByText('Choose a MoDiff workflow JSON file or an exported workflow package.')).toBeVisible();
+  await input.setInputFiles({
+    name: 'Inspection.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ nodes: [], edges: [], viewport: { x: 10, y: 20, zoom: 0.75 } })),
+  });
+  await expect(page.getByRole('tab', { name: /^Inspection/u })).toBeVisible();
+});
+
 test('task sidebar preserves the current document and explicit Save promotes its recovery draft', async ({ page }) => {
   await openDeveloperWorkflows(page);
   await page.getByTestId('task-launcher').getByTestId('workflow-task-text_to_image').click();
@@ -37388,6 +37535,20 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
   const custom = page.getByTestId('custom-extensions-dialog');
   await expect(custom).toContainText('Add a Python node to run your own code. Save a Block to reuse canvas nodes.');
+  const adds: unknown[] = [];
+  await page.route('**/custom_modules/add', async (route) => {
+    adds.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { error: 'Fixture stopped at Add' } });
+  });
+  await custom.getByLabel('Choose Python node file').setInputFiles({
+    name: 'SelectedOnly.py',
+    mimeType: 'text/x-python',
+    buffer: Buffer.from('# harmless test fixture'),
+  });
+  await expect(custom.getByText('Selected: SelectedOnly.py')).toBeVisible();
+  expect(adds).toEqual([]);
+  await custom.getByRole('button', { name: 'Add node', exact: true }).click();
+  await expect.poll(() => adds).toEqual([expect.objectContaining({ kind: 'file', name: 'SelectedOnly' })]);
   await custom.getByRole('button', { name: 'Close', exact: true }).click();
   const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   const before = await optionalStageApi(page);
@@ -37399,6 +37560,9 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   await page.getByTestId('selection-toolbar-create-block').click();
   const create = page.getByTestId('create-user-block-dialog');
   await expect(create).toContainText('Group the selected canvas nodes into an editable Block.');
+  await expect(create.getByRole('checkbox')).toHaveCount(0);
+  await create.getByRole('button', { name: 'Customize Block interface' }).click();
+  await expect(create.getByRole('checkbox').first()).toBeVisible();
   await create.getByLabel('Name').fill('Editable canvas stages');
   await page.getByTestId('confirm-create-user-block').click();
   await expect(create).toHaveCount(0);
@@ -37458,7 +37622,7 @@ test('Model Setup and Inspector expose conditioning controls only on eligible im
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const card = page.getByTestId(`setup-node-${setup.id}`);
     const chooser = (root: Locator, field: string) =>
-      root.locator(`[data-key="${field}"]`).getByRole('button', { name: 'Choose model', exact: true });
+      root.locator(`[data-key="${field}"]`).getByRole('button', { name: /^Browse models for /u });
     await expect(chooser(card, setup.base!)).toBeVisible();
     if (conditioning) await expect(chooser(card, setup.conditioning!)).toBeVisible();
     else await expect(chooser(card, setup.conditioning!)).toHaveCount(0);
@@ -37588,15 +37752,17 @@ test('optional Model Setup and Image Output preserve native stages, task review,
     const starter = starters.find((item) => item.pipelineClass === request.pipelineClass && item.task === request.task);
     return route.fulfill({ status: starter ? 200 : 400, json: starter ?? { error: 'Unknown fixture task' } });
   });
-  await setupNode.getByRole('button', { name: 'Change model / task', exact: true }).click();
-  await setupNode.getByLabel('Replacement task', { exact: true }).click();
+  await setupNode.getByRole('button', { name: 'Choose model', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+  await picker.getByRole('button', { name: 'Change model / task', exact: true }).click();
+  await picker.getByLabel('Replacement task', { exact: true }).click();
   await page.getByRole('option', { name: 'image to image', exact: true }).click();
-  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  await picker.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(review.getByRole('heading', { name: 'Review model / task change', exact: true })).toBeVisible();
   await review.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await optionalStageApi(page)).toEqual(before);
-  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  await picker.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
   await expect
     .poll(
@@ -39177,9 +39343,13 @@ test('mocked Gallery opens every ordered collection image before and after histo
     await page.getByTestId('topbar-gallery').click();
     const gallery = page.getByTestId('gallery-panel');
     await expect(gallery.getByTestId('gallery-output-0').getByRole('img')).toHaveCount(3);
-    // Both existing full-size entry points must preserve the collection.
-    if (reload === 0) await gallery.getByTestId('gallery-open-0').click();
-    else await gallery.getByRole('button', { name: /^Root \| Ordered collection \|/ }).click();
+    if (reload) {
+      await gallery.getByTestId('gallery-view-lineage').click();
+      await gallery.getByRole('button', { name: /^Root \| Ordered collection \|/ }).click();
+      await expect(gallery.getByTestId('gallery-inspect-view').getByRole('img')).toHaveCount(3);
+      await gallery.getByTestId('gallery-view-grid').click();
+    }
+    await gallery.getByTestId('gallery-open-0').click();
     for (let index = 0; index < 3; index += 1) {
       const dialog = page.getByRole('dialog', {
         name: `Image ${index + 1} of 3`,
@@ -39292,12 +39462,12 @@ for (const displayType of ['text', 'json'] as const) {
       await expect(card).toBeVisible();
     };
     await expect(card.getByTestId('gallery-output-text')).toHaveText(content);
+    await card.getByRole('button', { name: 'Result details', exact: true }).click();
     await expect(card).toContainText(`| ${label} |`);
     await expect(card).toContainText('Task not captured');
     await expect(card).toContainText('Seed not captured');
     await expect(card).not.toContainText('Text to image');
     await expect(card.locator('img')).toHaveCount(0);
-    await expect(card.getByRole('button', { name: 'Download PNG package', exact: true })).toHaveCount(0);
     await expect(card.getByTestId('gallery-compare-0')).toHaveCount(0);
     await expect(card.getByTestId('gallery-send-edit-0')).toHaveCount(0);
     await card.getByTestId('gallery-open-0').click();
@@ -39308,7 +39478,8 @@ for (const displayType of ['text', 'json'] as const) {
     await expect(card.getByTestId('gallery-restore-0')).toBeVisible();
     await expect(card.getByTestId('gallery-rerun-0')).toBeVisible();
     const packageDownloadPromise = page.waitForEvent('download');
-    await card.getByTestId('gallery-download-package-0').click();
+    await card.getByTestId('gallery-download-menu-0').click();
+    await page.getByTestId('gallery-download-package-0').click();
     const packageDownload = await packageDownloadPromise;
     const metadataPackage = JSON.parse(await fs.readFile((await packageDownload.path())!, 'utf8'));
     expect(metadataPackage.latestOutput).toMatchObject({
@@ -39322,7 +39493,9 @@ for (const displayType of ['text', 'json'] as const) {
     await card.getByTestId('gallery-favorite-0').click();
     await expect.poll(() => favoritePatches).toBe(1);
     const downloadPromise = page.waitForEvent('download');
-    await card.getByRole('button', { name: `Download ${displayType}`, exact: true }).click();
+    await card.getByTestId('gallery-download-menu-0').click();
+    await expect(page.getByRole('menuitem', { name: 'Image with workflow (PNG)' })).toHaveCount(0);
+    await page.getByTestId('gallery-download-image-0').click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
     expect(download.suggestedFilename()).toMatch(/^modiff-uncaptured-model-/);
@@ -39338,8 +39511,11 @@ for (const displayType of ['text', 'json'] as const) {
     await expect(gallery.getByTestId('gallery-inspect-view').getByTestId('gallery-output-text')).toHaveText(content);
     await gallery.getByTestId('gallery-view-compare').click();
     await expect(gallery.getByTestId('gallery-compare-view').getByTestId('gallery-output-text')).toHaveText(content);
-    await gallery.getByTestId('gallery-view-grid').click();
+    await gallery.getByTestId('gallery-view-lineage').click();
     await gallery.getByRole('button', { name: new RegExp(`^Root \\| Recorded ${label} \\|`) }).click();
+    await expect(gallery.getByTestId('gallery-inspect-view').getByTestId('gallery-output-text')).toHaveText(content);
+    await gallery.getByTestId('gallery-view-grid').click();
+    await card.getByTestId('gallery-open-0').click();
     await expect(page.getByTestId('media-viewer-text')).toHaveText(content);
     await closeTextPreview();
     await gallery.getByTestId('gallery-refresh-history').click();
@@ -40567,4 +40743,50 @@ it('aliased audio Model Setup renders human offload choices and preserves the se
   expect(await stored()).toEqual(beforeStored);
   expect(await audioApiSnapshot(page)).toEqual(before);
   expect(mutations).toEqual([]);
+});
+
+test('workspace drawers preserve canvas width and keyboard navigation works across breakpoints', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(page.getByTestId('task-launcher')).toBeVisible({ timeout: 60000 });
+  await dismissTaskLauncher(page);
+  const canvas = page.locator('#workflow-canvas');
+  for (const width of [390, 768, 1024]) {
+    await page.setViewportSize({ width, height: 850 });
+    await expect(canvas).toBeVisible();
+    const before = await canvas.boundingBox();
+    expect(before!.width).toBeGreaterThan(width - 80);
+    await page.getByTestId('left-tab-nodes').click();
+    await expect(page.getByTestId('left-panel')).toBeVisible();
+    expect((await canvas.boundingBox())!.width).toBe(before!.width);
+    await page.getByTestId('topbar-toggle-workspace').click();
+    await expect(page.getByTestId('left-panel')).toBeHidden();
+    await expect(page.getByTestId('studio-panel')).toBeVisible();
+    await page.getByTestId('topbar-toggle-workspace').click();
+    const more = page.getByRole('button', { name: 'More toolbar actions' });
+    await more.click();
+    await expect(page.getByTestId('topbar-export')).toBeVisible();
+    await more.click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByTestId('topbar-export')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
+  await page.keyboard.press('Control+k');
+  const query = page.getByRole('combobox', { name: 'Search commands' });
+  await expect(query).toBeFocused();
+  await query.fill('open');
+  const first = await query.getAttribute('aria-activedescendant');
+  await query.press('ArrowDown');
+  await expect(query).not.toHaveAttribute('aria-activedescendant', first!);
+  await query.fill('open setup');
+  await query.press('Enter');
+  await expect(query).toHaveCount(0);
+  await expect(page.getByTestId('workspace-tab-setup')).toHaveAttribute('aria-selected', 'true');
 });

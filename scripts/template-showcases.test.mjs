@@ -72,6 +72,9 @@ test('featured media never replaces current-template exactness or the actual def
     const { STUDIO_TEMPLATES } = await server.ssrLoadModule('/src/studio/templates.ts');
     const exact = await server.ssrLoadModule('/src/studio/templateExactness.ts');
     const { getTemplateShowcase } = await server.ssrLoadModule('/src/studio/templateShowcases.ts');
+    const manifest = exact.parseTemplateGalleryManifest(
+      JSON.parse(fs.readFileSync('public/template-gallery/manifest.json', 'utf8')),
+    );
     for (const [id, file, prompt] of [
       ['flux3_klein_fp8r512_text_to_image', 'flux3-pine-lake-mountains-pup.v1.webp', /radio/i],
       ['minimax_h3_image_old_town_cat', 'h3-emerald-material-transfer.webp', /orange tabby/i],
@@ -79,6 +82,12 @@ test('featured media never replaces current-template exactness or the actual def
       const template = STUDIO_TEMPLATES.find((t) => t.id === id);
       assert.match(template.prompt, prompt);
       assert.ok(getTemplateShowcase(template.id).mediaPath.endsWith(file));
+      assert.deepEqual(exact.getTemplateCardMedia(template, null, { currentRecipeOnly: true }), {});
+      const card = exact.getTemplateCardMedia(template, manifest, { currentRecipeOnly: true });
+      const entry = exact.findManifestEntry(template, manifest);
+      if (entry) assert.equal(card.mediaPath, exact.templateManifestPath(entry.afterPath ?? entry.outputPath));
+      else assert.deepEqual(card, {});
+      assert.ok(!Object.values(card).some((path) => path?.endsWith(file)));
       assert.equal(exact.findManifestEntry(template, null), undefined);
       assert.equal(exact.getTemplateExampleUiState(template, {}, null, null).status, 'unverified');
     }

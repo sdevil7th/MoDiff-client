@@ -638,7 +638,7 @@ test('reordering tabs changes only their order and persists that order', () => {
   assert.equal(store.getState(), unchanged);
 });
 
-test('an open originating workflow is selected and its run node is requested for focus', async () => {
+test('an explicit request to inspect the originating workflow selects the run node', async () => {
   const studio = studioStoreModule.useStudioStore.getState();
   studio.ensureWorkflowTabs();
   const originId = studioStoreModule.useStudioStore.getState().activeWorkflowTabId;
@@ -647,6 +647,7 @@ test('an open originating workflow is selected and its run node is requested for
 
   const result = await activityModule.openRunActivity({
     taskId: 'task-open',
+    preferWorkflow: true,
     workflowTabId: originId,
     nodeId: 'origin-node',
     status: 'completed',
@@ -689,6 +690,23 @@ test('a workflow restoration error is contained and reveals the exact Queue task
   } finally {
     studioStoreModule.useStudioStore.setState({ switchWorkflowTab });
   }
+});
+
+test('a completed run previews its exact output even when its workflow is still open', async () => {
+  const studio = studioStoreModule.useStudioStore.getState();
+  studio.ensureWorkflowTabs();
+  const workflowTabId = studioStoreModule.useStudioStore.getState().activeWorkflowTabId;
+  studioStoreModule.useStudioStore.setState({ outputs: [output()] });
+  assert.equal(
+    await activityModule.openRunActivity({
+      taskId: 'task-one',
+      clientRunId: 'client-one',
+      workflowTabId,
+      status: 'completed',
+    }),
+    'preview',
+  );
+  assert.equal(settingsStoreModule.useSettingsStore.getState().mediaViewerOpener.items[0].url, '/cache/output.png');
 });
 
 test('a completed closed workflow opens exact run output without recreating its tab', async () => {
@@ -1222,4 +1240,22 @@ test('a slower earlier lookup cannot replace the result of the latest activity c
   );
   assert.equal(settingsStoreModule.useSettingsStore.getState().mediaViewerOpener.items[0].url, '/cache/latest.png');
   assert.equal(settingsStoreModule.useSettingsStore.getState().runActivityPendingTaskId, null);
+});
+
+test('gallery uses the saved workflow name before live tab names, with fallbacks for older outputs', () => {
+  const output = { prompt: 'Paint an amber cube', templateLabel: 'Image edit' };
+  assert.equal(
+    outputContracts.outputWorkflowTitle(
+      { ...output, apiGraphSnapshot: { runtimeHints: { workflowTitle: 'Amber study' } } },
+      'Renamed tab',
+    ),
+    'Amber study',
+  );
+  assert.equal(outputContracts.outputWorkflowTitle(output, 'Saved filter'), 'Saved filter');
+  assert.equal(outputContracts.outputWorkflowTitle(output), 'Image edit');
+  assert.equal(
+    outputContracts.outputWorkflowTitle({ prompt: 'Paint an amber cube', apiGraphSnapshot: [] }),
+    'Paint an amber cube',
+  );
+  assert.equal(outputContracts.outputWorkflowTitle({ prompt: '' }), 'Workflow result');
 });

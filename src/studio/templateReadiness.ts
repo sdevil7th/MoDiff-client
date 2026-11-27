@@ -23,12 +23,42 @@ import type {
 } from './types';
 import { backendNodeKeysForCapability } from './templateBackendCapabilities';
 import { resolveTemplateModelSelection } from './templateModelSelection';
-import { optionalRuntimeBlockState, type OptionalRuntimeCatalog } from './optionalRuntimes';
+import {
+  optionalRuntimeBlockState,
+  type OptionalRuntimeRequirement,
+  type OptionalRuntimeCatalog,
+} from './optionalRuntimes';
 import type { StudioModelProfile } from './types';
 export { isTemplateBackendCapabilityRecognized, templateBackendNodeKeys } from './templateBackendCapabilities';
 
 export type TemplateReadinessStatus =
   'ready' | 'needs_input' | 'needs_model' | 'needs_backend' | 'needs_setup' | 'preparing' | 'planning';
+
+function recipeRuntimeDetail(
+  requirement: OptionalRuntimeRequirement | undefined,
+  state: OptionalRuntimeRequirement['state'],
+  catalog: OptionalRuntimeCatalog | null | undefined,
+) {
+  const profiles = catalog?.profiles.filter((profile) => requirement?.profileIds.includes(profile.id)) ?? [];
+  const packages =
+    state === 'missing' || state === 'wrong_version'
+      ? profiles.flatMap((profile) => (profile.packages ?? []).filter((pkg) => pkg.status === state))
+      : [];
+  if (packages.length) {
+    return packages
+      .map((pkg) =>
+        pkg.status === 'missing'
+          ? `${pkg.distribution} ${pkg.requiredVersion} is required and is missing.`
+          : `${pkg.distribution} requires ${pkg.requiredVersion}. ${pkg.installedVersion ? `Installed version: ${pkg.installedVersion}.` : 'The installed version could not be verified.'}`,
+      )
+      .join(' ');
+  }
+  const name = profiles.map((profile) => profile.label).join(', ') || 'The required runtime';
+  if (state === 'wrong_version')
+    return `${name} requires a different package version. Open Setup to review the installation.`;
+  if (state === 'missing') return `${name} is missing. Open Setup to view installation options.`;
+  return `${name}: ${state.replace(/_/g, ' ')}. Open Setup for details.`;
+}
 
 export type TemplateReadinessTone = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -284,7 +314,7 @@ function customRecipeReadiness(template: StudioTemplate, context: TemplateReadin
         'Recipe runtime needed',
         invalidRequirement
           ? 'Refresh the exact backend runtime requirement for this recipe.'
-          : `${requirement?.reason ?? 'Required recipe runtime is not active.'} (${runtimeBlock})`,
+          : recipeRuntimeDetail(requirement, runtimeBlock!, context.optionalRuntimeCatalog),
       );
 
     const artifactSelection = selected.capability.artifactSelections?.find(

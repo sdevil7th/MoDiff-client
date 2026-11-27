@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { layoutReferenceContext } from '../studio/layoutReferenceContext';
@@ -100,8 +100,10 @@ export default function OperationModelPicker({
   node,
   value,
   disabled,
+  taskControls,
 }: {
   node: CustomNodeType;
+  taskControls?: ReactNode;
   value: string;
   disabled?: boolean;
 }) {
@@ -137,7 +139,7 @@ export default function OperationModelPicker({
     return () => {
       pending.current?.abort();
     };
-  }, [workflow, node.id]);
+  }, [workflow, node.id, hint.operation.pipelineClass, hint.operation.task]);
 
   function close() {
     pending.current?.abort();
@@ -226,7 +228,10 @@ export default function OperationModelPicker({
       if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The workflow changed. Select the model again.');
       const candidate = { plan, context, signature, choice, restoreDefaults };
-      if (plan.review.required) setReview(candidate);
+      // A reusable Block owns a saved public contract. Preview its model substitution
+      // even when the smaller interface leaves every current value compatible.
+      const switchingReusableBlock = !restoreDefaults && node.data.blockProjectionOwnerId && !visualOwner;
+      if (plan.review.required || switchingReusableBlock) setReview(candidate);
       else apply(candidate);
     } catch (e) {
       if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not change this model.'));
@@ -343,9 +348,10 @@ export default function OperationModelPicker({
         >
           <div className="space-y-3">
             <p className="text-sm text-modiff-subtle-text">
-              {workflowTaskLabel(hint.operation.task ?? '')}. Selecting a model updates its connected nodes. Nothing is
-              downloaded or executed.
+              {workflowTaskLabel(hint.operation.task ?? '')} · Current model: {current ? choiceLabel(current) : value}.
+              Select a model to review changes to its connected stages.
             </p>
+            {taskControls}
             {resourceMode !== 'expert' && choices.some((choice) => choice.evaluationOnly) ? (
               <div className="flex flex-wrap items-center gap-2 text-sm text-modiff-subtle-text">
                 <p>Some models require Custom memory. Switching does not select a model or run the workflow.</p>

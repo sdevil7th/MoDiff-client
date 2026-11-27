@@ -11,6 +11,7 @@ import {
   IsValidConnection,
   ReactFlow,
   useReactFlow,
+  useNodesInitialized,
   Viewport,
   useUpdateNodeInternals,
   ConnectionLineType,
@@ -19,7 +20,7 @@ import {
 } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Network } from 'lucide-react';
+import { Network, Scan, ScanLine } from 'lucide-react';
 
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
@@ -391,6 +392,7 @@ function Workflow() {
     })),
   );
   const { fitView, screenToFlowPosition } = useReactFlow();
+  const nodesMeasured = useNodesInitialized();
   const workflowCanvasRef = useRef<HTMLDivElement>(null);
   const lastFitLayoutRevision = useRef(layoutRevision);
   const handledWorkflowFocusKey = useRef('');
@@ -516,9 +518,10 @@ function Workflow() {
     const requestKey = `${workflowFocusRequest.workflowTabId}:${workflowFocusRequest.nodeId}:${workflowFocusRequest.requestId}`;
     if (handledWorkflowFocusKey.current === requestKey) return;
     if (!workflowFocusRequest.nodeId) {
+      if (!nodesMeasured) return;
       handledWorkflowFocusKey.current = requestKey;
       suppressAutomaticFitUntil.current = Date.now() + 750;
-      void fitView({ padding: 0.16, duration: 240, includeHiddenNodes: true }).finally(() => {
+      void fitView({ padding: 0.12, duration: 0 }).finally(() => {
         setWorkflowFocusRequest(null);
       });
       return;
@@ -539,7 +542,7 @@ function Workflow() {
     void fitView({ nodes: [{ id: targetId }], padding: 0.5, duration: 240 }).finally(() => {
       setWorkflowFocusRequest(null);
     });
-  }, [activeWorkflowTabId, fitView, nodes, setWorkflowFocusRequest, workflowFocusRequest]);
+  }, [activeWorkflowTabId, fitView, nodes, nodesMeasured, setWorkflowFocusRequest, workflowFocusRequest]);
 
   useEffect(() => {
     refreshConnectionVisuals();
@@ -1012,7 +1015,7 @@ function Workflow() {
   const handleCreateBlockFromSelection = useCallback(async () => {
     const context = captureWorkflowOperationContext();
     try {
-      const { createUserBlockDraftV2 } = await import('../studio/userBlockCreationV2');
+      const { createUserBlockDraftV2, suggestNewBlockInterface } = await import('../studio/userBlockCreationV2');
       assertWorkflowOperationContext(context);
       const result = createUserBlockDraftV2({ nodes, edges }, userBlocks);
       if (!result.ok) {
@@ -1024,7 +1027,7 @@ function Workflow() {
         name: result.block.name,
         inputLabels: Object.fromEntries(result.block.inputs.map((port) => [port.id, port.label])),
         outputLabels: Object.fromEntries(result.block.outputs.map((port) => [port.id, port.label])),
-        exposedParamIds: new Set(result.block.exposedParams.map((input) => input.id)),
+        ...suggestNewBlockInterface(result),
       });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -1043,14 +1046,18 @@ function Workflow() {
     const block = {
       ...pendingBlock.result.block,
       name,
-      inputs: pendingBlock.result.block.inputs.map((port) => ({
-        ...port,
-        label: pendingBlock.inputLabels[port.id]?.trim() || port.label,
-      })),
-      outputs: pendingBlock.result.block.outputs.map((port) => ({
-        ...port,
-        label: pendingBlock.outputLabels[port.id]?.trim() || port.label,
-      })),
+      inputs: pendingBlock.result.block.inputs
+        .filter((port) => pendingBlock.exposedInputIds.has(port.id))
+        .map((port) => ({
+          ...port,
+          label: pendingBlock.inputLabels[port.id]?.trim() || port.label,
+        })),
+      outputs: pendingBlock.result.block.outputs
+        .filter((port) => pendingBlock.exposedOutputIds.has(port.id))
+        .map((port) => ({
+          ...port,
+          label: pendingBlock.outputLabels[port.id]?.trim() || port.label,
+        })),
       exposedParams: pendingBlock.result.block.exposedParams.filter((input) =>
         pendingBlock.exposedParamIds.has(input.id),
       ),
@@ -1261,6 +1268,28 @@ function Workflow() {
           position="top-left"
           className="rounded-modiff-compact border border-modiff-border bg-modiff-panel/90 shadow-modiff-panel"
         >
+          <ModiffIconButton
+            label="Fit workflow in view"
+            disabled={!nodesMeasured || canvasSuspended}
+            onClick={() => void fitView({ padding: 0.12, duration: 240 })}
+          >
+            <Scan size={16} />
+          </ModiffIconButton>
+          {nodes.some((node) => node.selected && !node.hidden) ? (
+            <ModiffIconButton
+              label="Focus selected stages"
+              onClick={() =>
+                void fitView({
+                  nodes: nodes.filter((node) => node.selected && !node.hidden),
+                  padding: 0.2,
+                  maxZoom: 1,
+                  duration: 240,
+                })
+              }
+            >
+              <ScanLine size={16} />
+            </ModiffIconButton>
+          ) : null}
           <ModiffIconButton
             label="Arrange graph"
             data-testid="arrange-graph"

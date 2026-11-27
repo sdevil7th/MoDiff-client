@@ -8,10 +8,10 @@ Face token.
 Approved supplementary showcases are listed in `src/studio/templateShowcases.json`.
 Their exact media and redacted recipe/review records use this same immutable
 Dataset, asset inventory, per-file rights ledger and publication verifier. Each
-entry binds both file hashes. A featured cover is labelled **Approved showcase ·
-separate recipe** and links the actual consumed prompt, ordered input identities,
-model pins, controls and accepted limitations. It does not change template defaults,
-`findManifestEntry`, current-template qualification or the original 89-case count.
+entry binds both file hashes. Template cards use the current recipe’s approved preview, with a
+placeholder when the manifest has no matching result. In a template’s detail
+view, **Model showcase** opens the supplementary media and links its own consumed
+prompt, ordered inputs, model pins, settings and accepted limitations.
 The MiniMax green-centre perfume showcase is an ordered-reference material edit;
 its blue-centre text-to-image source is separately registered.
 
@@ -96,7 +96,7 @@ records whose media are withheld. Rights, media, provenance and review checks
 still apply. The default `npm run gallery:verify` continues to check the
 current recipes only.
 
-The browser continues to label these outputs **Previous recipe example**.
+The detail view links these outputs under **Previous recipe example**.
 Repository-relative weight filenames can resolve to their exact recorded Hub
 repository, but only the added revision field may be omitted from an older lock;
 weight hashes, filenames and every other setting remain binding.

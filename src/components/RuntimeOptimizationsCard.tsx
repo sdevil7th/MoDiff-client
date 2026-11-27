@@ -284,9 +284,8 @@ export default function RuntimeOptimizationsCard({
         <strong>Optional runtimes</strong>
         {requiredProfileIds ? (
           <p className="text-xs text-modiff-subtle-text">
-            Required runtimes appear first. Only one optional environment can be active. Separate installations do not
-            establish a combined environment; use a reviewed combined choice when the backend offers it. Download size
-            is unknown unless reported by the install job.
+            Required runtimes appear first. Expand other runtimes for advanced setup. Only one optional environment can
+            be active at a time.
           </p>
         ) : null}
         {optionalRuntimeRequest.status === 'success' &&
