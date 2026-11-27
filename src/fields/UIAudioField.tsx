@@ -168,7 +168,6 @@ export default function UIAudioField(props: FieldProps) {
               compact={compactPreview}
               key={`${audio}-${index}`}
               kind="audio"
-              className="p-2"
               testId={`node-preview-audio-${props.nodeId}-${props.fieldKey}-${index}`}
             >
               <SeekableAudioPlayer source={audio} downloadSampleRate={downloadSampleRate} />

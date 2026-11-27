@@ -13212,11 +13212,12 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
-for (const [kind, selectedFile] of [
-  ['video', '/workspace/media/clip #1.mp4'],
-  ['audio', String.raw`C:\media\clip #1.mp4`],
+for (const [kind, selectedFile, compact] of [
+  ['video', '/workspace/media/clip #1.mp4', false],
+  ['audio', String.raw`C:\media\clip #1.mp4`, false],
+  ['audio', String.raw`C:\media\clip #1.mp4`, true],
 ] as const) {
-  test(`file-backed ${kind} loader previews use the media endpoint and preserve selected paths after reload`, async ({
+  test(`file-backed ${kind} loader previews use the media endpoint and preserve selected paths after reload${compact ? ' in compact mode' : ''}`, async ({
     page,
   }) => {
     await ensureFrontend();
@@ -13235,12 +13236,30 @@ for (const [kind, selectedFile] of [
         display: kind === 'video' ? 'ui_video' : 'ui_audio',
         sourceKey: 'filename',
         value: '/file?file=previous-media.mp4',
+        fieldOptions: { compactPreview: compact },
       },
     });
     await page.route('**/nodes**', (route) => route.fulfill({ json: { nodes: { ...mockRegistry, [key]: loader } } }));
     await page.route('**/media/preview?**', (route) =>
-      route.fulfill({ contentType: kind === 'video' ? 'video/mp4' : 'audio/wav', body: '' }),
+      route.fulfill({
+        contentType: kind === 'video' ? 'video/mp4' : 'audio/wav',
+        body: kind === 'audio' ? audioPreviewFixture() : '',
+      }),
     );
+    let releasePlayer!: () => void;
+    if (kind === 'audio') {
+      const playerReady = new Promise<void>((resolve) => {
+        releasePlayer = resolve;
+      });
+      await page.route(
+        '**/src/fields/UIAudioField.tsx*',
+        async (route) => {
+          await playerReady;
+          await route.continue();
+        },
+        { times: 1 },
+      );
+    }
     let graphPosts = 0;
     await page.route('**/graph', (route) => {
       if (route.request().method() === 'POST') graphPosts++;
@@ -13251,6 +13270,17 @@ for (const [kind, selectedFile] of [
     await dismissTaskLauncher(page);
     const id = await page.evaluate((nodeKey) => window.__MODIFF_E2E__!.addCustomNodeForTest(nodeKey), key);
     const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+    const previewHeight = () =>
+      node.locator('[data-key="preview"]').evaluate((element) => (element as HTMLElement).offsetHeight);
+    let placeholderHeight: number | undefined;
+    if (kind === 'audio') {
+      try {
+        await expect(node.getByText('Loading audio preview…', { exact: true })).toBeVisible();
+        placeholderHeight = await previewHeight();
+      } finally {
+        releasePlayer();
+      }
+    }
     const expected = `${FRONTEND_URL}/media/preview?file=${encodeURIComponent(selectedFile)}&media_kind=${kind}`;
     const player =
       kind === 'video'
@@ -13258,12 +13288,44 @@ for (const [kind, selectedFile] of [
         : page.getByTestId(`node-preview-audio-${id}-preview-0`).locator('audio');
     await expect(player).toHaveAttribute('src', expected);
     await expect(node.locator(`[data-key="file"] ${kind}`)).toHaveAttribute('src', expected);
+    if (kind === 'audio') {
+      await expect.poll(() => previewHeight()).toBe(placeholderHeight);
+      await expect.poll(() => player.evaluate((element: HTMLMediaElement) => element.readyState)).toBeGreaterThan(0);
+    }
+    if (compact) {
+      expect(
+        await page.evaluate(() => {
+          const hooks = window.__MODIFF_E2E__!;
+          return (
+            hooks.setFirstNodePositionByAction('Load', { x: 165, y: 125 }) &&
+            hooks.setFirstNodeSizeByAction('Load', { width: 440, height: 400 })
+          );
+        }),
+      ).toBe(true);
+      await expect.poll(() => node.evaluate((element) => (element as HTMLElement).offsetWidth)).toBe(440);
+      await expect
+        .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes[0]?.measured?.height))
+        .toBe(400);
+    }
     const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+    if (compact) expect(before[0]).toMatchObject({ width: 440, height: 400, position: { x: 165, y: 125 } });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
     await expect(player).toHaveAttribute('src', expected);
     expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes)).toEqual(before);
-    await node.locator('[data-key="file"]').getByRole('button', { name: 'Remove media', exact: true }).click();
+    // A restored node can extend behind the inspector. Fit the canvas after
+    // verifying its saved geometry, then click the actual visible control.
+    await page.getByRole('button', { name: 'Fit workflow in view', exact: true }).click();
+    const remove = node.locator('[data-key="file"]').getByRole('button', { name: 'Remove media', exact: true });
+    await expect
+      .poll(() =>
+        remove.evaluate((button) => {
+          const rect = button.getBoundingClientRect();
+          return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+        }),
+      )
+      .toBe(true);
+    await remove.click();
     await expect(player).toHaveCount(0);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
