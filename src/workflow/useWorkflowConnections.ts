@@ -154,7 +154,7 @@ export function useWorkflowConnections({
   }, []);
 
   const handleNodeSearchSelect = useCallback(
-    async (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean) => {
+    async (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean, requiredHandleId?: string) => {
       if (!anchorPosition || !searchContextRef.current) return;
       const context = searchContextRef.current;
       const dropHandle = dropHandleRef.current;
@@ -174,6 +174,7 @@ export function useWorkflowConnections({
                 handleType: dropHandle.handleType,
                 origin: { node: dropHandle.node, handleId: dropHandle.handleId },
                 allowUnverified,
+                requiredHandleId,
               },
               currentOrigin ? { node: currentOrigin.data, handleId: dropHandle.handleId } : null,
             )

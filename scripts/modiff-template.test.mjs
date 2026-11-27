@@ -4447,17 +4447,18 @@ test('template browser exposes the complete workflow catalog across task and ada
     [
       'recommended',
       'all',
-      'experimental',
       'getting-started',
       'image',
       'edit',
-      'control',
       'video',
       'audio',
       'text',
+      '3d',
+      'control',
       'adapters',
       'upscale',
       'performance',
+      'experimental',
     ],
   );
 
@@ -4549,14 +4550,14 @@ test('template browser exposes the complete workflow catalog across task and ada
   });
   assert.deepEqual(
     completeInventory.map((template) => template.id).sort(),
-    STUDIO_TEMPLATES.filter(visible)
+    STUDIO_TEMPLATES.filter((template) => visible(template) || browserModule.hasDeclaredExperimentalCreator(template))
       .map((template) => template.id)
       .sort(),
   );
   assert.ok(completeInventory.length >= defaultInventory.length);
 });
 
-test('Experimental discovers all ten reviewed FLUX3 creators without promoting ordinary discovery', () => {
+test('Advanced recipes are also discoverable under their tasks while runtime qualifications remain unchanged', () => {
   const { STUDIO_TEMPLATES, PLANNING_STUDIO_TEMPLATES } = templatesModule;
   const planning = STUDIO_TEMPLATES.filter((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id));
   assert.equal(planning.length, 10);
@@ -4591,8 +4592,8 @@ test('Experimental discovers all ten reviewed FLUX3 creators without promoting o
   assert.equal(shown(planning, { difficulty: 'starter' }).length, 0);
   for (const category of ['all', 'recommended', 'image', 'edit', 'adapters'])
     assert.equal(
-      shown([...STUDIO_TEMPLATES, ...planning], { category }).some((item) => planning.includes(item)),
-      false,
+      shown(STUDIO_TEMPLATES, { category }).some((item) => planning.includes(item)),
+      true,
     );
   for (const template of planning) {
     assert.equal(
@@ -4604,6 +4605,55 @@ test('Experimental discovers all ten reviewed FLUX3 creators without promoting o
     assert.equal(template.readinessPolicy, template.inputRequirements ? 'requires_input' : 'runnable');
   }
   assert.equal(JSON.stringify(planning), before);
+});
+
+test('category features and model choices come from the visible recipes and their reviewed outputs', () => {
+  const { STUDIO_TEMPLATES } = templatesModule;
+  const { templateCategoryIds, templateModelOptions, filterStudioTemplates, featuredCategoryTemplate } = browserModule;
+  const options = { category: 'all', query: '', modelType: 'all', difficulty: 'all', sort: 'recommended' };
+  const form = profilesModule.DEFAULT_STUDIO_FORM;
+  const all = filterStudioTemplates(STUDIO_TEMPLATES, form, options);
+  for (const { value, label } of templateModelOptions(all)) {
+    const matches = filterStudioTemplates(all, form, { ...options, modelType: value });
+    assert.ok(matches.length, label);
+    assert.ok(
+      matches.every((item) => browserModule.templateModelDisplayName(item) === label),
+      label,
+    );
+  }
+  const minimax = templateModelOptions(all).filter(({ label }) => /minimax/i.test(label));
+  assert.equal(minimax.length, 2);
+  const lookup = (id) => all.find((item) => item.id === id);
+  assert.deepEqual(templateCategoryIds(lookup('shap_e_traffic_cone_turntable')), ['3d']);
+  assert.ok(templateCategoryIds(lookup('qwen_text_rendering')).includes('image'));
+  assert.ok(templateCategoryIds(lookup('whisper_tiny_blue_cup_transcription')).includes('text'));
+  for (const category of [
+    'all',
+    'image',
+    'audio',
+    'edit',
+    'video',
+    'control',
+    '3d',
+    'text',
+    'adapters',
+    'upscale',
+    'performance',
+    'getting-started',
+  ]) {
+    const rows = filterStudioTemplates(all, form, { ...options, category });
+    const featured = featuredCategoryTemplate(rows, category);
+    assert.ok(rows.includes(featured), category);
+    if (['all', 'image'].includes(category)) assert.equal(featured.id, 'minimax_h3_image_old_town_cat');
+    if (category === 'audio') assert.equal(featured.id, 'minimax_music3_chamber_pop');
+    if (rows.length > 1) {
+      const other = rows.find((item) => item !== featured);
+      assert.equal(
+        featuredCategoryTemplate(rows, category, (item) => item === other),
+        other,
+      );
+    }
+  }
 });
 
 test('Experimental refuses undeclared or incomplete internal creator selections', () => {

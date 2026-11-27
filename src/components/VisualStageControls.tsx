@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Ellipsis } from 'lucide-react';
+import { Cable, ChevronDown } from 'lucide-react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import {
   ModiffDialog,
-  ModiffIconButton,
+  ModiffButton,
   ModiffMenuAction,
   ModiffMenuRoot,
   ModiffMenuSurface,
@@ -14,7 +14,6 @@ import {
 import { operationGraphSignature, commitOperationGraph } from '../workflow/operationGraphTransaction';
 import {
   groupOperationStages,
-  unpackVisualOperationGroups,
   visualOperationGroup,
   type VisualOperationGroup,
   availableOperationStageGroups,
@@ -22,6 +21,7 @@ import {
 } from '../workflow/visualOperationGroups';
 import { visualStagePresentation } from '../workflow/visualOperationGroupProjection';
 import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
+import { setStageEditorOpen } from '../workflow/stageEditing';
 import MediaAttachmentControls from './MediaAttachmentControls';
 import { useNodesStore } from '../stores/useNodeStore';
 import {
@@ -61,21 +61,14 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
       executableMediaOperations(operations, support),
       node.data.operationAuthoring?.operation.pipelineClass ?? '',
     ).length > 0;
-  function apply(group?: VisualOperationGroup) {
+  function apply(group: VisualOperationGroup) {
     try {
       const graph = useFlowStore.getState().toObject();
       const context = captureWorkflowOperationContext();
-      const next = group
-        ? groupOperationStages(graph, ownerId, [group])
-        : unpackVisualOperationGroups(graph, new Set([root ? root.id : node.id])).graph;
+      const next = groupOperationStages(graph, ownerId, [group]);
       if (next === graph && !kind)
         throw new Error('No eligible ungrouped stages on this model branch. Existing groups are unchanged.');
-      commitOperationGraph(
-        next,
-        context,
-        operationGraphSignature(graph),
-        group ? 'Group workflow stages' : 'Ungroup workflow stages',
-      );
+      commitOperationGraph(next, context, operationGraphSignature(graph), 'Group workflow stages');
       useStudioStore.getState().saveActiveWorkflowTab(true);
       setError(null);
     } catch (failure) {
@@ -99,13 +92,14 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
       setError(failure instanceof Error ? failure.message : 'Could not change these component connections.');
     }
   }
+  if (!available.length && !bundleActions.length && !kind && !canAttach && !error) return null;
   return (
-    <div className="nodrag nowheel grid gap-2 py-2">
+    <div className="nodrag nowheel grid gap-2 py-1">
       <ModiffMenuRoot>
         <ModiffMenuTrigger>
-          <ModiffIconButton label="Workflow stage actions" size="compact">
-            <Ellipsis size={16} />
-          </ModiffIconButton>
+          <ModiffButton size="compact" tone="ghost" icon={<Cable size={15} />}>
+            Connections and grouping <ChevronDown size={13} aria-hidden="true" />
+          </ModiffButton>
         </ModiffMenuTrigger>
         <ModiffMenuSurface layer="graph">
           {available.map((group) => (
@@ -142,7 +136,11 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
               {action === 'bundle' ? 'Use component bundle' : 'Expose components'}
             </ModiffMenuAction>
           ))}
-          {kind ? <ModiffMenuAction onClick={() => apply()}>Ungroup stages</ModiffMenuAction> : null}
+          {kind ? (
+            <ModiffMenuAction onClick={() => setStageEditorOpen(root ? root.id : node.id, true)}>
+              Edit stage connections
+            </ModiffMenuAction>
+          ) : null}
           {canAttach ? (
             <ModiffMenuAction onClick={() => requestAnimationFrame(() => setAttachOpen(true))}>
               Add image / audio input…

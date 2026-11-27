@@ -1,5 +1,12 @@
 # MoDiff Client Architecture
 
+Ordinary stages open as a single task node. **Edit stages** or **Edit stage connections**
+opens the owned operations on the canvas. **Done editing** returns to the same stage
+and keeps edits to its controls and wires. The optional instance presentation flag
+`stageEditorOpen` records this explicit view independently of execution. Older
+workflows with only the Block expansion flag open as ordinary stages. **Convert to
+independent nodes** is a separate, confirmed change to the workflow structure.
+
 Ordinary visual stages follow native model-contract visibility. A scoped metadata
 reply that enables an editor omitted by the original model adds that editor to
 the effective instance interface, preserving its value, wires, reusable
@@ -1052,6 +1059,15 @@ ID grammar.
 Canvas search shares these catalog entries, filters and factories with the Nodes
 library. Registered task Blocks appear in normal search; upstream implementation
 entries and catalog-only structural Blocks require Show implementation nodes.
+The Nodes sidebar groups ordinary stages by task and exposes alternative actions
+on the same row. Action search uses the backend catalog vocabulary. The Workflows
+sidebar groups starters by output, and its layout follows panel width.
+Dragging a typed wire also searches model-specific operation contracts. An
+operation or saved stage boundary can supply the pipeline and task when the
+user has not selected them. Ambiguous boundaries leave that choice to the user.
+A candidate can declare a port absent from its generic registry entry. Selection
+resolves the operation, verifies that exact port and direction, and connects it
+in one graph edit. An unverified match still requires explicit opt-in.
 Typed suggestions load `/huggingface/registered-block-interfaces` and match only
 compiled public ports whose complete route pins agree. Upstream leaf suggestions
 use the ordinary node factory's declared sockets; containers without public

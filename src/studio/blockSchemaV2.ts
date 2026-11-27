@@ -362,6 +362,8 @@ export type BlockInstanceV2 = {
   };
   presentation: {
     expanded: boolean;
+    /** Explicitly editing the operations inside an ordinary stage. Legacy expanded flags alone keep its compact view. */
+    stageEditorOpen?: boolean;
     position: { x: number; y: number };
     /** Collapsed/user-resized size. Expanded canvas bounds are derived from internalLayout and measured children. */
     size: { width: number; height: number };
@@ -1459,9 +1461,11 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
     presentation,
     'Block Instance V2.presentation',
     ['expanded', 'position', 'size', 'internalLayout'],
-    ['internalLayoutMode', 'collapsedContainerNodeIds', 'removedControlBindings'],
+    ['internalLayoutMode', 'collapsedContainerNodeIds', 'removedControlBindings', 'stageEditorOpen'],
   );
   booleanAt(presentation.expanded, 'Block Instance V2.presentation.expanded');
+  if (presentation.stageEditorOpen !== undefined)
+    booleanAt(presentation.stageEditorOpen, 'Block Instance V2.presentation.stageEditorOpen');
   removedControlBindingsAt(presentation.removedControlBindings);
   const position = objectAt(presentation.position, 'Block Instance V2.presentation.position');
   keysAt(position, 'Block Instance V2.presentation.position', ['x', 'y']);

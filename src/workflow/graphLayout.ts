@@ -403,7 +403,13 @@ export async function waitForGraphNodeMeasurements(
         (node) => !node.hidden && node.data.type !== 'group' && node.data.type !== 'loop',
       );
       const measured = candidates.every(
-        (node) => finiteDimension(node.measured?.width) && finiteDimension(node.measured?.height),
+        (node) =>
+          finiteDimension(node.measured?.width) &&
+          finiteDimension(node.measured?.height) &&
+          !(
+            typeof document !== 'undefined' &&
+            document.getElementById(node.id)?.querySelector('[data-node-layout-pending]')
+          ),
       );
       if (measured) {
         const signature = candidates

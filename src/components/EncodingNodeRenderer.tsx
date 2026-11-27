@@ -18,7 +18,7 @@ export default function EncodingNodeRenderer(props: NodeProps<CustomNodeType>) {
       fallback={
         <CustomNodeFrame id={props.id} minWidth={280} maxWidth={720}>
           <CustomNodeHeaderFrame>{visualNodeTitle(catalog, props.data)}</CustomNodeHeaderFrame>
-          <p role="status" className="p-3 text-sm text-modiff-subtle-text">
+          <p data-node-layout-pending role="status" className="p-3 text-sm text-modiff-subtle-text">
             Loading node controls…
           </p>
           <NodeContent

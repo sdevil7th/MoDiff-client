@@ -1098,7 +1098,8 @@ test('Encode Inputs supports prompt editing, image attachment, Undo, refresh and
   await expect(implementation.getByRole('heading', { name: 'Encode Image', exact: true })).toBeVisible();
   await implementation.getByRole('button', { name: 'Close', exact: true }).click();
   await input.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate encoding stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
   await expect
     .poll(async () => (await snapshot(page)).nodes.some((node) => node.data.action === 'ImageEncode'))
     .toBe(true);
@@ -1133,7 +1134,7 @@ test('existing stages group explicitly and an image wire adapts Encode Inputs', 
   await page.locator(`.react-flow__node[data-id="${owner}"] header`).first().click();
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
-  await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Group input encoders', exact: true }).click();
   await expect
     .poll(async () => (await snapshot(page)).nodes.filter((node) => node.data.blockInstanceV2).length)
@@ -1142,7 +1143,7 @@ test('existing stages group explicitly and an image wire adapts Encode Inputs', 
     await page.locator(`.react-flow__node[data-id="${owner}"] header`).first().click();
     await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   }
-  await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Group guidance', exact: true }).click();
   await expect
     .poll(async () => (await snapshot(page)).nodes.filter((node) => node.data.blockInstanceV2).length)
@@ -1309,4 +1310,99 @@ test('grouped native text and image generation deliver actual backend outputs', 
     await writeFile(`${output}/${task}.webp`, await image.body());
     await page.screenshot({ path: `${output}/${task}-canvas.png` });
   }
+});
+
+test('imported SDXL encoding output finds its model-bound latent consumer without selecting a pipeline', async ({
+  page,
+}) => {
+  const draft = await page.evaluate(async () => {
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    const { requestOperationStarter } = await import('/src/workflow/operationStarterRequest.ts');
+    const { createWorkflowDraft } = await import('/src/workflow/workflowDraft.ts');
+    const store = useNodesStore.getState();
+    const starter = await requestOperationStarter(
+      'StableDiffusionXLModularPipeline',
+      'text_to_image',
+      store.operationContracts,
+    );
+    return createWorkflowDraft(starter, store.nodesRegistry).graph;
+  });
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  await page.getByLabel('Workflow JSON file', { exact: true }).setInputFiles({
+    name: 'SDXL authoring.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(draft)),
+  });
+  const pane = page.locator('.react-flow__pane');
+  const output = page.locator('.react-flow__handle.source[data-handleid="modiff-encoding-output:image_latents"]');
+  await expect(output).toBeVisible();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const label = await output.getAttribute('data-nodeid');
+  const start = await output.boundingBox();
+  expect(start).toBeTruthy();
+  const end = await pane.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    for (let y = b.top + 65; y < Math.min(innerHeight, b.bottom) - 20; y += 35)
+      for (let x = b.left + 70; x < Math.min(innerWidth, b.right) - 20; x += 45)
+        if (document.elementFromPoint(x, y) === el) return { x, y };
+    throw Error('No clear canvas point for wire release');
+  });
+  await page.mouse.move(start!.x + start!.width / 2, start!.y + start!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 16 });
+  await page.mouse.up();
+  const dialog = page.getByRole('dialog', { name: 'Search nodes' });
+  await expect(dialog.getByLabel('Operation pipeline')).toContainText('StableDiffusionXLModularPipeline');
+  await dialog.getByLabel('Search nodes', { exact: true }).fill('VAE Decode');
+  const option = dialog
+    .getByRole('option')
+    .filter({ hasText: /Input · latents/i })
+    .first();
+  await expect(option).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('sdxl-latents-suggestions.png'), animations: 'disabled' });
+  await option.click();
+  await expect(dialog).toBeHidden();
+  const check = async () => {
+    const graph = await snapshot(page);
+    const added = graph.nodes.find(
+      (node) => node.data.action === 'DecodeLatents' && !draft.nodes.some((old) => old.id === node.id),
+    );
+    return Boolean(
+      added &&
+      graph.edges.some(
+        (edge) =>
+          edge.source === label &&
+          edge.target === added.id &&
+          (edge as { targetHandle?: string }).targetHandle === 'latents',
+      ),
+    );
+  };
+  await expect.poll(check).toBe(true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
+  await expect.poll(check).toBe(true);
+});
+
+test('node and workflow libraries use compact stage rows and fit task rows to sidebar width', async ({ page }) => {
+  await page.getByTestId('left-tab-nodes').click();
+  const panel = page.getByTestId('left-panel');
+  const audio = panel.getByTestId('stage-add-generate-audio');
+  await expect(audio).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Setup & inputs' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Outputs' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Add custom node' })).toBeVisible();
+  await page.mouse.move(0, 0);
+  await panel.screenshot({ path: test.info().outputPath('nodes-library.png'), animations: 'disabled' });
+  await page.getByTestId('left-tab-workflows').click();
+  await panel.getByRole('button', { name: 'Start', exact: true }).click();
+  await panel.getByLabel('Workflow category', { exact: true }).click();
+  await page.getByRole('option', { name: 'All workflows', exact: true }).click();
+  const rows = panel.getByRole('region', { name: 'Image workflows' }).getByTestId(/^workflow-task-/);
+  await expect(rows.first()).toBeVisible();
+  const first = await rows.nth(0).boundingBox();
+  const second = await rows.nth(1).boundingBox();
+  const panelB = await panel.boundingBox();
+  if (panelB!.width < 550) expect(second!.y).toBeGreaterThan(first!.y);
+  expect(first!.width).toBeGreaterThan(Math.min(220, panelB!.width - 48));
+  await panel.screenshot({ path: test.info().outputPath('workflows-library.png'), animations: 'disabled' });
 });

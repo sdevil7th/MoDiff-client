@@ -581,25 +581,36 @@ function GraphList() {
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Workflows</h2>
-              <p className="truncate text-xs text-modiff-subtle-text">Saved and example graphs</p>
             </div>
           </div>
         </div>
       </header>
-      <div className="flex flex-wrap gap-2 p-2">
-        <ModiffButton aria-pressed={libraryTab === 'start'} onClick={() => setLibraryTab('start')}>
-          Start
-        </ModiffButton>
-        <ModiffButton aria-pressed={libraryTab === 'examples'} onClick={() => setLibraryTab('examples')}>
-          Example workflows
-        </ModiffButton>
-        <ModiffButton aria-pressed={libraryTab === 'saved'} onClick={() => setLibraryTab('saved')}>
-          My workflows
-        </ModiffButton>
-        <ModiffButton aria-pressed={libraryTab === 'drafts'} onClick={() => setLibraryTab('drafts')}>
-          Recovery drafts
-        </ModiffButton>
-      </div>
+      <nav
+        aria-label="Workflow library"
+        className="grid grid-cols-2 gap-0.5 border-b border-modiff-border bg-modiff-panel p-1.5"
+      >
+        {(
+          [
+            ['start', 'Start', 'Start'],
+            ['examples', 'Examples', 'Example workflows'],
+            ['saved', 'My workflows', 'My workflows'],
+            ['drafts', 'Drafts', 'Recovery drafts'],
+          ] as const
+        ).map(([view, label, name]) => (
+          <ModiffButton
+            key={view}
+            size="compact"
+            tone="ghost"
+            aria-label={name}
+            title={name}
+            aria-pressed={libraryTab === view}
+            className="min-w-0 aria-pressed:bg-hf-yellow/10 aria-pressed:text-hf-yellow"
+            onClick={() => setLibraryTab(view)}
+          >
+            {label}
+          </ModiffButton>
+        ))}
+      </nav>
       {libraryTab === 'start' ? (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <Suspense fallback={<p role="status">Loading tasks…</p>}>

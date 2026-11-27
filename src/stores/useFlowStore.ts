@@ -18,6 +18,7 @@ import { nanoid } from 'nanoid';
 
 import type { ApiGraphExport, NodeMemoryUsage } from '../types/api';
 import { createPageCheckpointStorage } from '../utils/checkpointStorage';
+import { measuredNodeContentSize } from '../workflow/nodeContentSize';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
@@ -181,6 +182,7 @@ export type ReplaceGraphOptions = FlowGraphReplacementOptions & {
 };
 
 export type ArrangeGraphOptions = {
+  fitNewNodeContents?: boolean;
   history?: boolean;
   reserveFirstImagePreviewSpace?: boolean;
 };
@@ -2565,14 +2567,41 @@ export const useFlowStore = create<FlowStore>()(
       arrangeGraph: async (options = {}) => {
         const applyLayout = () => {
           set((state) => {
-            const arranged = arrangeGraphNodes(state.nodes, state.edges, options).map((node) => {
+            const fitted =
+              options.fitNewNodeContents && typeof document !== 'undefined'
+                ? state.nodes.map((node) => {
+                    if (
+                      node.hidden ||
+                      node.data.blockProjectionOwnerId ||
+                      (node.data.blockInstanceV2
+                        ? !isFocusedStageNode(node.data.blockInstanceV2)
+                        : node.height === undefined || !['custom', 'any'].includes(node.data.type))
+                    )
+                      return node;
+                    const size = measuredNodeContentSize(document.getElementById(node.id));
+                    if (!size || node.height === size.height) return node;
+                    return {
+                      ...node,
+                      width: size.width,
+                      height: size.height,
+                      measured: size,
+                      style: { ...node.style, ...size },
+                    };
+                  })
+                : state.nodes;
+            const arranged = arrangeGraphNodes(fitted, state.edges, options).map((node) => {
               const instance = node.data.blockInstanceV2;
               if (!instance) return node;
               return {
                 ...node,
                 data: {
                   ...node.data,
-                  blockInstanceV2: reduceBlockPresentationV2(instance, { position: node.position }),
+                  blockInstanceV2: reduceBlockPresentationV2(instance, {
+                    position: node.position,
+                    ...(options.fitNewNodeContents && isFocusedStageNode(instance) && node.width && node.height
+                      ? { size: { width: node.width, height: node.height } }
+                      : {}),
+                  }),
                 },
               };
             });

@@ -326,3 +326,28 @@ test('large option lists stay bounded without moving the document scrollbar', as
     await expect(list).toHaveCount(0);
   }
 });
+
+test('long single and multiple choice menus filter by typing and preserve selections across Escape', async ({
+  page,
+}) => {
+  await page.goto(`http://127.0.0.1:${frontendPort}/control-state-matrix.html?large-options`);
+  for (const name of ['Long select', 'Long multiselect']) {
+    const button = page.getByRole('button', { name, exact: true });
+    await button.click();
+    const search = page.getByRole('combobox', { name: 'Search options' });
+    await expect(search).toBeFocused();
+    await search.fill('Model 991');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await search.press('ArrowDown');
+    await search.press('Enter');
+    if (name === 'Long multiselect') await search.press('Escape');
+    await expect(button).toHaveText('Model 991');
+    await expect(button).toBeFocused();
+    await button.click();
+    await expect(search).toHaveValue('');
+    await search.fill('Nothing fits');
+    await expect(page.getByRole('status').filter({ hasText: 'No matching options' })).toBeVisible();
+    await search.press('Escape');
+    await expect(button).toHaveText('Model 991');
+  }
+});

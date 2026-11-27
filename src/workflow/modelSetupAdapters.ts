@@ -566,6 +566,19 @@ function modelSetupAdapterAuthoringLimit(
 }
 
 /** Editing permission and Add capacity are separate: full chains remain editable. */
+/** Only capability-discovery remedies can be retried from the current graph. */
+export function adapterCapabilitiesRefreshable(message?: string | null) {
+  return Boolean(
+    message &&
+    (message.endsWith('Refresh capabilities.') ||
+      [
+        'Refresh model capabilities before adding LoRA.',
+        'Refresh current audio model capabilities before editing LoRA.',
+        'Refresh the verified evaluation runtime and model capabilities before editing LoRA.',
+      ].includes(message)),
+  );
+}
+
 export function modelSetupAdapterEditUnavailable(
   chain: ReturnType<typeof modelSetupAdapterChain>,
   authority?: ModelSetupAdapterAuthority,

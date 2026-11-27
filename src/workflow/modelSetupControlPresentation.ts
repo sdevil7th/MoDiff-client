@@ -5,6 +5,7 @@ import { blockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
 import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
+import { literalControlIsOff, nodeControlGate } from './gatedNodeControls';
 import { nodeDisplayLabel } from './nodePresentation';
 
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
@@ -85,6 +86,38 @@ export function modelSetupControlParams(
     const nodeKey = `${owner.data.module}.${owner.data.action}`;
     const declared = owner.data.params[fieldId];
     const conditioning = owner.data.params[CONDITIONING_KIND];
+    if (nodeControlGate(nodeKey) === 'auto_offload') {
+      // normalize_offload_mode ignores mode when this literal switch is off.
+      // A connected switch can override its saved fallback at execution.
+      const gate = owner.data.params.auto_offload;
+      const gatePorts = instance.effectiveInterface.boundary.inputs.filter((port) =>
+        blockInputPortBindingsV2(port).some(
+          (binding) => binding.nodeId === nodeId && binding.fieldOrPortId === 'auto_offload',
+        ),
+      );
+      if (
+        fieldId === 'offload_mode' &&
+        literalControlIsOff(gate) &&
+        !control.mirrorBindings?.length &&
+        !graph.edges.some((e) => e.target === owner.id && e.targetHandle === 'auto_offload') &&
+        !workflowEdges.some(
+          (e) =>
+            e.target === instance.instanceId &&
+            (gatePorts.some((port) => port.portId === e.targetHandle) ||
+              e.targetHandle === blockCrossingHandleV2({ nodeId, fieldOrPortId: 'auto_offload', direction: 'input' })),
+        )
+      ) {
+        delete visible[control.controlId];
+        continue;
+      }
+      if (
+        ['revision', 'trust_remote_code', 'attention_backend'].includes(fieldId) &&
+        control.label === declared?.label &&
+        !field.fieldOptions?.controlTier
+      ) {
+        visible[control.controlId] = { ...field, fieldOptions: { ...field.fieldOptions, controlTier: 'advanced' } };
+      }
+    }
     // Portable graphs can retain the unfiltered loader schema. Use an exact,
     // unconnected selector as evidence instead of resolving a supplier or reseeding a value.
     if (
@@ -112,7 +145,7 @@ export function modelSetupControlParams(
       control.label === 'Revision' &&
       [IMAGE_LOADER, AUDIO_LOADER, 'modules.ModularDiffusers.ModelsLoader'].includes(nodeKey)
     ) {
-      visible[control.controlId] = { ...field, label: 'Base model revision' };
+      visible[control.controlId] = { ...visible[control.controlId]!, label: 'Base model revision' };
     }
     const recipeField = VAE_FALLBACKS[nodeKey]?.[fieldId];
     const recipeInput = owner.data.params[RECIPE_SOCKET];

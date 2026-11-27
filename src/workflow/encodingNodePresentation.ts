@@ -54,6 +54,13 @@ export function isFocusedStageNode(instance: BlockInstanceV2 | undefined) {
   return Boolean(kind && (kind !== 'guidance' || isFocusedGuidance(instance)));
 }
 
+/** Old saved stages occasionally carried a Block's expanded flag. Only an explicit edit opens their operations. */
+export function isStageEditorOpen(instance: BlockInstanceV2 | undefined): boolean {
+  return Boolean(
+    instance?.presentation?.stageEditorOpen && instance.presentation.expanded && visualOperationStageKind(instance),
+  );
+}
+
 /** Rendering only: never remove a declared boundary or an existing connection. */
 export function encodingVisibleConnectors(
   params: Record<string, NodeParams>,

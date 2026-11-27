@@ -108,7 +108,13 @@ export function BlockOwnerChoices({
           />
         </ModiffFieldShell>
       ) : null}
-      <Suspense fallback={<p role="status">Loading model choices…</p>}>
+      <Suspense
+        fallback={
+          <p data-node-layout-pending role="status">
+            Loading model choices…
+          </p>
+        }
+      >
         <OperationModelPicker
           taskControls={usePickerForTask ? ownerChoices : undefined}
           node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }}

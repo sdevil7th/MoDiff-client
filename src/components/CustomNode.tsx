@@ -45,6 +45,7 @@ import { modiffLayout, sanitizeModiffNodeStyle } from '../theme';
 import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
 import { formatExecutionTime } from '../utils/formatExecutionTime';
 import { formatMemory } from '../utils/formatMemory';
+import { measuredNodeContentSize } from '../workflow/nodeContentSize';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import {
   CustomNodeFrame,
@@ -148,9 +149,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
   // user-authored size. Feeding it back into textarea minima changed natural
   // content height inside React Flow's ResizeObserver delivery (110 -> 160),
   // causing undelivered notifications. Only explicit canvas sizing opts in.
-  const hasTallExplicitSize = useFlowStore(
-    (state) => (state.nodes.find((candidate) => candidate.id === node.id)?.height ?? 0) > 360,
-  );
+  const explicitHeight = useFlowStore((state) => state.nodes.find((candidate) => candidate.id === node.id)?.height);
+  const hasTallExplicitSize = (explicitHeight ?? 0) > 360;
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const [helpAnchor, setHelpAnchor] = useState<PanelAnchor | null>(null);
   const [issueAnchor, setIssueAnchor] = useState<PanelAnchor | null>(null);
@@ -385,6 +385,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
         recentChangeLabel && 'outline-hf-yellow border-hf-yellow shadow-modiff-panel',
       )}
       nodeStyle={style}
+      explicitHeight={explicitHeight}
       maxWidth={MAX_NODE_WIDTH}
       minWidth={minimumNodeWidth}
       isError={isError}
@@ -463,34 +464,37 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
         <>
           <div
             className={cx(
-              'nowheel flex min-h-0 w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 pb-2 text-modiff-text',
+              'nowheel min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 text-modiff-text',
               hasTallExplicitSize ? '[&_.modiff-textarea-field]:min-h-40' : '[&_.modiff-textarea-field]:min-h-[110px]',
             )}
             data-testid={`node-scroll-body-${node.id}`}
+            data-node-body
           >
-            <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-              {stage && !node.surface && stage.mode.label !== label && (
-                <p className="text-xs text-modiff-subtle-text">{stage.mode.label}</p>
-              )}
-              {stage?.mode.guidance && !node.surface && <ImageGuidanceChoice nodeId={node.id} />}
-              {node.surface?.controls ?? (
-                <NodeContent
-                  nodeId={node.id}
-                  params={node.data.params}
-                  updateStore={handleUpdateStore}
-                  updateFieldActionStore={
-                    node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
-                      ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
-                      : undefined
-                  }
-                  module={node.data.module || ''}
-                  action={node.data.action || ''}
-                  mode="controls"
-                  executionStatus={node.data.executionStatus}
-                  progressMessage={node.data.progressMessage}
-                />
-              )}
-            </ErrorBoundary>
+            <div data-node-fields className="grid min-w-0 grid-cols-1 gap-2">
+              <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
+                {stage && !node.surface && stage.mode.label !== label && (
+                  <p className="text-xs text-modiff-subtle-text">{stage.mode.label}</p>
+                )}
+                {stage?.mode.guidance && !node.surface && <ImageGuidanceChoice nodeId={node.id} />}
+                {node.surface?.controls ?? (
+                  <NodeContent
+                    nodeId={node.id}
+                    params={node.data.params}
+                    updateStore={handleUpdateStore}
+                    updateFieldActionStore={
+                      node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                        ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                        : undefined
+                    }
+                    module={node.data.module || ''}
+                    action={node.data.action || ''}
+                    mode="controls"
+                    executionStatus={node.data.executionStatus}
+                    progressMessage={node.data.progressMessage}
+                  />
+                )}
+              </ErrorBoundary>
+            </div>
           </div>
 
           <div className="relative w-full shrink-0 bg-modiff-bg text-modiff-subtle-text">
@@ -658,11 +662,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
             icon={<RefreshCcw size={15} />}
             onClick={() => {
               closeContextMenu();
-              resetNodeSize(node.id);
+              const size = measuredNodeContentSize(nodeRef.current, false);
+              if (size && node.surface) node.surface.setSize(size.width, size.height);
+              else resetNodeSize(node.id);
               scheduleNodeLayoutSync();
             }}
           >
-            Reset size
+            {node.surface ? 'Fit height to controls' : 'Reset size'}
           </ContextMenuItem>
           <ContextMenuItem
             data-testid="node-menu-recompute"

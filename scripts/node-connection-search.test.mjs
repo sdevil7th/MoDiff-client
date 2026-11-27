@@ -726,3 +726,45 @@ test('every shipped compiled catalog interface agrees with the frontend route an
     }
   }
 });
+
+test('a wire from an authored stage finds model-resolved ports absent from its bare registry', () => {
+  const pipeline = 'ExampleModularPipeline';
+  const common = { pipelineClass: pipeline, task: 'text_to_image', binding: { values: {}, pipelineClass: pipeline } };
+  const encoder = { ...common, operationId: 'image.encode', nodeKey: 'modules.Sample.Encode', ports: [] };
+  const port = { name: 'image_latents', direction: 'input', roles: ['value'], types: ['latents'], hidden: false };
+  const denoise = { ...common, operationId: 'image.denoise', nodeKey: 'modules.Sample.Denoise', ports: [port] };
+  const bare = definition({ unet: { type: 'model', display: 'input' } });
+  const stage = {
+    node: {
+      ...definition({}),
+      blockInstanceV2: {
+        effectiveInterface: { boundary: { inputs: [], outputs: [] } },
+        effectiveGraph: { nodes: [{ nodeId: 'encoder', data: { operationAuthoring: { operation: encoder } } }] },
+      },
+    },
+    handleId: 'image_latents',
+  };
+  assert.deepEqual(search.wireOperationScope(stage, [encoder, denoise]), { pipeline, task: common.task });
+  assert.deepEqual(search.wireOperationScope(stage, [denoise]), undefined);
+  assert.equal(search.operationWirePort(bare, denoise, 'latents', 'source'), 'image_latents');
+  assert.equal(search.operationWirePort(bare, denoise, 'string', 'source'), undefined);
+  assert.equal(search.operationWirePort(bare, denoise, 'latents', 'target'), undefined);
+  assert.equal(
+    search.operationWirePort(bare, { ...denoise, ports: [{ ...port, hidden: true }] }, 'latents', 'source'),
+    undefined,
+  );
+});
+
+test('a dedicated prompt socket wins over a same-type editable prompt earlier in the contract', () => {
+  const value = { direction: 'input', roles: ['value'], types: ['string'] };
+  const op = {
+    ports: [
+      { ...value, name: 'prompt' },
+      { ...value, name: 'prompt_input' },
+    ],
+  };
+  const bare = definition({ prompt_input: { type: 'string', display: 'input' } });
+  assert.equal(search.operationWirePort(bare, op, 'string', 'source'), 'prompt_input');
+  const resolved = definition({ ...bare.params, prompt: { type: 'string', display: 'textarea' } });
+  assert.equal(search.operationWirePort(resolved, op, 'string', 'source'), 'prompt_input');
+});

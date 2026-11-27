@@ -11,6 +11,7 @@ import { sanitizeModiffNodeStyle } from '../theme';
 import NodeContent from './NodeContent';
 
 import { AnyNodeFrame, NodeResizeHandle } from '../ui';
+import { contentDrivenNodeStyle } from '../workflow/nodeContentSize';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import { cx } from '../utils/classNames';
 
@@ -19,6 +20,7 @@ const AnyNode = memo((node: NodeProps<CustomNodeType>) => {
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
   const setParam = useFlowStore((state) => state.setParamWithHistory);
   useNodeLayoutSync(node.id, nodeRef);
+  const explicitHeight = useFlowStore((s) => s.nodes.find((n) => n.id === node.id)?.height);
   const validationSeverity = node.data.uiState?.validationSeverity;
   const validationMessage = node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
   const isError = validationSeverity === 'error';
@@ -35,7 +37,7 @@ const AnyNode = memo((node: NodeProps<CustomNodeType>) => {
       ref={nodeRef}
       id={node.id}
       className={`${normalizeDataType(`${node.data.module}_${node.data.action}`)} ${dataTypeClass(node.data.category)} module-${normalizeDataType(node.data.module)}`}
-      nodeStyle={style}
+      nodeStyle={contentDrivenNodeStyle(style, explicitHeight)}
     >
       {validationMessage && (
         <span
@@ -51,17 +53,23 @@ const AnyNode = memo((node: NodeProps<CustomNodeType>) => {
           <TriangleAlert size={15} />
         </span>
       )}
-      <div className="nowheel min-h-0 w-full flex-1 overflow-auto p-2" data-testid={`node-scroll-body-${node.id}`}>
-        <NodeContent
-          nodeId={node.id}
-          params={node.data.params}
-          updateStore={handleOnChange}
-          module={node.data.module || ''}
-          action={node.data.action || ''}
-          mode="controls"
-          executionStatus={node.data.executionStatus}
-          progressMessage={node.data.progressMessage}
-        />
+      <div
+        className="nowheel min-h-0 w-full flex-1 overflow-auto p-2"
+        data-testid={`node-scroll-body-${node.id}`}
+        data-node-body
+      >
+        <div data-node-fields>
+          <NodeContent
+            nodeId={node.id}
+            params={node.data.params}
+            updateStore={handleOnChange}
+            module={node.data.module || ''}
+            action={node.data.action || ''}
+            mode="controls"
+            executionStatus={node.data.executionStatus}
+            progressMessage={node.data.progressMessage}
+          />
+        </div>
       </div>
       <NodeContent
         nodeId={node.id}

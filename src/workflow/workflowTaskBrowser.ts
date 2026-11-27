@@ -6,6 +6,7 @@ export type WorkflowCategory = (typeof WORKFLOW_CATEGORIES)[number];
 /** Task presentation only; capability and execution remain backend-owned. */
 export function workflowTaskCategory(task: string): WorkflowCategory {
   if (task.includes('video') || task === 'flf2v' || task.startsWith('character_')) return 'Video';
+  if (task.endsWith('_to_text')) return 'Text & Utilities';
   if (task.includes('audio') || task.includes('speech') || task.includes('music')) return 'Audio';
   if (task.includes('3d')) return '3D';
   if (task === 'mask_composite' || /image|inpaint|outpaint|controlnet|ip_adapter|depth|layer_decomposition/.test(task))
@@ -32,6 +33,24 @@ const DESCRIPTIONS: Record<string, string> = {
   audio_continuation: 'Continue an existing audio recording.',
   audio_variation: 'Create a variation of an audio recording.',
   audio_repaint: 'Regenerate part of an audio recording.',
+  action_forward_dynamics: 'Predict the next observation from a supplied action.',
+  action_inverse_dynamics: 'Infer the action between two observations.',
+  action_policy: 'Predict an action from the supplied observation.',
+  character_animate: 'Transfer motion to a character reference.',
+  character_replace: 'Replace a character while following the source motion.',
+  image_to_text: 'Describe the contents of an image.',
+  image_to_3d: 'Create a 3D result from a reference image.',
+  text_to_3d: 'Create a 3D result from a prompt.',
+  depth_estimation: 'Estimate scene depth from an image.',
+  layer_decomposition: 'Separate parts of an image into layers.',
+  mask_composite: 'Combine images using a mask.',
+  video_inpaint: 'Replace a masked area across video frames.',
+  video_outpaint: 'Extend the canvas around a source clip.',
+  reference_to_video: 'Guide a new video using a reference.',
+  text_to_video_with_audio: 'Create a video and soundtrack from a prompt.',
+  image_to_video_with_audio: 'Animate an image with a synchronized soundtrack.',
+  video_to_video_with_audio: 'Transform a supplied clip with sound.',
+  condition_to_video_with_audio: 'Guide a video and soundtrack with supplied conditioning.',
 };
 
 const PRIMARY_IMAGE_TASKS = ['text_to_image', 'image_to_image', 'edit_image', 'inpaint', 'outpaint', 'image_upscale'];

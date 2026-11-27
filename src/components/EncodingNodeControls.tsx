@@ -19,7 +19,9 @@ const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls
 export default function EncodingNodeControls({
   instance,
   updateStore,
+  controlIdPrefix,
 }: {
+  controlIdPrefix?: string;
   instance: BlockInstanceV2;
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
 }) {
@@ -111,7 +113,7 @@ export default function EncodingNodeControls({
     <div
       className="nodrag nowheel grid min-w-0 grid-cols-1 gap-2"
       data-encoding-content
-      data-testid={`encoding-controls-${instance.instanceId}`}
+      data-testid={`${controlIdPrefix ? 'inspector-' : ''}encoding-controls-${instance.instanceId}`}
     >
       {enhancementOwners.map((owner) => (
         <Suspense key={owner.id} fallback={null}>
@@ -149,7 +151,7 @@ export default function EncodingNodeControls({
                     <div className="text-modiff-metadata font-semibold text-modiff-subtle-text">{stage.data.label}</div>
                     <NodeContent
                       nodeId={instance.instanceId}
-                      controlIdPrefix={`enhancement-${instance.instanceId}-${role}`}
+                      controlIdPrefix={`${controlIdPrefix ?? 'canvas'}-enhancement-${instance.instanceId}-${role}`}
                       params={params}
                       updateStore={updateStore}
                       module={view.source.provider ?? 'MoDiff'}
@@ -178,16 +180,13 @@ export default function EncodingNodeControls({
           <ModiffDisclosure
             key={group}
             label={group}
-            defaultOpen
+            defaultOpen={group !== 'Image' || !optionalImage || images.length > 0 || controls.length > 0}
             unmount={false}
             panelClassName="grid min-w-0 grid-cols-1 gap-2 px-1 pt-2"
             aria-label={`${group} encoding controls`}
           >
             {group === 'Image' && optionalImage ? (
-              <p className="text-xs text-modiff-subtle-text">
-                Optional — connect the Image socket to use an image input. Text-only generation remains available
-                without it.
-              </p>
+              <p className="text-xs text-modiff-subtle-text">Connect an image to guide the prompt.</p>
             ) : null}
             {promptSources.length ? (
               <p className="text-xs text-modiff-subtle-text">
@@ -243,6 +242,7 @@ export default function EncodingNodeControls({
                 <div key={control.controlId}>
                   <NodeContent
                     nodeId={instance.instanceId}
+                    controlIdPrefix={controlIdPrefix}
                     params={{
                       [control.controlId]: encodingControlParam(
                         control,
@@ -280,10 +280,7 @@ export default function EncodingNodeControls({
           unmount={false}
           panelClassName="grid min-w-0 grid-cols-1 gap-2 px-1 pt-2"
         >
-          <p className="text-xs text-modiff-subtle-text">
-            Guidance affects input conditioning and denoising. Closing this section keeps its settings active.
-          </p>
-          <GuidanceNodeControls instance={instance} />
+          <GuidanceNodeControls instance={instance} controlIdPrefix={controlIdPrefix} />
         </ModiffDisclosure>
       ) : null}
     </div>

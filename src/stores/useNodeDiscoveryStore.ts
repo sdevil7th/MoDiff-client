@@ -45,5 +45,13 @@ export function useNodeDiscovery() {
     entry?.tasks.find((item) => item.task === (selection?.task ?? context.task)) ??
     entry?.tasks.find((item) => item.operationIds.length > 0) ??
     entry?.tasks[0];
-  return { ...state, pipeline: entry?.pipelineClass ?? '', task: selected?.task ?? '', entry, selected, support };
+  return {
+    ...state,
+    selection,
+    pipeline: entry?.pipelineClass ?? '',
+    task: selected?.task ?? '',
+    entry,
+    selected,
+    support,
+  };
 }

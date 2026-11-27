@@ -31,6 +31,7 @@ export type TemplateBrowserCategoryId =
   | 'audio'
   | 'video'
   | 'text'
+  | '3d'
   | 'adapters'
   | 'upscale'
   | 'performance';
@@ -39,7 +40,7 @@ export type TemplateBrowserFilter = {
   category: TemplateBrowserCategoryId;
   includeBlocked?: boolean;
   query: string;
-  modelType: StudioModelType | 'all';
+  modelType: StudioModelType | 'all' | `label:${string}`;
   mode?: StudioMode | 'all';
   difficulty: StudioTemplateDifficulty | 'all';
   sort: 'recommended' | 'task' | 'model' | 'runtime';
@@ -57,17 +58,18 @@ export type TemplateMediaSlot = {
 export const TEMPLATE_BROWSER_CATEGORIES: Array<{ id: TemplateBrowserCategoryId; label: string }> = [
   { id: 'recommended', label: 'Recommended' },
   { id: 'all', label: 'All templates' },
-  { id: 'experimental', label: 'Experimental' },
   { id: 'getting-started', label: 'Getting Started' },
   { id: 'image', label: 'Image' },
   { id: 'edit', label: 'Edit' },
-  { id: 'control', label: 'Control' },
   { id: 'video', label: 'Video' },
   { id: 'audio', label: 'Audio' },
   { id: 'text', label: 'Text' },
+  { id: '3d', label: '3D' },
+  { id: 'control', label: 'Control & guidance' },
   { id: 'adapters', label: 'Adapters' },
   { id: 'upscale', label: 'Upscale' },
   { id: 'performance', label: 'Performance' },
+  { id: 'experimental', label: 'Advanced & planning' },
 ];
 
 const TEMPLATE_DISPLAY_NAME_OVERRIDES: Partial<Record<StudioTemplate['id'], string>> = {
@@ -126,7 +128,9 @@ export function inferTemplateIntentGroup(template: StudioTemplate): StudioTempla
 }
 
 export function templateCategoryId(template: StudioTemplate): TemplateBrowserCategoryId {
-  if (template.category === 'text') return 'text';
+  if (template.mode === 'text_to_3d') return '3d';
+  if (template.mode === 'text_generation' || template.mode === 'image_to_text') return 'text';
+  if (template.category === 'text' && template.mode === 'text_to_image') return 'image';
   if (template.category === 'low_vram') return 'performance';
   if (template.category === 'lora') return 'adapters';
   if (template.category === 'upscale') return 'upscale';
@@ -149,6 +153,8 @@ export function templateCategoryId(template: StudioTemplate): TemplateBrowserCat
  */
 export function templateCategoryIds(template: StudioTemplate): TemplateBrowserCategoryId[] {
   const primary = templateCategoryId(template);
+  if (template.mode === 'speech_to_text' || template.mode === 'speech_translation') return [primary, 'text'];
+  if (primary === 'audio' && template.outputKinds?.includes('video')) return [primary, 'video'];
   if (primary !== 'adapters') return [primary];
   if (AUDIO_STUDIO_MODES.includes(template.mode) || template.outputKinds?.includes('audio')) {
     return [primary, 'audio'];
@@ -191,7 +197,7 @@ function recommendedRank(template: StudioTemplate, form: StudioFormState) {
   return rank;
 }
 
-/** Explicit Experimental discovery only; this grants no model or execution eligibility. */
+/** Recognize declared creators for browsing. Execution and resource eligibility remain separate. */
 export function hasDeclaredExperimentalCreator(template: StudioTemplate) {
   const selection = template.executionSelection;
   const declared = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id];
@@ -235,14 +241,19 @@ export function filterStudioTemplates(
         currentModelType: form.modelType,
         includeWorkflowOnly: true,
       }) &&
-      !(selectedCategory === 'experimental' && hasDeclaredExperimentalCreator(template))
+      !hasDeclaredExperimentalCreator(template)
     )
       return false;
     if (selectedCategory === 'recommended' && blocked) return false;
     if (selectedCategory !== 'recommended' && selectedCategory !== 'all' && selectedCategory !== 'experimental') {
       if (!templateCategoryIds(template).includes(selectedCategory)) return false;
     }
-    if (filter.modelType !== 'all' && template.modelType !== filter.modelType) return false;
+    if (
+      filter.modelType !== 'all' &&
+      filter.modelType !== template.modelType &&
+      filter.modelType !== templateModelFilterValue(template)
+    )
+      return false;
     if (filter.mode && filter.mode !== 'all' && template.mode !== filter.mode) return false;
     if (filter.difficulty !== 'all' && template.difficulty !== filter.difficulty) return false;
     if (query && !templateSearchText(template).includes(query)) return false;
@@ -260,6 +271,45 @@ export function filterStudioTemplates(
     if (filter.sort === 'task') return STUDIO_MODE_LABELS[left.mode].localeCompare(STUDIO_MODE_LABELS[right.mode]);
     return recommendedRank(left, form) - recommendedRank(right, form) || left.label.localeCompare(right.label);
   });
+}
+
+export function templateModelFilterValue(template: StudioTemplate) {
+  return `label:${templateModelDisplayName(template)}` as const;
+}
+
+export function templateModelOptions(templates: readonly StudioTemplate[]) {
+  const labels = new Map(
+    templates.map((template) => [templateModelFilterValue(template), templateModelDisplayName(template)]),
+  );
+  return Array.from(labels, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+const CATEGORY_FEATURES: Record<TemplateBrowserCategoryId, string> = {
+  recommended: 'minimax_h3_image_old_town_cat',
+  all: 'minimax_h3_image_old_town_cat',
+  'getting-started': 'z_image_quick_concept',
+  image: 'minimax_h3_image_old_town_cat',
+  edit: 'qwen_product_relight',
+  control: 'qwen_layered_sunset_and_peaks',
+  video: 'wan_a14b_cloudbreak_over_the_ridges',
+  audio: 'minimax_music3_chamber_pop',
+  text: 'janus_reykjavik_travel_note',
+  '3d': 'shap_e_traffic_cone_turntable',
+  adapters: 'flux_lora_oil_painting',
+  upscale: 'qwen_upscale_finish',
+  performance: 'low_vram',
+  experimental: 'flux3_klein_fp8r512_text_to_image',
+};
+
+/** Keep an editorial choice within the current results and prefer approved current-recipe media. */
+export function featuredCategoryTemplate(
+  templates: readonly StudioTemplate[],
+  category: TemplateBrowserCategoryId,
+  hasPreview?: (template: StudioTemplate) => boolean,
+) {
+  const choice = templates.find((template) => template.id === CATEGORY_FEATURES[category]);
+  if (choice && (!hasPreview || hasPreview(choice))) return choice;
+  return (hasPreview && templates.find(hasPreview)) || choice || templates[0];
 }
 
 export function templateMediaSlots(template: StudioTemplate): TemplateMediaSlot[] {

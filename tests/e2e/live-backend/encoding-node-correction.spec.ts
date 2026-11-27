@@ -210,7 +210,8 @@ test('one Encode Inputs: simultaneous inputs, preview, disclosure, persistence a
   await implementation.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(input.getByRole('button', { name: /Expand block|Collapse block/ })).toHaveCount(0);
   await input.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate encoding stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
   await expect(input).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+z');

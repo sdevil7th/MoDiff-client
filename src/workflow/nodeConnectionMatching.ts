@@ -174,6 +174,7 @@ export function matchingNodeHandleForInsertion(
     handleType: HandleDirection;
     origin: ConnectionSearchOrigin;
     allowUnverified: boolean;
+    requiredHandleId?: string;
   },
   currentOrigin: ConnectionSearchOrigin | null,
 ) {
@@ -183,6 +184,7 @@ export function matchingNodeHandleForInsertion(
     selection.handleType,
     selection.origin,
     selection.allowUnverified,
+    selection.requiredHandleId,
   );
   if (!match || !currentOrigin || currentOrigin.handleId !== selection.origin.handleId) return undefined;
   const param = nodeConnectorParam({ data: currentOrigin.node }, currentOrigin.handleId);

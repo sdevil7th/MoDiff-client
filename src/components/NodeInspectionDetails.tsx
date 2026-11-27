@@ -136,7 +136,7 @@ export default function NodeInspectionDetails({
         {instance ? (
           <p>
             {isFocusedStageNode(instance)
-              ? 'Use Edit stages on the node to show and edit its individual operations on the canvas.'
+              ? 'Edit stages opens the individual operations on the canvas. Done editing returns to the stage with your changes.'
               : 'Use Expand Block on the canvas to edit this composition. This does not edit the Python implementation.'}
           </p>
         ) : null}

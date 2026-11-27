@@ -54,7 +54,9 @@ export async function settleExampleWorkflowCanvas() {
     assertWorkflowOperationContext(context, { includeForm: false });
     if (!measured)
       throw new Error('The example controls did not finish measuring. Reopen the example to retry its layout.');
-    await useFlowStore.getState().arrangeGraph({ history: false, reserveFirstImagePreviewSpace: true });
+    await useFlowStore
+      .getState()
+      .arrangeGraph({ history: false, fitNewNodeContents: true, reserveFirstImagePreviewSpace: true });
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
     );

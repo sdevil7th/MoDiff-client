@@ -215,7 +215,7 @@ test('native image attachment uses backend roles, keeps prompt and supports Undo
   await page.locator(`.react-flow__node[data-id="${ownerId}"] header`).first().click();
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
-  await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Add image / audio input…', exact: true }).click();
   const attachment = page.getByRole('dialog', { name: 'Add image / audio input', exact: true });
   await attachment.getByLabel('Media input role', { exact: true }).click();

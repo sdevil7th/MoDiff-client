@@ -416,7 +416,7 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     assertWorkflowOperationContext(context);
     if (!measured)
       throw new Error('The template controls did not finish measuring. Reopen the template to retry its layout.');
-    await useFlowStore.getState().arrangeGraph({ history: false });
+    await useFlowStore.getState().arrangeGraph({ history: false, fitNewNodeContents: true });
     assertWorkflowOperationContext(context);
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);

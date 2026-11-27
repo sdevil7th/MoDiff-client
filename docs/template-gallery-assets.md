@@ -5,6 +5,10 @@ while Git contains only code, metadata, and SHA-256 identities. Runtime URLs
 are pinned to one immutable Dataset commit. Public users do not need a Hugging
 Face token.
 
+The browser groups recipes by task and lists **Advanced & planning** last. This group contains recipes that explicitly declare a custom experimental creator, plus planning-only drafts. Recipes with private previews retain their task categories. Declared creator recipes also appear in their relevant task categories. Model and operation filters follow the recipes in the current results, including independently named checkpoints that use the same execution pipeline.
+
+Each category opens with one featured recipe when sorting by recommendation. Its preview uses the current recipe's approved Gallery entry. Images with text, transcriptions and music videos can be found by their relevant medium. Template authors can nominate a category lead in `src/studio/templateBrowser.ts`. The browser uses another matching reviewed output when filters exclude the lead.
+
 Approved supplementary showcases are listed in `src/studio/templateShowcases.json`.
 Their exact media and redacted recipe/review records use this same immutable
 Dataset, asset inventory, per-file rights ledger and publication verifier. Each

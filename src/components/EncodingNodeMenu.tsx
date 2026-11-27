@@ -21,6 +21,7 @@ import {
   visualOperationGroupMedia,
   visualStagePresentation,
 } from '../workflow/visualOperationGroupProjection';
+import { setStageEditorOpen } from '../workflow/stageEditing';
 import NodeInspectionDetails from './NodeInspectionDetails';
 import { operationScope } from '../workflow/operationScope';
 import { operationOwnsModel } from '../workflow/operationContracts';
@@ -37,6 +38,7 @@ export default function EncodingNodeMenu({
   canSave: boolean;
 }) {
   const [docsOpen, setDocsOpen] = useState(false);
+  const [detachOpen, setDetachOpen] = useState(false);
   const graph = useFlowStore(useShallow((state) => ({ nodes: state.nodes, edges: state.edges })));
   const kind = visualOperationGroup(node)!;
   const media = visualOperationGroupMedia(node);
@@ -98,6 +100,7 @@ export default function EncodingNodeMenu({
       const next = unpackVisualOperationGroups(graph, new Set([node.id])).graph;
       commitOperationGraph(next, context, operationGraphSignature(graph), separateLabel);
       useStudioStore.getState().saveActiveWorkflowTab(true);
+      enqueueSnackbar(`Converted ${label} to independent canvas nodes.`, { variant: 'success' });
     } catch (error) {
       enqueueSnackbar(error instanceof Error ? error.message : 'Could not separate stages.', {
         variant: 'error',
@@ -164,8 +167,8 @@ export default function EncodingNodeMenu({
         tone="ghost"
         className="nodrag nowheel whitespace-nowrap"
         aria-label={`Edit stages: ${label}`}
-        title="Show individual stages on the canvas. Undo restores this group."
-        onClick={separate}
+        title="Edit the operations inside this stage. Choose Done editing to return."
+        onClick={() => setStageEditorOpen(node.id, true)}
       >
         Edit stages
       </ModiffButton>
@@ -181,7 +184,9 @@ export default function EncodingNodeMenu({
             <ModiffMenuAction onClick={mergeSharedInputs}>Merge shared inputs</ModiffMenuAction>
           ) : null}
           {kind === 'setup' ? <ModiffMenuAction onClick={simplify}>Simplify connected stages</ModiffMenuAction> : null}
-          <ModiffMenuAction onClick={separate}>{separateLabel}</ModiffMenuAction>
+          <ModiffMenuAction onClick={() => requestAnimationFrame(() => setDetachOpen(true))}>
+            Convert to independent nodes…
+          </ModiffMenuAction>
           {combinationOwner ? (
             <ModiffMenuAction onClick={combine}>Combine encoding and Guidance</ModiffMenuAction>
           ) : null}
@@ -191,6 +196,29 @@ export default function EncodingNodeMenu({
           </ModiffMenuAction>
         </ModiffMenuSurface>
       </ModiffMenuRoot>
+      {detachOpen ? (
+        <ModiffDialog
+          open
+          title={`Convert ${label} to independent nodes?`}
+          onClose={() => setDetachOpen(false)}
+          footer={
+            <>
+              <ModiffButton onClick={() => setDetachOpen(false)}>Cancel</ModiffButton>
+              <ModiffButton onClick={separate}>Convert to independent nodes</ModiffButton>
+            </>
+          }
+        >
+          <p>
+            Remove the stage wrapper and place its operations directly in this workflow. Their settings and connections
+            are kept. To edit inside the stage and return with Done editing, choose Edit stages instead.
+          </p>
+          <ul className="mt-3 list-inside list-disc">
+            {node.data.blockInstanceV2!.effectiveGraph.nodes.map((stage) => (
+              <li key={stage.nodeId}>{String(stage.data.label || stage.nodeId)}</li>
+            ))}
+          </ul>
+        </ModiffDialog>
+      ) : null}
       {docsOpen ? (
         <ModiffDialog open title={`${label} documentation`} onClose={() => setDocsOpen(false)}>
           <div className="grid gap-4">

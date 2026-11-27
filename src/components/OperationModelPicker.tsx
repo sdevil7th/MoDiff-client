@@ -1,3 +1,4 @@
+import { ChevronsUpDown, RotateCcw } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -314,13 +315,19 @@ export default function OperationModelPicker({
     <>
       <ModiffButton
         aria-label="Choose model"
-        className="w-full"
+        className="w-full gap-2 border-hf-yellow/50 bg-modiff-panel text-left hover:border-hf-yellow"
         align="left"
         disabled={disabled}
         onClick={() => setOpen(true)}
         title={value}
       >
-        <span className="min-w-0 truncate">{current ? choiceLabel(current) : value || 'Choose model'}</span>
+        <span className="min-w-0 flex-1 py-1">
+          <span className="block text-xs font-medium text-modiff-subtle-text">Model</span>
+          <span className="block whitespace-normal break-words">
+            {current ? choiceLabel(current) : value || 'Choose model'}
+          </span>
+        </span>
+        <ChevronsUpDown size={16} aria-hidden="true" className="shrink-0 text-hf-yellow" />
       </ModiffButton>
       {current &&
       operations.some(
@@ -328,6 +335,10 @@ export default function OperationModelPicker({
           o.pipelineClass === hint.operation.pipelineClass && o.task === hint.operation.task && !operationOwnsModel(o),
       ) ? (
         <ModiffButton
+          size="compact"
+          tone="ghost"
+          className="justify-self-start text-modiff-subtle-text"
+          icon={<RotateCcw size={13} aria-hidden="true" />}
           disabled={disabled || busy}
           onClick={() => {
             setOpen(true);

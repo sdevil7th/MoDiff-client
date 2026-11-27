@@ -57,7 +57,7 @@ for (const [templateId, search, file] of [
 ] as const) {
   test(`approved showcase for ${templateId} links its own recipe without executing anything`, async ({ page }) => {
     await bootMockedTemplateBrowser(page);
-    await page.getByRole('button', { name: /^Experimental /u, exact: false }).click();
+    await page.getByRole('button', { name: /^Advanced & planning /u }).click();
     let writes = 0;
     page.on('request', (request) => {
       if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url())) writes++;
@@ -197,7 +197,11 @@ for (const [width, imageWidth, imageHeight] of [
       await expect(image).toHaveCSS('object-fit', 'contain');
     };
     const card = page.getByTestId('template-browser-card-minimax_h3_image_old_town_cat');
-    await assertFitted(card.locator('img').first());
+    const artwork = card.getByRole('img');
+    await expect(artwork).toHaveCount(1);
+    await assertFitted(artwork);
+    const backdrop = card.locator('img[aria-hidden="true"]');
+    await expect(backdrop.locator('..')).toHaveCSS('overflow', 'hidden');
     await card.getByRole('button', { name: /^View details for /u }).click();
     await assertFitted(
       page
@@ -11956,6 +11960,27 @@ test('template launcher stacks its copy and external categories scroll into view
   await expect.poll(() => selectedCategoryIsFullyVisible('template-browser-category-performance')).toBe(true);
 });
 
+async function expectGalleryCardActionsAligned(cards: Locator) {
+  const deltas = await cards.evaluateAll((items) => {
+    const rows = new Map<number, number[]>();
+    for (const item of items) {
+      const top = Math.round(item.getBoundingClientRect().top);
+      const action = item.querySelector<HTMLElement>('[data-testid^="template-browser-create-card-"]');
+      if (!action) throw new Error('Template card has no action');
+      const bottoms = rows.get(top) ?? [];
+      bottoms.push(action.getBoundingClientRect().bottom);
+      rows.set(top, bottoms);
+    }
+    return Array.from(rows.values())
+      .filter((bottoms) => bottoms.length > 1)
+      .map((bottoms) => Math.max(...bottoms) - Math.min(...bottoms));
+  });
+  expect(deltas.length).toBeGreaterThan(0);
+  const largestOffset = Math.max(...deltas);
+  expect(largestOffset).toBeLessThanOrEqual(1);
+  return largestOffset;
+}
+
 test('template browser keeps compact layouts, opens card details, and loads 12-card batches on scroll', async ({
   page,
 }) => {
@@ -11998,18 +12023,7 @@ test('template browser keeps compact layouts, opens card details, and loads 12-c
 
     const cards = page.locator('[data-testid^="template-browser-card-"]');
     await expect(cards).toHaveCount(12);
-    const firstRowCtaBottoms = await cards.evaluateAll((items) => {
-      const firstRowTop = Math.min(...items.map((item) => item.getBoundingClientRect().top));
-      return items
-        .filter((item) => Math.abs(item.getBoundingClientRect().top - firstRowTop) <= 1)
-        .map(
-          (item) =>
-            item.querySelector<HTMLElement>('[data-testid^="template-browser-create-card-"]')?.getBoundingClientRect()
-              .bottom ?? 0,
-        );
-    });
-    const ctaDelta = Math.max(...firstRowCtaBottoms) - Math.min(...firstRowCtaBottoms);
-    expect(ctaDelta).toBeLessThanOrEqual(1);
+    const ctaDelta = await expectGalleryCardActionsAligned(cards);
     await expect(dialog.getByText('Asset-backed only', { exact: true })).toHaveCount(0);
     await expect(dialog.getByText(/^Current task:/)).toHaveCount(0);
     await expect(dialog.getByText('Start with something remarkable', { exact: true })).toHaveCount(0);
@@ -12193,7 +12207,8 @@ test('template browser attaches catalog infinite scroll when the dialog portal f
   mockInstalledRepos.clear();
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
-  await page.setViewportSize({ width: 2560, height: 1280 });
+  // Leave room for the featured card and place the first sentinel in the preload margin.
+  await page.setViewportSize({ width: 2560, height: 1600 });
   await bootMockedTemplateBrowser(page);
 
   await expect(page.getByTestId('template-browser-category-recommended')).toHaveAttribute('aria-pressed', 'true');
@@ -12225,7 +12240,8 @@ test('template browser keeps auto-loading an underfilled gallery and continues l
   await page.setViewportSize({ width: 1280, height: 720 });
   await bootMockedTemplateBrowser(page);
   await page.addStyleTag({
-    content: 'article[data-testid^="template-browser-card-"] { height: 64px !important; min-height: 64px !important; }',
+    content:
+      'article[data-testid^="template-browser-card-"] { height: 32px !important; min-height: 32px !important; overflow: hidden; }',
   });
   await page.getByTestId('template-browser-category-all').click();
 
@@ -13046,24 +13062,29 @@ for (const direction of ['source', 'target'] as const) {
     await builtInSection.click();
     const wanted = direction === 'source' ? 'Workbench consumer' : 'Workbench producer';
     const wrongDirection = direction === 'source' ? 'Workbench producer' : 'Workbench consumer';
-    await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
-    await expect(suggestions.getByRole('option', { name: 'Workbench wildcard', exact: true })).toHaveCount(0);
+    const receivingPort = direction === 'source' ? 'Input' : 'Output';
+    const matchingOption = suggestions.getByRole('option', { name: `${wanted} ${receivingPort} · Text`, exact: true });
+    const wildcardOption = suggestions.getByRole('option', { name: /^Workbench wildcard\b/u });
+    await expect(matchingOption).toBeVisible();
+    await expect(wildcardOption).toHaveCount(0);
     await page.getByRole('checkbox', { name: 'Show unverified matches (generic or missing types)' }).check();
-    await expect(suggestions.getByRole('option', { name: 'Workbench wildcard', exact: true })).toBeVisible();
-    await expect(suggestions.getByRole('option', { name: wrongDirection, exact: true })).toHaveCount(0);
-    await expect(suggestions.getByRole('option', { name: 'Workbench image', exact: true })).toHaveCount(0);
+    await expect(wildcardOption).toBeVisible();
+    await expect(suggestions.getByRole('option', { name: new RegExp('^' + wrongDirection + '\\b', 'u') })).toHaveCount(
+      0,
+    );
+    await expect(suggestions.getByRole('option', { name: /^Workbench image\b/u })).toHaveCount(0);
     const popupSearch = page.getByLabel('Search nodes', { exact: true }).last();
     await popupSearch.fill('Workbench image');
     await expect(page.getByText('No compatible nodes found', { exact: true })).toBeVisible();
     await expect(suggestions.getByRole('option')).toHaveCount(0);
     await popupSearch.fill(direction === 'source' ? 'retired_consumer' : 'producer Workbench');
-    await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
+    await expect(matchingOption).toBeVisible();
     await page.screenshot({
       path: test.info().outputPath(`typed-${direction}-suggestions.png`),
       animations: 'disabled',
     });
     if (direction === 'source') await popupSearch.press('Enter');
-    else await suggestions.getByRole('option', { name: wanted, exact: true }).click();
+    else await matchingOption.click();
     const inspect = () =>
       page.evaluate(() => {
         const graph = window.__MODIFF_E2E__!.getState().flow;
@@ -13133,9 +13154,10 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   const handle = node.getByTestId(`node-handle-${id}-pipeline`);
   await dragWireToCanvas(page, handle);
   const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
-  await expect(suggestions.getByRole('option', { name: 'Generate Image', exact: true })).toBeVisible();
-  await expect(suggestions.getByRole('option', { name: 'Generate Unconditional Image', exact: true })).toHaveCount(0);
-  await suggestions.getByRole('option', { name: 'Generate Image', exact: true }).click();
+  const generate = suggestions.getByRole('option', { name: 'Generate Image Input · pipeline', exact: true });
+  await expect(generate).toBeVisible();
+  await expect(suggestions.getByRole('option', { name: /^Generate Unconditional Image\b/u })).toHaveCount(0);
+  await generate.click();
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
@@ -13952,7 +13974,54 @@ async function installPublicFlux3AuthoringRoutes(
   return fixture;
 }
 
-test('published Experimental cards remain discoverable after Gallery metadata loads', async ({ page }) => {
+test('template categories feature current outputs and searchable model choices lead to actual recipes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await bootMockedTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  const categories = browser.getByRole('group', { name: 'Template categories' });
+  await expect(categories.getByRole('button').last()).toHaveAttribute(
+    'data-testid',
+    'template-browser-category-experimental',
+  );
+  const model = browser.getByTestId('template-browser-model-filter');
+  await model.click();
+  const search = page.getByRole('combobox', { name: 'Search options' });
+  await expect(search).toBeFocused();
+  await search.fill('MiniMax');
+  await expect(page.getByRole('option')).toHaveCount(2);
+  await page.getByRole('option', { name: 'MiniMax H3 Image', exact: true }).click();
+  const image = browser.getByTestId('template-browser-card-minimax_h3_image_old_town_cat');
+  await expect(image).toBeVisible();
+  await expect(browser.locator('article')).toHaveCount(1);
+  await browser.getByTestId('template-browser-category-audio').click();
+  const song = browser.getByTestId('template-browser-card-minimax_music3_chamber_pop');
+  await expect(song).toHaveAttribute('data-featured', 'true');
+  await expect(song.locator('audio')).toHaveAttribute('preload', 'metadata');
+  for (const audio of await browser.locator('article:not([data-featured]) audio').all())
+    await expect(audio).toHaveAttribute('preload', 'none');
+  const secondary = browser.locator('article:not([data-featured])').first();
+  const hero = await song.boundingBox(),
+    card = await secondary.boundingBox();
+  expect(hero!.width).toBeGreaterThan(card!.width * 1.5);
+  await browser.getByTestId('template-browser-category-video').click();
+  const videoCards = browser.locator('article:not([data-featured]) video');
+  await expect(videoCards.first()).toHaveAttribute('data-preview-attached', 'false');
+  for (const video of await videoCards.all()) await expect(video).not.toHaveAttribute('src');
+  await browser.getByTestId('template-browser-category-3d').click();
+  await expect(browser.getByTestId('template-browser-card-shap_e_traffic_cone_turntable')).toHaveAttribute(
+    'data-featured',
+    'true',
+  );
+  await browser.getByTestId('template-browser-category-experimental').click();
+  await expect(browser.getByText('Advanced recipes use custom model settings.', { exact: false })).toBeVisible();
+});
+
+test('published advanced cards remain discoverable in their category and All after Gallery metadata loads', async ({
+  page,
+}) => {
   await ensureFrontend();
   await installPublicFlux3AuthoringRoutes(page, false, false, true);
   const manifest = JSON.parse(
@@ -13987,7 +14056,7 @@ test('published Experimental cards remain discoverable after Gallery metadata lo
     await expect(card).not.toContainText('No preview yet');
   }
   await page.getByTestId('template-browser-category-all').click();
-  await expect(cards).toHaveCount(0);
+  await expect(cards).toHaveCount(10);
   expect(forbiddenPosts).toEqual([]);
 });
 
@@ -14224,7 +14293,7 @@ test('Experimental public cards create the exact FLUX3 Ceramic Radio graph throu
   const search = page.getByTestId('template-browser-search');
   await page.getByTestId('template-browser-category-all').click();
   await search.fill('FLUX 3');
-  await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(10);
   await page.getByTestId('template-browser-category-experimental').click();
   await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(10);
   await search.fill('Ceramic Radio');
@@ -16214,7 +16283,8 @@ for (const invalidation of ['target', 'close', 'edit'] as const) {
     );
     const setup = page.getByTestId(`setup-node-${setupId}`);
     await setup.getByRole('button', { name: 'Model Setup options', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Separate model setup stages', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+    await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
     await expect(setup).toHaveCount(0);
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const loaderId = await page.evaluate(
@@ -16752,8 +16822,8 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await expect(page.getByTestId('template-browser-use-flux_control_canny')).toBeVisible();
   const modelFilter = page.getByTestId('template-browser-model-filter');
   await modelFilter.click();
-  await expect(page.getByRole('option', { name: 'FLUX.1-dev', exact: true })).toBeVisible();
-  await expect(page.getByRole('option', { name: 'FLUX.1-Krea-dev', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'FLUX.1-Canny-dev', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'FLUX.1-Krea-dev', exact: true })).toHaveCount(0);
   await modelFilter.click();
   await expect(page.getByRole('listbox')).toBeHidden();
 
@@ -20323,18 +20393,7 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await expect(page.getByTestId('template-browser-pagination')).toHaveCount(0);
   await expect(page.getByTestId('template-browser-load-sentinel')).toHaveCount(1);
   await expect(page.locator('[data-testid^="template-browser-card-"]')).toHaveCount(12);
-  const firstRowCtaBottoms = await page.locator('[data-testid^="template-browser-card-"]').evaluateAll((cards) => {
-    const top = Math.min(...cards.map((card) => card.getBoundingClientRect().top));
-    return cards
-      .filter((card) => Math.abs(card.getBoundingClientRect().top - top) <= 1)
-      .map(
-        (card) =>
-          card.querySelector<HTMLElement>('[data-testid^="template-browser-create-card-"]')?.getBoundingClientRect()
-            .bottom ?? 0,
-      );
-  });
-  expect(firstRowCtaBottoms.length).toBeGreaterThan(1);
-  expect(Math.max(...firstRowCtaBottoms) - Math.min(...firstRowCtaBottoms)).toBeLessThanOrEqual(1);
+  await expectGalleryCardActionsAligned(page.locator('[data-testid^="template-browser-card-"]'));
   const templateSearch = page.getByTestId('template-browser-search');
   for (const [templateId, query] of [
     ['ltx_video_image_to_video', 'Rally Car Tracking Shot'],
@@ -37530,11 +37589,10 @@ for (const width of [1920, 1280])
         await edit.focus();
         await page.keyboard.press('Enter');
       } else await edit.click();
-      await expect(root).toHaveCount(0);
+      await expect(root.getByRole('button', { name: 'Done editing ' + label, exact: true })).toBeVisible();
       expect(await optionalStageApi(page)).toEqual(before);
-      await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
-      await page.keyboard.press('Control+z');
-      await expect(root).toBeVisible();
+      await page.getByRole('button', { name: 'Return to ' + label, exact: true }).click();
+      await expect(edit).toBeVisible();
       expect(await optionalStageApi(page)).toEqual(before);
     }
     const output = (await read()).nodes.find((node) => node.data.label === 'Image Output')!;
@@ -37554,10 +37612,50 @@ for (const width of [1920, 1280])
     await page.getByTestId('topbar-save-workflow').click();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-    await expect(page.locator(`.react-flow__node[data-id="${input.id}"]`)).toHaveCount(0);
+    const savedEditor = page.locator(`.react-flow__node[data-id="${input.id}"]`);
+    await expect(savedEditor.getByRole('button', { name: 'Done editing Encode Inputs', exact: true })).toBeVisible();
+    await savedEditor.getByRole('button', { name: 'Done editing Encode Inputs', exact: true }).click();
+    await expect(savedEditor.getByRole('button', { name: 'Edit stages: Encode Inputs' })).toBeVisible();
     expect(await optionalStageApi(page)).toEqual(before);
     expect(submissions).toBe(0);
   });
+
+test('stage connection editing preserves changed prompts and cancelling conversion keeps the same nodes', async ({
+  page,
+}, testInfo) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const original = await graph();
+  const setup = original.nodes.find((node) => node.data.label === 'Model Setup')!;
+  const controls = page.getByTestId('setup-node-' + setup.id);
+  await controls.getByRole('button', { name: 'Connections and grouping' }).click();
+  await page.getByRole('menuitem', { name: 'Edit stage connections' }).click();
+  await page.getByRole('button', { name: 'Return to Model Setup' }).click();
+  await controls.getByRole('button', { name: 'Model Setup options' }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…' }).click();
+  await page
+    .getByRole('dialog', { name: 'Convert Model Setup to independent nodes?' })
+    .getByRole('button', { name: 'Cancel' })
+    .click();
+  expect((await graph()).nodes.map((node) => node.id)).toEqual(original.nodes.map((node) => node.id));
+  const editorButton = page.getByRole('button', { name: 'Edit stages: Encode Inputs', exact: true });
+  await editorButton.click();
+  await expect(controls).toHaveCount(0);
+  const prompt = page.locator('.react-flow__node[data-id^="block-v2-node:"] [data-key="prompt"] textarea').first();
+  const value = 'Warm morning light from the eastern window';
+  await prompt.fill(value);
+  await prompt.press('Tab');
+  await page.screenshot({ path: testInfo.outputPath('editing-operations.png') });
+  await page.getByRole('button', { name: 'Return to Encode Inputs' }).click();
+  await expect(editorButton).toBeVisible();
+  await expect(controls).toBeVisible();
+  expect(JSON.stringify(await optionalStageApi(page))).toContain(value);
+  const after = await graph();
+  expect(after.nodes.map((node) => node.id)).toEqual(original.nodes.map((node) => node.id));
+  expect(after.edges.map((edge) => [edge.source, edge.sourceHandle, edge.target, edge.targetHandle])).toEqual(
+    original.edges.map((edge) => [edge.source, edge.sourceHandle, edge.target, edge.targetHandle]),
+  );
+});
 
 test('reusable canvas Blocks and Python nodes explain their different authoring paths', async ({ page }) => {
   await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
@@ -37744,7 +37842,7 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   await page
     .getByRole('dialog', { name: 'Node inspector', exact: true })
-    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .getByRole('button', { name: 'Connections and grouping', exact: true })
     .click();
   await page.getByRole('menuitem', { name: 'Group image output', exact: true }).click();
   await page.keyboard.press('Escape');
@@ -37761,7 +37859,7 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   await page
     .getByRole('dialog', { name: 'Node inspector', exact: true })
-    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .getByRole('button', { name: 'Connections and grouping', exact: true })
     .click();
   await page.getByRole('menuitem', { name: 'Group model setup', exact: true }).click();
   await page.keyboard.press('Escape');
@@ -37817,7 +37915,8 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   await page.keyboard.press('Control+z');
   await expect.poll(() => optionalStageApi(page)).toEqual(before);
   await setupNode.getByRole('button', { name: 'Model Setup options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate model setup stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
   await expect(setupNode).toHaveCount(0);
   expect(await optionalStageApi(page)).toEqual(before);
   await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
@@ -37889,7 +37988,8 @@ test('fresh image four-stage controls keep Guidance execution distinct from disc
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(async () => (await graph()).nodes.length).toBe(4);
   await legacyNode.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate encoding stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
   await expect(legacyNode).toHaveCount(0);
   expect(await optionalStageApi(page)).toEqual(api);
   await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
@@ -38727,7 +38827,7 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
   const before = await optionalStageApi(page);
   const owner = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
   const loader = page.getByTestId(`setup-node-${owner.id}`);
-  await loader.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await loader.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Group image output', exact: true })).toHaveCount(0);
   await page.getByRole('menuitem', { name: 'Group mask preparation', exact: true }).click();
   await expect
@@ -38821,7 +38921,7 @@ test('optional declared component bundle preserves Qwen stages, controls, breako
   const owner = original.nodes.find((node) => node.data.label === 'Model Setup')!;
   const loader = page.getByTestId(`setup-node-${owner.id}`);
   const menu = async () => {
-    await loader.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+    await loader.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   };
   await menu();
   await page.getByRole('menuitem', { name: 'Use component bundle', exact: true }).click();

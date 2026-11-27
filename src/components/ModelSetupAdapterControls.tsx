@@ -13,6 +13,7 @@ import { ModiffButton, ModiffDialog, ModiffDisclosure } from '../ui';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
 import {
+  adapterCapabilitiesRefreshable,
   modelSetupAdapterChain,
   modelSetupAdapterAddUnavailable,
   modelSetupAdapterEditUnavailable,
@@ -47,6 +48,8 @@ export default function ModelSetupAdapterControls({
     })),
   );
   const authority = { ...discovered, resourceMode };
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [draft, setDraft] = useState<CustomNodeType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -64,6 +67,31 @@ export default function ModelSetupAdapterControls({
     editUnavailable = modelSetupAdapterEditUnavailable(chain, authority);
   } catch (failure) {
     unavailable = failure instanceof Error ? failure.message : 'Adapter controls are unavailable.';
+  }
+  async function refreshCapabilities() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshStatus(null);
+    try {
+      const store = useNodesStore.getState();
+      const runtimeRequired = [addUnavailable, editUnavailable].some((m) => m?.includes('evaluation runtime'));
+      await Promise.all([
+        store.fetchNodes(),
+        store.fetchStudioModelCapabilities(),
+        ...(runtimeRequired ? [store.fetchRuntimeStatus()] : []),
+      ]);
+      const latest = useNodesStore.getState().discoveryRequests;
+      const failed = [latest.nodes, latest.capabilities, ...(runtimeRequired ? [latest.runtime] : [])].find(
+        (r) => r.status === 'error',
+      );
+      setRefreshStatus(
+        failed ? (failed.error ?? 'Could not refresh model capabilities.') : 'Model capabilities refreshed.',
+      );
+    } catch (failure) {
+      setRefreshStatus(failure instanceof Error ? failure.message : 'Could not refresh model capabilities.');
+    } finally {
+      setRefreshing(false);
+    }
   }
   function apply(edit: Parameters<typeof planModelSetupAdapterEdit>[2]) {
     try {
@@ -206,6 +234,16 @@ export default function ModelSetupAdapterControls({
         })}
         {unavailable ? <p className="text-xs text-modiff-subtle-text">{unavailable}</p> : null}
         {addUnavailable ? <p className="text-xs text-modiff-subtle-text">{addUnavailable}</p> : null}
+        {[addUnavailable, editUnavailable, unavailable, error].some(adapterCapabilitiesRefreshable) ? (
+          <ModiffButton size="compact" onClick={() => void refreshCapabilities()} disabled={refreshing}>
+            {refreshing ? 'Refreshing capabilities…' : 'Refresh capabilities'}
+          </ModiffButton>
+        ) : null}
+        {refreshStatus ? (
+          <p role="status" className="text-xs text-modiff-subtle-text">
+            {refreshStatus}
+          </p>
+        ) : null}
         <ModiffButton size="compact" disabled={!chain || Boolean(addUnavailable)} onClick={() => add()}>
           Add LoRA
         </ModiffButton>

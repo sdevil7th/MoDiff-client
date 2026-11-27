@@ -1,3 +1,4 @@
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import { representedStageOperations, visualStageMatches, type StageMatch } from '../studio/visualNodeCatalog';
 import { operationsForTask } from '../workflow/operationCatalog';
@@ -25,6 +26,8 @@ import { cx } from '../utils/classNames';
 import {
   connectionSearchEntries,
   operationSearchEntries,
+  operationWirePort,
+  wireOperationScope,
   prepareOperationConnection,
   stageOperationMatchesWire,
   rankConnectionSearchEntries,
@@ -45,6 +48,7 @@ import { catalogNodeSearchEntries, createCatalogSearchNode } from '../workflow/c
 
 type SearchEntry = {
   stage?: StageMatch;
+  port?: string;
   key: string;
   label: string;
   node?: NodeData;
@@ -57,7 +61,12 @@ type SearchEntry = {
 interface NodeSearchDialogProps {
   anchorPosition: { top: number; left: number } | null;
   onClose: () => void;
-  onSelect: (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean) => Promise<void>;
+  onSelect: (
+    createNode: NodeSearchFactory,
+    signal: AbortSignal,
+    allowUnverified: boolean,
+    port?: string,
+  ) => Promise<void>;
   nodes: Record<string, NodeData>;
   dataType?: string | string[];
   handleType?: 'source' | 'target' | null | undefined;
@@ -73,8 +82,14 @@ const NodeSearchDialog = ({
   handleType,
   origin,
 }: NodeSearchDialogProps) => {
-  const { pipeline, task, view, support } = useNodeDiscovery();
+  const discovery = useNodeDiscovery();
+  const { view, support } = discovery;
   const operations = useNodesStore((s) => s.operationContracts);
+  const inferred = useMemo(() => wireOperationScope(origin, operations), [origin, operations]);
+  const pipeline = discovery.selection ? discovery.pipeline : (inferred?.pipeline ?? discovery.pipeline);
+  const task = discovery.selection ? discovery.task : (inferred?.task ?? discovery.task);
+  const originField = origin && nodeConnectorParam({ data: origin.node }, origin.handleId);
+  const portLabel = originField?.label || origin?.handleId;
   const stageCatalog = useNodesStore((s) => s.visualNodeCatalog);
   const resolve = useNodesStore((s) => s.resolveOperation);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
@@ -168,7 +183,7 @@ const NodeSearchDialog = ({
   const filteredNodes = useMemo<SearchEntry[]>(() => {
     const stages = stageCatalog
       ? visualStageMatches(stageCatalog, nodes, searchQuery, {
-          all: view === 'advanced' || view === 'all',
+          all: Boolean(handleType) || view === 'advanced' || view === 'all',
           targeted: Boolean(handleType),
           showModelHints: !handleType,
           operations: pipeline ? operationsForTask(operations, pipeline, task) : undefined,
@@ -181,13 +196,27 @@ const NodeSearchDialog = ({
       : [];
     const represented = representedStageOperations(stages);
     const entries = [
-      ...stages.map((stage) => ({
-        stage,
-        key: 'stage:' + stage.stage.id,
-        label: stage.stage.label,
-        node: stage.definition,
-        operation: stage.operation,
-      })),
+      ...stages.flatMap((stage) => {
+        // A wire can match more than one action in the same generic stage.
+        // Preserve the search winner first and expose each other genuine choice.
+        const choices = handleType
+          ? [
+              stage,
+              ...stage.choices.filter(
+                (choice) =>
+                  (choice.mode !== stage.mode || choice.operation !== stage.operation) &&
+                  (!searchQuery.trim() || choice.mode.label.toLowerCase().includes(searchQuery.trim().toLowerCase())),
+              ),
+            ]
+          : [stage];
+        return choices.map((choice) => ({
+          stage: { ...stage, ...choice, detail: choice === stage ? stage.detail : choice.mode.label },
+          key: ['stage', stage.stage.id, choice.mode.node, choice.mode.label, choice.operation?.operationId].join(':'),
+          label: stage.stage.label,
+          node: choice.definition,
+          operation: choice.operation,
+        }));
+      }),
       ...operationSearchEntries(
         operations,
         pipeline,
@@ -234,7 +263,15 @@ const NodeSearchDialog = ({
         )
         .map((entry) => ({ ...entry, label: entry.node.label })),
     ];
-    return rankConnectionSearchEntries(entries, dataType, handleType, origin);
+    const pinned = entries.map((entry: SearchEntry) => ({
+      ...entry,
+      port: handleType
+        ? entry.operation
+          ? operationWirePort(entry.node, entry.operation, dataType, handleType, origin, allowUnverified)
+          : entry.node && matchingNodeHandleForDrop(entry.node, dataType, handleType, origin, allowUnverified)?.[0]
+        : undefined,
+    }));
+    return rankConnectionSearchEntries(pinned, dataType, handleType, origin);
   }, [
     stageCatalog,
     catalogNodes,
@@ -302,7 +339,7 @@ const NodeSearchDialog = ({
           const operation = entry.operation;
           const node = await resolve(operation, request.signal);
           const data = withOperationAuthoring(
-            prepareOperationConnection(node, operation, dataType, handleType),
+            prepareOperationConnection(node, operation, dataType, handleType, entry.port),
             operation,
           );
           createNode = (position) =>
@@ -325,7 +362,7 @@ const NodeSearchDialog = ({
         } else return;
         if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
         assertWorkflowOperationContext(context, { includeForm: Boolean(entry.operation && entry.stage && !selection) });
-        await onSelect(createNode, request.signal, allowUnverified);
+        await onSelect(createNode, request.signal, allowUnverified, entry.port);
         if (request.signal.aborted) return;
         handleClose();
       } catch (error) {
@@ -401,7 +438,13 @@ const NodeSearchDialog = ({
           {entry.operation.pipelineClass} · {entry.operation.task?.replace(/_/gu, ' ')}
         </div>
       ) : null}
-      {entry.node?.description ? (
+      {entry.port && (
+        <div className="break-words text-xs text-modiff-subtle-text">
+          {handleType === 'source' ? 'Input' : 'Output'} ·{' '}
+          {entry.node?.params[entry.port]?.label || entry.port.replace(/_/gu, ' ')}
+        </div>
+      )}
+      {!entry.stage && !entry.port && entry.node?.description ? (
         <div className="truncate text-xs text-modiff-subtle-text">
           {entry.node.description.substring(0, 72) + (entry.node.description.length > 72 ? '...' : '')}
         </div>
@@ -434,6 +477,14 @@ const NodeSearchDialog = ({
       panelClassName="flex h-[min(512px,calc(100dvh-16px))] w-[368px] flex-col overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
       placement="bottom-start"
     >
+      {handleType && portLabel && (
+        <div className="border-b border-modiff-border px-3 py-2">
+          <p className="text-sm font-semibold text-modiff-text">
+            {handleType === 'source' ? 'Connect output' : 'Connect input'} · {portLabel}
+          </p>
+          {dataType && <p className="break-words text-xs text-modiff-subtle-text">{[dataType].flat().join(' / ')}</p>}
+        </div>
+      )}
       <div className="shrink-0 p-2">
         <ModiffSearchInput
           ref={inputRef}
@@ -466,7 +517,7 @@ const NodeSearchDialog = ({
           />
         </div>
       ) : null}
-      <OperationDiscoveryFields inPopover />
+      <OperationDiscoveryFields inPopover inferred={inferred} />
       {resolutionError ? (
         <p role="alert" className="px-3 pb-2 text-xs text-modiff-text">
           {resolutionError}
@@ -511,10 +562,6 @@ const NodeSearchDialog = ({
             onCheckedChange={setAllowUnverified}
             label="Show unverified matches (generic or missing types)"
           />
-          <p>
-            {handleType === 'source' ? 'Nodes with matching input port types' : 'Nodes with matching output port types'}
-          </p>
-          <p>Model, shape, and custom-code constraints are checked when declared and again at Run.</p>
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" role="listbox" aria-label="Matching nodes">
@@ -527,38 +574,40 @@ const NodeSearchDialog = ({
             <div className={cx(builtInEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
               {builtInEntries.length ? (
                 builtInEntries.map((entry, index) => renderEntry(entry, index))
-              ) : (
+              ) : customEntries.length ? null : (
                 <div className="px-4 py-4 text-center">
                   <div className="text-sm font-semibold text-modiff-text">
                     {handleType ? 'No compatible nodes found' : 'No results found'}
                   </div>
                   <div className="text-xs text-modiff-subtle-text">
-                    {handleType ? 'Try another search or start from a different port.' : 'Try a different search query'}
+                    {searchQuery.trim()
+                      ? 'Clear the search to see other matches.'
+                      : handleType
+                        ? pipeline
+                          ? 'This model and task have no matching built-in port. Try another pipeline or an enabled custom node with the same socket type.'
+                          : 'Choose a pipeline to check model-specific ports, or use an enabled custom node with the same socket type.'
+                        : 'Try a different search query.'}
                   </div>
                 </div>
               )}
             </div>
           ) : null}
         </section>
-        <section className={cx('flex min-h-0 flex-col', customOpen && customEntries.length ? 'flex-1' : 'shrink-0')}>
-          {sectionHeader('Custom nodes', customEntries.length, customOpen, () => {
-            setCustomOpen((open) => !open);
-            setSelectedIndex(0);
-          })}
-          {customOpen ? (
-            <div className={cx(customEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
-              {customEntries.length ? (
-                customEntries.map((entry, index) =>
+        {customEntries.length > 0 && (
+          <section className={cx('flex min-h-0 flex-col', customOpen && 'flex-1')}>
+            {sectionHeader('Custom nodes', customEntries.length, customOpen, () => {
+              setCustomOpen((open) => !open);
+              setSelectedIndex(0);
+            })}
+            {customOpen ? (
+              <div className="min-h-0 flex-1 overflow-auto">
+                {customEntries.map((entry, index) =>
                   renderEntry(entry, (builtInOpen ? builtInEntries.length : 0) + index),
-                )
-              ) : (
-                <div className="px-4 py-3 text-center text-xs text-modiff-subtle-text">
-                  No matching enabled custom nodes
-                </div>
-              )}
-            </div>
-          ) : null}
-        </section>
+                )}
+              </div>
+            ) : null}
+          </section>
+        )}
       </div>
     </ModiffPopover>
   );

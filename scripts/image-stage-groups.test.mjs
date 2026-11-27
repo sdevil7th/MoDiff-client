@@ -34,6 +34,54 @@ before(async () => {
 });
 after(async () => server?.close());
 
+test('only the built-in raw guider and modular offload controls follow their literal activation switch', async () => {
+  const { orderedActiveNodeControls: entries } = await server.ssrLoadModule('/src/workflow/gatedNodeControls.ts');
+  const guider = {
+    guider: { value: 'ClassifierFreeGuidance' },
+    guidance_scale: { value: 7 },
+    enabled: { value: false },
+    result: { display: 'output' },
+  };
+  const id = 'modules.ModularDiffusers.Guider';
+  const keys = (action, shown, full = shown, connected = false) =>
+    entries(action, shown, full, connected).map(([key]) => key);
+  assert.deepEqual(keys(id, guider), ['enabled', 'result']);
+  assert.deepEqual(keys(id, { guidance_scale: guider.guidance_scale }, guider), []);
+  assert.deepEqual(keys(id, guider, guider, true), ['enabled', 'guider', 'guidance_scale', 'result']);
+  assert.deepEqual(keys(id, guider, { ...guider, enabled: { default: true } }), [
+    'enabled',
+    'guider',
+    'guidance_scale',
+    'result',
+  ]);
+  assert.deepEqual(keys('custom.Other.Guider', guider), Object.keys(guider));
+  const loader = { auto_offload: { value: false }, offload_mode: { value: 'group_cpu' }, device: { value: 'cpu' } };
+  for (const key of ['modules.ModularDiffusers.ModelsLoader', 'modules.ModularDiffusers.AutoModelLoader']) {
+    assert.deepEqual(keys(key, loader), ['auto_offload', 'device']);
+    assert.deepEqual(keys(key, loader, loader, true), Object.keys(loader));
+    assert.deepEqual(
+      keys(key, loader, { ...loader, auto_offload: { signal: 'flag', value: false } }),
+      Object.keys(loader),
+    );
+    assert.equal(loader.offload_mode.value, 'group_cpu');
+  }
+});
+
+test('capability discovery retry belongs only to the reported image or audio capability remedy', () => {
+  for (const message of [
+    'The selected image model profile is unavailable or ambiguous. Refresh capabilities.',
+    'Refresh current audio model capabilities before editing LoRA.',
+    'Refresh model capabilities before adding LoRA.',
+  ])
+    assert.equal(adapters.adapterCapabilitiesRefreshable(message), true);
+  for (const message of [
+    null,
+    'The selected image model does not support LoRA.',
+    'Refresh the selected audio pipeline signal before editing LoRA.',
+  ])
+    assert.equal(adapters.adapterCapabilitiesRefreshable(message), false);
+});
+
 test('whole-pipeline examples keep one-action generation on the ordinary node', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const cases = [
@@ -297,6 +345,30 @@ test('fresh native image presents four real stages and keeps guidance, preview a
     flat.nodes.find((n) => n.data.action === 'Preview').data.params.preview.value,
     '@data/outputs/retained.webp',
   );
+});
+
+test('guidance enable is first and toggling it preserves the authored hidden settings', () => {
+  const ordinary = ordinaryImage();
+  const grouped = groups.groupNewOperationGraph(ordinary);
+  const instance = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs').data.blockInstanceV2;
+  const before = structuredClone(instance);
+  assert.deepEqual(
+    guidance.visibleGuidanceFields(instance, new Set()).map((item) => item.field),
+    ['enabled'],
+  );
+  assert.deepEqual(instance, before);
+  const activation = guidance.guidanceFields(instance).find((item) => item.field === 'enabled');
+  const enabled = runtime.setBlockInstanceValueV2(instance, activation.id, true);
+  const visible = guidance.visibleGuidanceFields(enabled, new Set());
+  assert.equal(visible[0].field, 'enabled');
+  assert.equal(visible.find((item) => item.field === 'guidance_scale').param.value, 4);
+  assert.equal(visible.find((item) => item.field === 'use_original_formulation').param.value, true);
+  const disabled = runtime.setBlockInstanceValueV2(enabled, activation.id, false);
+  assert.deepEqual(
+    guidance.visibleGuidanceFields(disabled, new Set()).map((item) => item.field),
+    ['enabled'],
+  );
+  assert.equal(disabled.effectiveGraph.graphHash, instance.effectiveGraph.graphHash);
 });
 
 test('unsupported guidance leaves no empty section; audio retains its existing separate presentation', () => {

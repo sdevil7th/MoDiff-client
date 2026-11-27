@@ -6,6 +6,7 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import { blockOperationGraphV2, blockControlParamsV2 } from '../studio/blockRuntimeV2';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
+import { literalControlIsOff } from './gatedNodeControls';
 import { isFocusedGuidance } from './encodingNodePresentation';
 import { unpackVisualOperationGroups } from './visualOperationGroupProjection';
 import { operationGraphSignature, commitOperationGraph } from './operationGraphTransaction';
@@ -63,6 +64,34 @@ export function guidanceFields(instance: BlockInstanceV2) {
         ];
       }),
     );
+}
+
+/** Showing fewer controls never removes a bound value from a saved recipe. */
+export function visibleGuidanceFields(instance: BlockInstanceV2, connectedOutputs: ReadonlySet<string>) {
+  const fields = guidanceFields(instance);
+  const toggles = fields.filter(
+    (item) => item.field === 'enabled' && item.stage.data.operationAuthoring?.operation.nodeType === 'guidance',
+  );
+  const disabled = new Set(
+    toggles.filter(({ param }) => literalControlIsOff(param)).map(({ stage }) => stage.data.blockProjectionNodeId),
+  );
+  const connectedLayers = new Set(
+    instance.effectiveInterface.boundary.outputs
+      .filter((port) => connectedOutputs.has(port.portId))
+      .map((port) => port.binding.nodeId),
+  );
+  const choices = fields.filter((item) => {
+    if (toggles.includes(item)) return false;
+    const source = item.stage.data.blockProjectionNodeId!;
+    if (disabled.has(source)) return false;
+    if (item.stage.data.operationAuthoring?.operation.nodeType !== 'guidance_layers' || connectedLayers.has(source))
+      return true;
+    const consumers = instance.effectiveGraph.edges.filter((edge) => edge.sourceNodeId === source);
+    return !consumers.length || consumers.some((edge) => !disabled.has(edge.targetNodeId));
+  });
+  const isLayer = (field: (typeof fields)[number]) =>
+    field.stage.data.operationAuthoring?.operation.nodeType === 'guidance_layers';
+  return [...toggles, ...choices.filter((field) => !isLayer(field)), ...choices.filter(isLayer)];
 }
 
 /** User edits use the existing graph planner and metadata endpoint, atomically. */

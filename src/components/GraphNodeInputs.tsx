@@ -161,7 +161,16 @@ export function GraphNodeInputs({
               }}
               panelClassName="border-t border-modiff-border-subtle p-3"
             >
-              {selected ? <NodeInspectorSections node={node}>{controls}</NodeInspectorSections> : controls}
+              {selected ? (
+                <NodeInspectorSections
+                  node={node}
+                  updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
+                >
+                  {controls}
+                </NodeInspectorSections>
+              ) : (
+                controls
+              )}
             </ModiffDisclosure>
           );
         })

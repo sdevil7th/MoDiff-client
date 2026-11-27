@@ -31,7 +31,7 @@ export default function StageImplementationDialog({
     >
       <p className="mb-4 text-sm text-modiff-subtle-text">
         These operations execute behind this node.
-        {!descendants ? ' Use Edit stages to change their connections on the canvas.' : ''}
+        {!descendants ? ' Choose Edit stages to change their connections, then Done editing to return.' : ''}
       </p>
       <div className="grid gap-4">
         {members.map((member) => (

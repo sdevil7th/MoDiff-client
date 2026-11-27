@@ -18,7 +18,21 @@ const OFFLOAD_LABELS: Record<string, string> = {
 };
 
 function productOptionLabel(fieldKey: string, value: string, fallback: string) {
-  return fieldKey === 'offload_mode' ? (OFFLOAD_LABELS[value] ?? fallback) : fallback;
+  if (fieldKey === 'offload_mode') return OFFLOAD_LABELS[value] ?? fallback;
+  if (fieldKey === 'weight_loading_mode') {
+    if (value === 'cpu') return 'Load in system RAM (CPU)';
+    if (value === 'cuda') return 'Load in GPU memory';
+  }
+  if (fieldKey === 'attention_backend' && fallback === value) {
+    const labels: Record<string, string> = {
+      inherit: 'Use pipeline setting',
+      auto: 'Automatic',
+      native: 'PyTorch native',
+      _native_math: 'PyTorch math fallback',
+    };
+    return labels[value] ?? fallback;
+  }
+  return fallback;
 }
 
 function asString(value: unknown, fallback = '') {

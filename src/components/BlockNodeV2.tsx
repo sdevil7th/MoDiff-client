@@ -31,6 +31,8 @@ import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+import { isStageEditorOpen } from '../workflow/encodingNodePresentation';
+import { setStageEditorOpen } from '../workflow/stageEditing';
 import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
@@ -98,6 +100,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   );
 
   const instance = node.data.blockInstanceV2;
+  const editingStage = isStageEditorOpen(instance);
   const view = useMemo(() => {
     if (!instance) throw new Error(`Block V2 renderer received a node without blockInstanceV2 (${node.id}).`);
     return blockViewModelV2(instance);
@@ -344,7 +347,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     <>
       <BlockNodeFrame
         nodeId={node.id}
-        label={view.displayName}
+        label={editingStage ? 'Editing ' + view.displayName : view.displayName}
         expanded={view.expanded}
         nodeRef={nodeRef}
         headerRef={headerRef}
@@ -403,7 +406,17 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
             >
               <Settings2 size={15} />
             </ModiffIconButton>
-            {view.expanded ? (
+            {editingStage ? (
+              <ModiffButton
+                className="nodrag nowheel"
+                tone="primary"
+                size="compact"
+                aria-label={'Done editing ' + view.displayName}
+                onClick={() => setStageEditorOpen(node.id, false)}
+              >
+                Done editing
+              </ModiffButton>
+            ) : view.expanded ? (
               <ModiffIconButton
                 className="nodrag nowheel"
                 size="compact"

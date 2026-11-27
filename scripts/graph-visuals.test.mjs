@@ -7024,10 +7024,8 @@ test('Auto canvas renders the exact workflow graph instead of a projected facade
   );
   assert.match(workflowSource, /isUserBlockExpandedInstance\(\{ nodes, edges \}, node\.id\)/);
   assert.match(workflowSource, /huggingFaceClusterInstance\?\.presentation\.expanded === true/);
-  assert.equal(
-    [...workflowSource.matchAll(/fitView\([\s\S]*?\.finally\(\(\) => \{\s*setWorkflowFocusRequest\(null\);/g)].length,
-    2,
-  );
+  assert.match(workflowSource, /duration: 240 \}\)\.finally\(clearCurrentFocus\)/);
+  assert.match(workflowSource, /workflowFocusRequest === workflowFocusRequest\) setWorkflowFocusRequest\(null\)/);
   assert.match(workflowSource, /nodesDraggable[\s\S]*nodesConnectable[\s\S]*elementsSelectable/);
   assert.ok(runPreparation);
   assert.doesNotMatch(runPreparation, /createOrUpdateStudioGraph/);
@@ -10262,11 +10260,11 @@ test('restoring a saved graph preserves its supplied positions until Arrange gra
 
 test('template creation arranges exactly once after finalization and measurement while its canvas is suspended', () => {
   const source = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'templateWorkflow.ts'), 'utf8');
-  const arrangeCalls = source.match(/\.arrangeGraph\(\{ history: false \}\)/g) ?? [];
+  const arrangeCalls = source.match(/\.arrangeGraph\(\{ history: false, fitNewNodeContents: true \}\)/g) ?? [];
   const finalizationIndex = source.indexOf('await waitForStudioGraphFinalization');
   const timeoutFailureIndex = source.indexOf('No incomplete graph was kept');
   const measurementIndex = source.indexOf('await waitForGraphNodeMeasurements');
-  const arrangeIndex = source.indexOf('.arrangeGraph({ history: false })');
+  const arrangeIndex = source.indexOf('.arrangeGraph({ history: false, fitNewNodeContents: true })');
   const revealIndex = source.indexOf('setCanvasTransition(null)');
 
   assert.equal(arrangeCalls.length, 1);

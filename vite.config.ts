@@ -261,6 +261,8 @@ const baseConfig: UserConfig = {
   // Concurrent qualification frontends must not replace each other's
   // optimized dependency files and trigger navigation during a gesture.
   cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
+  // Local review galleries and saved workflow HTML are not app entry points.
+  optimizeDeps: { entries: ['index.html'] },
   plugins: [
     react(),
     tailwindcss(),

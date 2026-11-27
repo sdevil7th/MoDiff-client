@@ -62,7 +62,6 @@ export default function StageNodeControls({
   return (
     <div className="nodrag nowheel grid min-w-0 grid-cols-1 gap-2">
       {setup ? <BlockOwnerChoices node={node} /> : null}
-      {setup ? <ModelSetupAdapterControls node={node} updateStore={updateStore} /> : null}
       {groups.map((group) => (
         <ModiffDisclosure
           key={group.key}
@@ -81,6 +80,7 @@ export default function StageNodeControls({
           />
         </ModiffDisclosure>
       ))}
+      {setup ? <ModelSetupAdapterControls node={node} updateStore={updateStore} /> : null}
       {view.previewViews.map((preview) => (
         <div key={preview.previewId} data-testid={`stage-preview-${node.id}`}>
           <NodeContent

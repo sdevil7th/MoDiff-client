@@ -27,7 +27,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { isWorkflowOperationCancelled, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { STUDIO_MODE_LABELS, getCatalogModelProfiles, getFormDefaultsForMode } from '../studio/modelProfiles';
+import { STUDIO_MODE_LABELS, getFormDefaultsForMode } from '../studio/modelProfiles';
 import {
   autoPlanKeyForForm,
   fetchAutoResourcePlans,
@@ -48,10 +48,12 @@ import {
 } from '../studio/templateExactness';
 import {
   TEMPLATE_BROWSER_CATEGORIES,
+  featuredCategoryTemplate,
   filterStudioTemplates,
   hasDeclaredExperimentalCreator,
   templateDisplayName,
   templateModelDisplayName,
+  templateModelOptions,
   templateMediaSlots,
   type TemplateBrowserCategoryId,
   type TemplateBrowserFilter,
@@ -70,7 +72,7 @@ import {
   shouldRetryStartupRequest,
   shouldRetryStaticStartupRequest,
 } from '../studio/startupRequest';
-import type { StudioMode, StudioModelType, StudioTemplate } from '../studio/types';
+import type { StudioMode, StudioTemplate } from '../studio/types';
 import {
   IssueCard,
   ModiffButton,
@@ -100,6 +102,7 @@ const difficultyOptions: Array<TemplateBrowserFilter['difficulty']> = [
 ];
 
 const BROWSER_CATALOG_TEMPLATES = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES];
+const ADVANCED_AND_PLANNING_TEMPLATES = BROWSER_CATALOG_TEMPLATES.filter(isAdvancedOrPlanningTemplate);
 
 const sortOptions: Array<{ value: TemplateBrowserFilter['sort']; label: string }> = [
   { value: 'recommended', label: 'Recommended' },
@@ -108,9 +111,6 @@ const sortOptions: Array<{ value: TemplateBrowserFilter['sort']; label: string }
   { value: 'runtime', label: 'Runtime' },
 ];
 
-const templateModeOptions = Array.from(new Set(STUDIO_TEMPLATES.map((template) => template.mode))).sort((left, right) =>
-  STUDIO_MODE_LABELS[left].localeCompare(STUDIO_MODE_LABELS[right]),
-);
 const TEMPLATE_BATCH_SIZE = 12;
 const STARTUP_INDEX_RETRY_MS = 1_500;
 
@@ -172,14 +172,6 @@ function formatDifficulty(value: TemplateBrowserFilter['difficulty']) {
 
 function outputKinds(template: StudioTemplate) {
   return template.outputKinds?.join(', ') || template.example?.mediaType || 'image';
-}
-
-function templateExampleOutputPath(template: StudioTemplate) {
-  return templateManifestPath(template.example?.outputPath);
-}
-
-function templateExampleThumbnailPath(template: StudioTemplate) {
-  return templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath);
 }
 
 function inputsList(template: StudioTemplate) {
@@ -245,18 +237,12 @@ function categoryLabel(categoryId: TemplateBrowserCategoryId) {
   return TEMPLATE_BROWSER_CATEGORIES.find((category) => category.id === categoryId)?.label ?? 'Templates';
 }
 
-function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
-  if (getTemplateShowcase(template.id)) return true;
-  if (manifest) {
-    const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
-    return Boolean(entry);
-  }
-  const status = template.verificationStatus ?? template.example?.status;
-  if (template.example?.mediaType === 'video' || template.outputKinds?.includes('video')) return false;
-  return (
-    (status === 'reviewed' || status === 'exact') &&
-    Boolean(templateExampleThumbnailPath(template) || templateExampleOutputPath(template))
-  );
+function templatesForCategory(category: TemplateBrowserCategoryId) {
+  return category === 'experimental' ? ADVANCED_AND_PLANNING_TEMPLATES : STUDIO_TEMPLATES;
+}
+
+function isAdvancedOrPlanningTemplate(template: StudioTemplate) {
+  return hasDeclaredExperimentalCreator(template) || isPlanningOnlyTemplate(template);
 }
 
 function templatePublishedSourceEntry(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
@@ -545,22 +531,17 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
         : localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
-  const isExperimentalTemplate = useCallback(
-    (template: StudioTemplate) =>
-      hasDeclaredExperimentalCreator(template) || !templateHasPublishedMedia(template, manifest),
-    [manifest],
+  const categorySource = templatesForCategory(filter.category);
+  const filteredTemplates = useMemo(
+    () =>
+      filterStudioTemplates(
+        categorySource,
+        form,
+        effectiveFilter,
+        (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
+      ),
+    [categorySource, effectiveFilter, form, runtimeEstimateForTemplate],
   );
-  const filteredTemplates = useMemo(() => {
-    const source = filter.category === 'experimental' ? BROWSER_CATALOG_TEMPLATES : STUDIO_TEMPLATES;
-    const filtered = filterStudioTemplates(
-      source,
-      form,
-      effectiveFilter,
-      (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
-    );
-    if (filter.category !== 'experimental') return filtered;
-    return filtered.filter(isExperimentalTemplate);
-  }, [effectiveFilter, filter.category, form, isExperimentalTemplate, runtimeEstimateForTemplate]);
   const catalogTemplates = useMemo(
     () =>
       filterStudioTemplates(
@@ -587,28 +568,31 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
         modelType: 'all',
         mode: 'all',
         difficulty: 'all',
-      }).filter(isExperimentalTemplate).length,
-    [effectiveFilter, form, isExperimentalTemplate],
+      }).filter(isAdvancedOrPlanningTemplate).length,
+    [effectiveFilter, form],
   );
   const recommended = useMemo(
     () =>
       RECOMMENDED_TEMPLATE_IDS.flatMap((id) => {
-        const template =
-          catalogTemplates.find((item) => item.id === id) ??
-          BROWSER_CATALOG_TEMPLATES.find((item) => item.id === id && getTemplateShowcase(id));
+        const template = catalogTemplates.find((item) => item.id === id);
         return template && !isPlanningOnlyTemplate(template) ? [template] : [];
       }),
     [catalogTemplates],
   );
-  const readinessForTemplate = useCallback(
-    (template: StudioTemplate) =>
-      getTemplateReadiness(template, {
+  const readinessForTemplate = useMemo(() => {
+    const results = new Map<StudioTemplate, TemplateReadinessResult>();
+    return (template: StudioTemplate) => {
+      const cached = results.get(template);
+      if (cached) return cached;
+      const readiness = getTemplateReadiness(template, {
         ...readinessContext,
         form: templateAutoForm(template),
         autoResourcePlan: autoPlanForTemplate(template),
-      }),
-    [autoPlanForTemplate, readinessContext],
-  );
+      });
+      results.set(template, readiness);
+      return readiness;
+    };
+  }, [autoPlanForTemplate, readinessContext]);
   const shortlist =
     filter.category === 'recommended' &&
     !filter.query.trim() &&
@@ -625,13 +609,28 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
           (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
         )
     : filteredTemplates;
-  const templates = readyOnly
-    ? candidates.filter(
-        (item) =>
-          readinessForTemplate(item).status === 'ready' &&
-          !modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(item)),
-      )
-    : candidates;
+  const matchesReadiness = (item: StudioTemplate) =>
+    !readyOnly ||
+    (readinessForTemplate(item).status === 'ready' &&
+      !modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(item)));
+  const filteredCandidates = readyOnly ? candidates.filter(matchesReadiness) : candidates;
+  const featured =
+    filter.sort === 'recommended' && !filter.query.trim()
+      ? featuredCategoryTemplate(
+          filteredCandidates,
+          filter.category,
+          manifest ? (item) => Boolean(findManifestEntry(item, manifest)) : undefined,
+        )
+      : undefined;
+  const templates = featured
+    ? [featured, ...filteredCandidates.filter((item) => item !== featured)]
+    : filteredCandidates;
+  const optionsFor = (changes: Partial<TemplateBrowserFilter>) =>
+    filterStudioTemplates(categorySource, form, { ...effectiveFilter, ...changes }).filter(matchesReadiness);
+  const modelOptions = templateModelOptions(optionsFor({ modelType: 'all' }));
+  const modeOptions = Array.from(new Set(optionsFor({ mode: 'all' }).map((item) => item.mode))).sort((a, b) =>
+    STUDIO_MODE_LABELS[a].localeCompare(STUDIO_MODE_LABELS[b]),
+  );
   const selectedTemplate = useMemo(
     () => BROWSER_CATALOG_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null,
     [selectedTemplateId],
@@ -692,7 +691,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     readyOnly,
   ]);
 
-  const visibleTemplates = useMemo(() => templates.slice(0, visibleTemplateCount), [templates, visibleTemplateCount]);
+  const visibleTemplates = templates.slice(0, visibleTemplateCount);
   const hasMoreTemplates = visibleTemplates.length < templates.length;
 
   useEffect(() => {
@@ -860,7 +859,28 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                     aria-pressed={selected}
                     data-testid={`template-browser-category-${category.id}`}
                     onClick={() => {
-                      setFilter((current) => ({ ...current, category: category.id }));
+                      setFilter((current) => {
+                        const next = { ...current, category: category.id };
+                        const pool = templatesForCategory(category.id);
+                        const choices = filterStudioTemplates(pool, form, {
+                          ...next,
+                          includeBlocked: true,
+                          query: '',
+                          modelType: 'all',
+                          mode: 'all',
+                          difficulty: 'all',
+                        });
+                        if (
+                          next.modelType !== 'all' &&
+                          !templateModelOptions(choices).some((option) => option.value === next.modelType)
+                        )
+                          next.modelType = 'all';
+                        if (next.mode && next.mode !== 'all' && !choices.some((item) => item.mode === next.mode))
+                          next.mode = 'all';
+                        if (next.difficulty !== 'all' && !choices.some((item) => item.difficulty === next.difficulty))
+                          next.difficulty = 'all';
+                        return next;
+                      });
                       setSelectedTemplateId(null);
                     }}
                     className="shrink-0 !justify-between px-3 lg:w-full"
@@ -892,6 +912,12 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                       : 'Matching templates'
                     : categoryLabel(filter.category)}
                 </h1>
+                {filter.category === 'experimental' && (
+                  <p className="basis-full text-sm text-modiff-subtle-text sm:order-last">
+                    Advanced recipes use custom model settings. Planning-only recipes can be inspected while
+                    implementation is pending.
+                  </p>
+                )}
                 <ModiffCheckbox
                   label="Ready on this machine"
                   checked={readyOnly}
@@ -929,16 +955,15 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                     label="Model"
                     value={filter.modelType}
                     onValueChange={(value) =>
-                      setFilter((current) => ({ ...current, modelType: value as StudioModelType | 'all' }))
+                      setFilter((current) => ({ ...current, modelType: value as TemplateBrowserFilter['modelType'] }))
                     }
                     options={[
                       { value: 'all', label: 'All models' },
-                      ...getCatalogModelProfiles({ currentModelType: form.modelType, includeWorkflowOnly: true }).map(
-                        (profile) => ({
-                          value: profile.modelType,
-                          label: profile.label,
-                        }),
-                      ),
+                      ...(filter.modelType.startsWith('label:') &&
+                      !modelOptions.some((option) => option.value === filter.modelType)
+                        ? [{ value: filter.modelType, label: filter.modelType.slice(6), disabled: true }]
+                        : []),
+                      ...modelOptions,
                     ]}
                   />
                   <TemplateFilterSelect
@@ -949,7 +974,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                     }
                     options={[
                       { value: 'all', label: 'All operations' },
-                      ...templateModeOptions.map((mode) => ({ value: mode, label: STUDIO_MODE_LABELS[mode] })),
+                      ...(filter.mode && filter.mode !== 'all' && !modeOptions.includes(filter.mode)
+                        ? [{ value: filter.mode, label: STUDIO_MODE_LABELS[filter.mode], disabled: true }]
+                        : []),
+                      ...modeOptions.map((mode) => ({ value: mode, label: STUDIO_MODE_LABELS[mode] })),
                     ]}
                   />
                   <TemplateFilterSelect
@@ -983,16 +1011,17 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
             >
               <div
                 ref={setGalleryScrollElement}
-                className={cx('min-h-0 overflow-y-auto p-3', selectedTemplate && 'hidden @[1024px]:block')}
+                className={cx('@container min-h-0 overflow-y-auto p-3', selectedTemplate && 'hidden @[1024px]:block')}
                 data-testid="template-browser-gallery-scroll"
               >
-                <div className="grid items-stretch gap-3 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))] max-[1400px]:[grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]">
-                  {visibleTemplates.map((template, index) => (
+                <div className="grid items-stretch gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))]">
+                  {visibleTemplates.map((template) => (
                     <TemplateBrowserCard
                       key={template.id}
                       active={activeTemplateId === template.id}
                       disabled={isApplying}
-                      featured={shortlist && index === 0 && templates.length > 2}
+                      featured={template === featured}
+                      manualPreview={templates.length > 1 && template !== featured}
                       manifest={manifest}
                       readiness={readinessForTemplate(template)}
                       selected={selectedTemplateId === template.id}
@@ -1022,6 +1051,23 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                       {readyOnly
                         ? 'No matching templates are ready on this machine.'
                         : 'No templates match the current filters.'}
+                      {!readyOnly && (activeFilterCount > 0 || filter.query.trim()) && (
+                        <ModiffButton
+                          size="dense"
+                          className="ml-2"
+                          onClick={() =>
+                            setFilter((current) => ({
+                              ...current,
+                              modelType: 'all',
+                              mode: 'all',
+                              difficulty: 'all',
+                              query: '',
+                            }))
+                          }
+                        >
+                          Clear filters
+                        </ModiffButton>
+                      )}
                       {readyOnly && (
                         <ModiffButton size="dense" className="ml-2" onClick={() => setReadyOnly(false)}>
                           Show all readiness states
@@ -1101,7 +1147,7 @@ function TemplateFilterSelect({
         value={value}
         onValueChange={onValueChange}
         options={options}
-        optionsClassName="!min-w-44"
+        optionsClassName="!min-w-48"
       />
     </ModiffFieldShell>
   );
@@ -1111,6 +1157,7 @@ function TemplateBrowserCard({
   active,
   disabled,
   featured,
+  manualPreview,
   manifest,
   onCreate,
   onReadinessAction,
@@ -1124,6 +1171,7 @@ function TemplateBrowserCard({
   active: boolean;
   disabled: boolean;
   featured: boolean;
+  manualPreview: boolean;
   manifest: TemplateGalleryManifest | null;
   onCreate: () => void;
   onReadinessAction: (readiness: TemplateReadinessResult) => void;
@@ -1144,10 +1192,13 @@ function TemplateBrowserCard({
   return (
     <article
       data-testid={`template-browser-card-${template.id}`}
+      data-featured={featured || undefined}
       data-active-template={active ? 'true' : 'false'}
       data-inspected={selected ? 'true' : 'false'}
       className={cx(
         'group relative flex h-full min-h-0 flex-col overflow-hidden rounded-modiff-panel border bg-modiff-bg shadow-modiff-node',
+        featured &&
+          'col-span-full @md:grid @md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] @[1080px]:col-span-2 @[1600px]:col-span-3',
         selected
           ? 'border-hf-yellow ring-1 ring-hf-yellow/40'
           : active
@@ -1155,7 +1206,13 @@ function TemplateBrowserCard({
             : 'border-modiff-border',
       )}
     >
-      <div className="pointer-events-none relative z-10 overflow-hidden bg-modiff-panel">
+      <div
+        className={cx(
+          'pointer-events-none relative z-10 overflow-hidden bg-modiff-panel',
+          featured &&
+            'flex flex-col justify-center @md:min-h-64 @[900px]:min-h-72 @md:[&>.aspect-video]:absolute @md:[&>.aspect-video]:inset-0 @md:[&>.aspect-video]:h-full @md:[&>.aspect-video]:aspect-auto',
+        )}
+      >
         <ModiffButton
           tone="ghost"
           disabled={disabled}
@@ -1169,6 +1226,7 @@ function TemplateBrowserCard({
         </ModiffButton>
         {cardMediaPath || thumbnailPath ? (
           <TemplateBrowserPreview
+            cardPlayback={featured ? 'featured' : manualPreview ? 'manual' : 'visible'}
             afterPath={cardMediaPath}
             beforePath={beforePath}
             mediaKind={template.outputKinds?.[0]}
@@ -1201,15 +1259,20 @@ function TemplateBrowserCard({
         </div>
         {featured ? (
           <div
-            className="pointer-events-none absolute left-3 top-3 grid size-7 place-items-center rounded-full border border-hf-yellow/50 bg-modiff-bg/85 text-hf-yellow backdrop-blur"
+            className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-modiff-bg/90 px-2.5 py-1 text-xs font-semibold text-hf-yellow"
             title="Featured template"
           >
-            <Sparkles size={13} />
+            <Sparkles size={13} /> Featured
           </div>
         ) : null}
       </div>
 
-      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <div
+        className={cx(
+          'pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-4',
+          featured && '@md:justify-center @md:gap-4 @md:px-6 @md:pt-6',
+        )}
+      >
         <div className="min-w-0">
           <div className="mb-1 flex min-h-12 items-start justify-between gap-2">
             <h3 className="min-w-0 flex-1">
@@ -1220,7 +1283,10 @@ function TemplateBrowserCard({
                 disabled={disabled}
                 data-testid={`template-browser-use-${template.id}`}
                 onClick={onView}
-                className="pointer-events-auto !h-auto min-w-0 max-w-full !justify-start !rounded-none !p-0 text-base !font-bold !leading-6 text-modiff-text hover:bg-transparent"
+                className={cx(
+                  'pointer-events-auto !h-auto min-w-0 max-w-full !justify-start !rounded-none !p-0 text-base !font-bold !leading-6 text-modiff-text hover:bg-transparent',
+                  featured && '@md:!text-2xl @md:!leading-tight',
+                )}
               >
                 <span className="line-clamp-2">{templateDisplayName(template)}</span>
               </ModiffButton>
@@ -1556,8 +1622,11 @@ function InfoTile({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+type TemplateCardPlayback = 'featured' | 'manual' | 'visible';
+
 function TemplateBrowserPreview({
   afterPath,
+  cardPlayback,
   beforePath,
   detail = false,
   mediaKind = 'image',
@@ -1565,6 +1634,7 @@ function TemplateBrowserPreview({
   thumbnailPath,
 }: {
   afterPath?: string;
+  cardPlayback?: TemplateCardPlayback;
   beforePath?: string;
   detail?: boolean;
   mediaKind?: string;
@@ -1597,6 +1667,7 @@ function TemplateBrowserPreview({
   if (!afterPath && !beforePath && thumbnailPath) {
     return (
       <MediaSlotView
+        cardPlayback={cardPlayback}
         slot={{
           id: 'editorial-poster',
           label: 'Template preview',
@@ -1617,6 +1688,7 @@ function TemplateBrowserPreview({
   if (hasComparisonSlots && mediaKind === 'video' && !detail && afterPath) {
     return (
       <MediaSlotView
+        cardPlayback={cardPlayback}
         slot={{
           id: 'published-result',
           label: 'Generated video preview',
@@ -1641,11 +1713,13 @@ function TemplateBrowserPreview({
     return (
       <div className="grid aspect-video grid-cols-2 overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-border">
         <MediaSlotView
+          cardPlayback={cardPlayback}
           slot={mediaKind === 'video' ? { ...slots[0]!, kind: comparisonKind(beforePath, 'image') } : slots[0]!}
           path={beforePath}
           detail={detail}
         />
         <MediaSlotView
+          cardPlayback={cardPlayback}
           slot={
             mediaKind === 'video'
               ? {
@@ -1669,6 +1743,7 @@ function TemplateBrowserPreview({
     const resultKind = mediaKind === 'video' ? 'video' : mediaKind === 'audio' ? 'audio' : 'image';
     return (
       <MediaSlotView
+        cardPlayback={cardPlayback}
         slot={{
           id: 'published-result',
           label: 'Generated result',
@@ -1688,6 +1763,7 @@ function TemplateBrowserPreview({
       <div className="grid aspect-video grid-cols-2 gap-px overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-border">
         {slots.slice(0, 4).map((slot, index) => (
           <MediaSlotView
+            cardPlayback={cardPlayback}
             key={slot.id}
             slot={slot}
             path={index === 0 ? thumbnailPath : undefined}
@@ -1710,6 +1786,7 @@ function TemplateBrowserPreview({
 
   return (
     <MediaSlotView
+      cardPlayback={cardPlayback}
       slot={resolvedSlot}
       path={playbackMedia ? afterPath : (thumbnailPath ?? afterPath)}
       detail={detail}
@@ -1783,12 +1860,14 @@ function ComparisonMedia({
 }
 
 function MediaSlotView({
+  cardPlayback = 'visible',
   compact = false,
   detail = false,
   large = false,
   path,
   slot,
 }: {
+  cardPlayback?: TemplateCardPlayback;
   compact?: boolean;
   detail?: boolean;
   large?: boolean;
@@ -1807,11 +1886,13 @@ function MediaSlotView({
   const isAudio = slot.kind === 'audio';
   const isJson = slot.kind === 'json';
   const Icon = isVideo || slot.kind === 'gif' ? Film : isAudio ? Music2 : isJson ? LayoutGrid : Image;
-  const attachVideo = detail || (nearViewport && (!motionRestricted || playRequested));
-  const autoplayVideo = !detail && nearViewport && (!motionRestricted || playRequested);
+  const manualVideo = motionRestricted || cardPlayback === 'manual';
+  const autoplayVideo = !detail && nearViewport && (!manualVideo || playRequested);
+  const attachVideo = detail || autoplayVideo;
+  const featuredAudio = isAudio && cardPlayback === 'featured';
 
   useEffect(() => {
-    if (detail || !isVideo || !usablePath) return;
+    if (detail || (!isVideo && !featuredAudio) || !usablePath) return;
     const element = containerRef.current;
     if (!element || typeof IntersectionObserver === 'undefined') {
       setNearViewport(true);
@@ -1823,10 +1904,10 @@ function MediaSlotView({
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [detail, isVideo, usablePath]);
+  }, [detail, featuredAudio, isVideo, usablePath]);
 
   useEffect(() => {
-    if (detail || !isVideo) return;
+    if (detail || (!isVideo && !featuredAudio)) return;
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const connection = (
       navigator as Navigator & {
@@ -1845,7 +1926,7 @@ function MediaSlotView({
       mediaQuery.removeEventListener('change', updatePreference);
       connection?.removeEventListener?.('change', updatePreference);
     };
-  }, [detail, isVideo]);
+  }, [detail, featuredAudio, isVideo]);
 
   useEffect(() => {
     if (detail || !videoRef.current) return;
@@ -1889,7 +1970,7 @@ function MediaSlotView({
             poster={slot.posterPath}
             muted={!detail}
             loop={!detail}
-            controls={detail}
+            controls={detail || cardPlayback === 'featured'}
             autoPlay={autoplayVideo}
             playsInline
             preload={detail || attachVideo ? 'metadata' : 'none'}
@@ -1898,6 +1979,7 @@ function MediaSlotView({
             data-preview-attached={attachVideo ? 'true' : 'false'}
             className={cx(
               'relative h-full w-full object-cover transition-opacity duration-150',
+              cardPlayback === 'featured' && 'pointer-events-auto',
               videoReady || !slot.posterPath ? 'opacity-100' : 'opacity-0',
             )}
             onError={() => setFailedPath(usablePath)}
@@ -1932,7 +2014,7 @@ function MediaSlotView({
             <audio
               src={usablePath}
               controls
-              preload={detail ? 'metadata' : 'none'}
+              preload={detail || (featuredAudio && nearViewport && !motionRestricted) ? 'metadata' : 'none'}
               className="pointer-events-auto h-9 w-full"
               aria-label={slot.label}
               onError={() => setFailedPath(usablePath)}
@@ -1943,7 +2025,7 @@ function MediaSlotView({
         </div>
       ) : usablePath && !isJson ? (
         large ? (
-          detail ? (
+          detail || cardPlayback === 'featured' ? (
             <>
               <img
                 src={usablePath}
@@ -2005,7 +2087,7 @@ function MediaSlotView({
           {slot.label}
         </span>
       ) : null}
-      {isVideo && usablePath && !detail && motionRestricted && !playRequested ? (
+      {isVideo && usablePath && !detail && manualVideo && !playRequested ? (
         <ModiffIconButton
           label="Play video preview"
           onClick={(event) => {

@@ -26,7 +26,7 @@ const StageNodeControls = lazy(() => import('./StageNodeControls'));
 const StageImplementationDialog = lazy(() => import('./StageImplementationDialog'));
 
 /** Dedicated frontend node; the existing stage contract only binds values,
- * persistence and execution. It never expands into a canvas container. */
+ * persistence and execution. An explicit edit opens the shared operation editor. */
 const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   const instance = node.data.blockInstanceV2!;
   const guidance = isFocusedGuidance(instance);
@@ -83,7 +83,13 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
             ) : guidance ? (
               <GuidanceNodeControls instance={instance} />
             ) : (
-              <Suspense fallback={<p role="status">Loading stage controls…</p>}>
+              <Suspense
+                fallback={
+                  <p data-node-layout-pending role="status">
+                    Loading stage controls…
+                  </p>
+                }
+              >
                 <StageNodeControls node={{ ...node, position: view.position }} edges={edges} updateStore={update} />
               </Suspense>
             ),

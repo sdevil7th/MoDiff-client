@@ -37,6 +37,7 @@ import { visibleModiffComboboxOptions } from './comboboxOptions';
 import { controlHeightClasses, controlMinHeightClasses, type ModiffControlSize } from './controlStyles';
 import { ModiffFieldControlContext, useModiffFieldControl } from './fieldContext';
 import { ModiffTooltip } from './overlays';
+import { SEARCHABLE_OPTION_COUNT, SearchableSelect } from './SearchableSelect';
 
 const controlBaseClassName =
   'rounded-modiff-compact border border-modiff-border bg-modiff-bg text-modiff-text transition placeholder:text-modiff-subtle-text hover:border-modiff-border-subtle focus:border-modiff-focus focus:outline-none focus-visible:ring-2 focus-visible:ring-modiff-focus/35 read-only:cursor-default read-only:bg-modiff-disabled/10 disabled:cursor-not-allowed disabled:border-modiff-border disabled:bg-modiff-disabled/15 disabled:text-modiff-subtle-text disabled:opacity-60 aria-invalid:border-modiff-invalid aria-invalid:focus-visible:ring-modiff-invalid/35';
@@ -698,6 +699,37 @@ export function ModiffSelect({
     </>
   );
 
+  if (options.length >= SEARCHABLE_OPTION_COUNT && !field.readOnly) {
+    return (
+      <SearchableSelect
+        button={selectButtonContent}
+        buttonProps={{
+          id: buttonId,
+          title,
+          'aria-describedby': field.ariaDescribedBy,
+          'aria-errormessage': field.ariaErrorMessage,
+          'aria-invalid': field.invalid || undefined,
+          'aria-label': ariaLabel,
+          'aria-labelledby': ariaLabelledBy,
+          'aria-required': field.required || undefined,
+          className: selectButtonClassName,
+          ...{ 'data-testid': testId, 'data-run-recovery-field': recoveryField },
+        }}
+        className={className}
+        optionsClassName={optionsClassName}
+        disabled={field.disabled}
+        invalid={field.invalid}
+        form={form}
+        name={name}
+        layer={layer}
+        options={options}
+        values={[value]}
+        onChange={([next]) => {
+          if (next !== undefined) onValueChange(next);
+        }}
+      />
+    );
+  }
   return (
     <Listbox
       value={value}
@@ -802,6 +834,7 @@ export function ModiffMultiSelect({
   onValueChange,
   options,
   optionsClassName,
+  layer = 'panel',
   placeholder = 'Select…',
   readOnly,
   renderValue,
@@ -864,6 +897,36 @@ export function ModiffMultiSelect({
     </>
   );
 
+  if (options.length >= SEARCHABLE_OPTION_COUNT && !field.readOnly) {
+    return (
+      <SearchableSelect
+        button={multiSelectButtonContent}
+        buttonProps={{
+          id: buttonId,
+          title,
+          'aria-describedby': field.ariaDescribedBy,
+          'aria-errormessage': field.ariaErrorMessage,
+          'aria-invalid': field.invalid || undefined,
+          'aria-label': ariaLabel,
+          'aria-labelledby': ariaLabelledBy,
+          'aria-required': field.required || undefined,
+          className: multiSelectButtonClassName,
+          ...{ 'data-testid': testId },
+        }}
+        className={className}
+        optionsClassName={optionsClassName}
+        disabled={field.disabled}
+        invalid={field.invalid}
+        form={form}
+        name={name}
+        layer={layer}
+        options={options}
+        values={[...value]}
+        multiple
+        onChange={onValueChange}
+      />
+    );
+  }
   return (
     <Listbox
       multiple

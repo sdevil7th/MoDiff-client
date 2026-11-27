@@ -1,6 +1,6 @@
 import { insertStageLeaves, visualStageSourceIndex } from './visualStageOrder';
 import type { Edge } from '@xyflow/react';
-import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
+import { isFocusedStageNode, isStageEditorOpen } from '../workflow/encodingNodePresentation';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
@@ -93,7 +93,7 @@ export type BlockPreviewViewV2 = {
 export type BlockPresentationPatchV2 = Partial<
   Pick<
     BlockInstanceV2['presentation'],
-    'expanded' | 'position' | 'size' | 'internalLayoutMode' | 'collapsedContainerNodeIds'
+    'expanded' | 'stageEditorOpen' | 'position' | 'size' | 'internalLayoutMode' | 'collapsedContainerNodeIds'
   >
 > & {
   /** Entries are merged by semantic node id; null removes an entry. */
@@ -288,7 +288,7 @@ function rootNodeForNormalizedInstanceV2(
   instance: BlockInstanceV2,
   options: { selected?: boolean } = {},
 ): CustomNodeType {
-  if (isFocusedStageNode(instance) && instance.presentation.expanded)
+  if (isFocusedStageNode(instance) && instance.presentation.expanded && !isStageEditorOpen(instance))
     instance = { ...instance, presentation: { ...instance.presentation, expanded: false } };
   const definition = instance.definitionSnapshot;
   const size = instance.presentation.expanded
@@ -726,10 +726,13 @@ export function setBlockPresentationV2(
     if (layout === null) delete internalLayout[nodeId];
     else internalLayout[nodeId] = cloneJson(layout);
   });
+  const presentation = { ...instance.presentation };
+  if (patch.stageEditorOpen === false) delete presentation.stageEditorOpen;
+  else if (patch.stageEditorOpen === true) presentation.stageEditorOpen = true;
   return normalizeBlockInstanceV2({
     ...instance,
     presentation: {
-      ...instance.presentation,
+      ...presentation,
       ...(patch.expanded === undefined ? {} : { expanded: patch.expanded }),
       ...(patch.position ? { position: cloneJson(patch.position) } : {}),
       ...(patch.size ? { size: cloneJson(patch.size) } : {}),
@@ -2743,7 +2746,8 @@ export function materializeBlockProjectionV2(rootValue: CustomNodeType): BlockFl
     ...rootNodeForNormalizedInstanceV2(instance),
     ...(rootValue.selected === undefined ? {} : { selected: rootValue.selected }),
   };
-  if (!instance.presentation.expanded || isFocusedStageNode(instance)) return { nodes: [root], edges: [] };
+  if (!instance.presentation.expanded || (isFocusedStageNode(instance) && !isStageEditorOpen(instance)))
+    return { nodes: [root], edges: [] };
   return {
     nodes: [root, ...projectedChildren(instance, false)],
     edges: projectedInternalEdges(instance),

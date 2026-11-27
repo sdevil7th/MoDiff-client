@@ -178,10 +178,6 @@ function NodeList() {
     () => filterHuggingFaceCatalogSections(allHuggingFaceSections, search, effectiveCatalogView),
     [allHuggingFaceSections, search, effectiveCatalogView],
   );
-  const huggingFaceCatalogCount = useMemo(
-    () => huggingFaceSections.reduce((total, section) => total + section.entries.length, 0),
-    [huggingFaceSections],
-  );
   const runtimeNodeCount = useMemo(() => {
     if (stageCatalog) return 0;
     return nodeCatalogEntries(catalogNodes).filter(
@@ -352,17 +348,29 @@ function NodeList() {
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
               <p className="truncate text-xs text-modiff-subtle-text">
-                {stageCatalog ? `${stageResults.length} stages` : `${runtimeNodeCount} nodes`} ·{' '}
-                {huggingFaceCatalogCount} catalog entries
+                {stageCatalog ? `${stageResults.length} stages` : `${runtimeNodeCount} nodes`}
               </p>
             </div>
           </div>
+          <ModiffButton
+            size="compact"
+            tone="secondary"
+            icon={<Plus size={14} />}
+            aria-label="Add custom node"
+            onClick={() => {
+              setExtensionsView('add');
+              setExtensionsKind('local');
+              setExtensionsOpen(true);
+            }}
+          >
+            Custom
+          </ModiffButton>
         </div>
       </header>
       <div className="p-2">
         <ModiffSearchInput
           aria-label="Search nodes"
-          placeholder="Search nodes"
+          placeholder="Search names or actions"
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
           onClear={() => setSearch('')}
@@ -370,22 +378,6 @@ function NodeList() {
       </div>
       <NodeDiscoveryFilters />
 
-      {
-        <div className="px-3 pb-2">
-          <ModiffButton
-            tone="primary"
-            fullWidth
-            icon={<Plus size={16} />}
-            onClick={() => {
-              setExtensionsView('add');
-              setExtensionsKind('local');
-              setExtensionsOpen(true);
-            }}
-          >
-            Add custom node
-          </ModiffButton>
-        </div>
-      }
       {extensionsOpen ? (
         <Suspense fallback={null}>
           <CustomExtensionsDialog
@@ -395,19 +387,26 @@ function NodeList() {
           />
         </Suspense>
       ) : null}
-      <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
-        Saved Blocks reuse canvas nodes. Custom nodes run your Python code.
-      </p>
-
-      <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
+      <div className="min-h-0 flex-1 select-none overflow-y-auto border-t border-modiff-border px-2 py-3">
         {stageCatalog && (
           <>
-            <ModiffButton aria-expanded={showMoreStages} onClick={() => setShowMoreStages(!showMoreStages)}>
-              {showMoreStages ? 'Everyday stages' : 'Show task stages'}
-            </ModiffButton>
-            <VisualStageLibrary matches={stageResults} insert={handleInsertNode} searching={Boolean(search.trim())} />
+            <VisualStageLibrary matches={stageResults} insert={handleInsertNode} searchQuery={search.trim()} />
+            {!search.trim() && (
+              <ModiffButton
+                size="compact"
+                tone="ghost"
+                className="my-2"
+                aria-expanded={showMoreStages}
+                onClick={() => setShowMoreStages(!showMoreStages)}
+              >
+                {showMoreStages ? 'Hide additional stages' : 'Show task stages'}
+              </ModiffButton>
+            )}
           </>
         )}
+        <p className="mt-2 border-t border-modiff-border px-2 pb-2 pt-3 text-xs text-modiff-subtle-text">
+          Saved Blocks reuse canvas nodes. Custom nodes run your Python code.
+        </p>
         <CustomNodeLibrary
           search={search}
           insert={handleInsertNode}
@@ -427,6 +426,13 @@ function NodeList() {
           }
           search={search}
           view={effectiveCatalogView}
+          showEmpty={
+            !stageResults.length &&
+            !represented.size &&
+            !nodeCatalogEntries(catalogNodes).some(
+              (entry) => entry.node.module.startsWith('custom.') && nodeCatalogEntryMatchesSearch(entry, search),
+            )
+          }
           userBlocks={[...userBlockDefinitionsV2, ...userBlocks]}
           huggingFaceSections={huggingFaceSections}
           huggingFaceLoading={!huggingFaceLibraryLoaded}
@@ -1003,6 +1009,7 @@ function NodeGroupList({
   search,
   view,
   userBlocks,
+  showEmpty,
   huggingFaceSections,
   huggingFaceLoading,
   huggingFaceError,
@@ -1018,6 +1025,7 @@ function NodeGroupList({
   search: string;
   view: NodeCatalogView;
   userBlocks: StoredUserBlockDefinition[];
+  showEmpty: boolean;
   huggingFaceSections: HuggingFaceCatalogSection[];
   huggingFaceLoading: boolean;
   huggingFaceError: string | null;
@@ -1138,7 +1146,10 @@ function NodeGroupList({
           </TreeChildrenPanel>
         ) : null}
       </div>
-      {orderedGroups.length === 0 && matchingUserBlocks.length === 0 && huggingFaceSections.length === 0 ? (
+      {showEmpty &&
+      orderedGroups.length === 0 &&
+      matchingUserBlocks.length === 0 &&
+      huggingFaceSections.length === 0 ? (
         <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
           No nodes match this view.
         </div>

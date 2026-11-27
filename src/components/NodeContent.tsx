@@ -15,6 +15,7 @@ import {
 import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
 import { NodeParams, type NodeParamOptions, type NodeParamSignal, useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
+import { nodeControlGate, orderedActiveNodeControls } from '../workflow/gatedNodeControls';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
 import {
   blockRuntimeOptionPresentation,
@@ -227,7 +228,12 @@ const NodeContent = memo(function NodeContent({
   const signalControls = useFlowStore(
     useShallow((state) => unresolvedSignalControls(nodeId, nodesRegistry[identity]?.params, state)),
   );
-  const fields = Object.entries(params).flatMap(([key, data]: [string, NodeParams]) => {
+  const gate = nodeControlGate(identity);
+  const connectedGate = useFlowStore((state) =>
+    Boolean(gate && state.edges.some((e) => e.target === nodeId && e.targetHandle === gate)),
+  );
+  const activeControls = orderedActiveNodeControls(identity, params, graphNode?.data.params ?? params, connectedGate);
+  const fields = activeControls.flatMap(([key, data]: [string, NodeParams]) => {
     const declaredLabel = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
     const label =
       utilityOperation?.continuation && key === 'reference' && declaredLabel === 'Reference Audio'

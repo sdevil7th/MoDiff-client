@@ -91,6 +91,7 @@ export type MediaExportOpener = {
 } | null;
 
 export type WorkflowFocusRequest = {
+  stageEditor?: 'enter' | 'leave';
   workflowTabId: string;
   nodeId: string | null;
   requestId: number;
