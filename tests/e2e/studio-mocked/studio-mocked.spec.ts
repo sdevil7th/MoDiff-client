@@ -39896,11 +39896,14 @@ async function assertImagePipelineStageAdapterAuthoring(page: Page, templateId: 
   )!;
   const node = page.getByTestId(`setup-node-${setup.id}`);
   if (template.modelType === 'FluxReduxPipeline') {
-    // These saved recipes use CPU offload. Their LoRA authoring policy only
-    // permits resident weights, selected on the connected execution recipe.
+    // Auto chooses its starting mode for the fixture's device. Exercise both
+    // policy states explicitly on the connected execution recipe.
+    const runtimeOffload = node.getByRole('button', { name: 'Runtime Offload', exact: true });
+    await runtimeOffload.click();
+    await page.getByRole('option', { name: 'RAM/CPU model offload', exact: true }).click();
+    await expect(runtimeOffload).toHaveText('RAM/CPU model offload');
     await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
     await expect(node).toContainText('Set the effective offload_mode control to none');
-    const runtimeOffload = node.getByRole('button', { name: 'Runtime Offload', exact: true });
     await runtimeOffload.click();
     await page.getByRole('option', { name: 'Off', exact: true }).click();
     await expect(runtimeOffload).toHaveText('Off');
