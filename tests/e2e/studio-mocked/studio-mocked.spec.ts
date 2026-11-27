@@ -14034,6 +14034,13 @@ test('template categories feature current outputs and searchable model choices l
     'data-testid',
     'template-browser-category-experimental',
   );
+  const templateSearch = browser.getByTestId('template-browser-search');
+  await templateSearch.fill('Exact Text');
+  await expect(browser.locator('article').first()).toHaveAttribute(
+    'data-testid',
+    'template-browser-card-qwen_text_rendering',
+  );
+  await templateSearch.clear();
   const model = browser.getByTestId('template-browser-model-filter');
   await model.click();
   const search = page.getByRole('combobox', { name: 'Search options' });
@@ -37841,7 +37848,9 @@ test('Model Setup and Inspector expose conditioning controls only on eligible im
   expect(requests).toEqual([]);
 });
 
-test('Model Setup VAE settings show the connected recipe once on the canvas and in the inspector', async ({ page }) => {
+test('Model Setup VAE and placement settings show the connected recipe once on the canvas and in the inspector', async ({
+  page,
+}) => {
   const source = JSON.parse(
     await fs.readFile(path.join(BACKEND_ROOT, 'data/graphs/studio/ddim-pipeline/unconditional-image.json'), 'utf8'),
   );
@@ -37868,12 +37877,54 @@ test('Model Setup VAE settings show the connected recipe once on the canvas and 
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
   const inspectorTiling = inspector.getByRole('switch', { name: /^VAE tiling$/iu });
+  for (const surface of [card, inspector]) {
+    await expect(surface.getByLabel('Execution Device', { exact: true })).toHaveCount(1);
+    await expect(surface.getByLabel('Runtime Offload', { exact: true })).toHaveCount(1);
+    await expect(surface.getByLabel('Device', { exact: true })).toHaveCount(0);
+    await expect(surface.getByLabel('Offload Mode', { exact: true })).toHaveCount(0);
+    await expect(surface.getByRole('switch', { name: /^Auto offload$/iu })).toHaveCount(0);
+  }
   await expect(inspectorTiling).toHaveCount(1);
   await expect(inspectorTiling).not.toBeChecked();
   await inspectorTiling.click();
   await expect(inspectorTiling).toBeChecked();
+  const castingOptions = ['Layerwise Casting Components', 'Layerwise Compute DType', 'Layerwise Storage DType'];
+  const channelsOption = 'Channels Last Components';
+  for (const surface of [card, inspector]) {
+    await expect(surface.getByRole('switch', { name: 'Layerwise Casting', exact: true })).not.toBeChecked();
+    await expect(surface.getByRole('switch', { name: 'Channels Last', exact: true })).not.toBeChecked();
+    for (const label of [...castingOptions, channelsOption]) {
+      await expect(surface.getByLabel(label, { exact: true })).toHaveCount(0);
+    }
+  }
+  await inspector.getByRole('switch', { name: 'Layerwise Casting', exact: true }).click();
+  await inspector.getByLabel('Layerwise Storage DType', { exact: true }).click();
+  await page.getByRole('option', { name: 'float8_e5m2', exact: true }).click();
+  for (const label of castingOptions) await expect(card.getByLabel(label, { exact: true })).toHaveCount(1);
+  await expect(card.getByLabel(channelsOption, { exact: true })).toHaveCount(0);
+  await inspector.getByRole('switch', { name: 'Channels Last', exact: true }).click();
+  await expect(card.getByLabel(channelsOption, { exact: true })).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(tiling).toBeChecked();
+  const casting = card.getByRole('switch', { name: 'Layerwise Casting', exact: true });
+  await casting.click();
+  await expect(card.getByLabel('Layerwise Storage DType', { exact: true })).toHaveCount(0);
+  await expect(card.getByLabel(channelsOption, { exact: true })).toHaveCount(1);
+  await casting.click();
+  await expect(card.getByLabel('Layerwise Storage DType', { exact: true })).toHaveText('float8_e5m2');
+  const rawId = await page.evaluate(async (graph) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.getState().replaceGraph(graph);
+    return graph.nodes.find((node: { data: { action: string } }) => node.data.action === 'DiffusersExecutionRecipe').id;
+  }, source);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const raw = page.locator(`.react-flow__node[data-id="${rawId}"]`);
+  const rawSwitch = raw.getByRole('switch', { name: 'Layerwise Casting', exact: true });
+  await expect(rawSwitch).not.toBeChecked();
+  await expect(raw.getByLabel('Layerwise Storage DType', { exact: true })).toHaveCount(0);
+  await rawSwitch.click();
+  await expect(raw.getByLabel('Layerwise Storage DType', { exact: true })).toHaveText('float8_e4m3fn');
+  await expect(raw.getByLabel(channelsOption, { exact: true })).toHaveCount(0);
 });
 
 test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
@@ -38956,7 +39007,11 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
     });
   }
   await node.getByRole('button', { name: 'Prepare Mask options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate mask preparation stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Convert Prepare Mask to independent nodes?', exact: true })
+    .getByRole('button', { name: 'Convert to independent nodes', exact: true })
+    .click();
   await expect(node).toHaveCount(0);
   expect(await optionalStageApi(page)).toEqual(edited);
   await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
@@ -39840,6 +39895,16 @@ async function assertImagePipelineStageAdapterAuthoring(page: Page, templateId: 
     (entry) => entry.data.label === 'Model Setup',
   )!;
   const node = page.getByTestId(`setup-node-${setup.id}`);
+  if (template.modelType === 'FluxReduxPipeline') {
+    // These saved recipes use CPU offload. Their LoRA authoring policy only
+    // permits resident weights, selected on the connected execution recipe.
+    await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+    await expect(node).toContainText('Set the effective offload_mode control to none');
+    const runtimeOffload = node.getByRole('button', { name: 'Runtime Offload', exact: true });
+    await runtimeOffload.click();
+    await page.getByRole('option', { name: 'Off', exact: true }).click();
+    await expect(runtimeOffload).toHaveText('Off');
+  }
   await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
   const snapshot = () =>
     page.evaluate(async () => {
@@ -40644,7 +40709,11 @@ it('MiniMax real Audio Output preserves leaves and supports contained playback, 
   const baselineConsumers = audioConsumers(await audioApiSnapshot(page));
   const baselinePaths = audioApiPaths(await audioApiSnapshot(page));
   await output.getByRole('button', { name: 'Audio Output options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate audio output stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Convert Audio Output to independent nodes?', exact: true })
+    .getByRole('button', { name: 'Convert to independent nodes', exact: true })
+    .click();
   await expect(output).toHaveCount(0);
   expect(audioConsumers(await audioApiSnapshot(page))).toEqual(baselineConsumers);
   expect(audioApiPaths(await audioApiSnapshot(page))).toEqual(baselinePaths);
@@ -40663,11 +40732,40 @@ it('MiniMax real Audio Output preserves leaves and supports contained playback, 
   expect(mutations).toEqual([]);
 });
 
+it('a failed stage interface download keeps the authored audio recipe and reloads its controls', async ({ page }) => {
+  const controlModule = '**/src/components/StageNodeControls.tsx*';
+  await page.route(controlModule, (route) => route.abort('failed'));
+  const { mutations } = await openAudioStageTemplate(page, 'ace_step_text_to_audio');
+  const retry = page.getByRole('button', { name: 'Reload workspace to retry', exact: true }).first();
+  await expect(retry).toBeVisible();
+  const before = await audioApiSnapshot(page);
+  expect(
+    Object.values(before.nodes).some((node) => node.module === 'modules.DiffusersAudio' && node.action === 'Generate'),
+  ).toBe(true);
+  await page.unroute(controlModule);
+  await retry.click();
+  await expect(page.getByRole('button', { name: 'Choose model', exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(retry).toHaveCount(0);
+  await expect.poll(() => audioApiSnapshot(page)).toEqual(before);
+  expect(mutations).toEqual([]);
+});
+
 it('fresh lyric template preserves its full composite branch brief through ordinary Save and reopen', async ({
   page,
 }) => {
   test.setTimeout(180_000);
+  // Delay the real stage editor past the old five-second geometry deadline. The 45-second song and nine-shot graph must survive a cold first visit.
+  let delayedControls = false;
+  await page.route('**/src/components/StageNodeControls.tsx*', async (route) => {
+    await page.locator('[data-node-layout-pending]').first().waitFor({ state: 'attached' });
+    await new Promise((resolve) => setTimeout(resolve, 5_500));
+    delayedControls = true;
+    await route.continue();
+  });
   const { mutations } = await openAudioStageTemplate(page, 'ace_step_lyric_music_video');
+  expect(delayedControls).toBe(true);
   const original = await audioApiSnapshot(page);
   const brief = STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_lyric_music_video')!.workflowBlockSettings!
     .lyricVideo!;
@@ -40865,6 +40963,27 @@ it('aliased audio Model Setup renders human offload choices and preserves the se
   const root = await audioWorkflowNodeId(page, 'Model Setup');
   const setup = page.getByTestId(`setup-node-${root}`);
   const offload = setup.getByRole('button', { name: 'Offload Mode', exact: true });
+  const runtimeOffload = setup.getByRole('button', { name: 'Runtime Offload', exact: true });
+  await expect(runtimeOffload).toHaveText('Off');
+  await expect(offload).toHaveCount(0);
+  await setup.getByRole('button', { name: 'Edit stages: Model Setup', exact: true }).click();
+  const recipeWire = await page.evaluate(async (ownerId) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const flow = useFlowStore.getState();
+    const loader = flow.nodes.find(
+      (node) => node.data.blockProjectionOwnerId === ownerId && node.data.action === 'LoadPipeline',
+    );
+    const edge = flow.edges.find((edge) => edge.target === loader?.id && edge.targetHandle === 'execution_recipe');
+    if (!edge) throw new Error('The saved ACE loader must receive its execution recipe.');
+    flow.onEdgesChange([{ type: 'remove', id: edge.id }]);
+    return {
+      source: edge.source,
+      sourceHandle: edge.sourceHandle!,
+      target: edge.target,
+      targetHandle: edge.targetHandle!,
+    };
+  }, root);
+  await page.getByRole('button', { name: 'Return to Model Setup', exact: true }).click();
   if (!(await offload.isVisible())) await setup.getByRole('button', { name: 'Advanced', exact: true }).click();
   await expect(offload).toBeVisible();
   const before = await audioApiSnapshot(page);
@@ -40933,6 +41052,14 @@ it('aliased audio Model Setup renders human offload choices and preserves the se
   await expect(offload).toHaveText('Off');
   expect(await stored()).toEqual(beforeStored);
   expect(await audioApiSnapshot(page)).toEqual(before);
+  await setup.getByRole('button', { name: 'Edit stages: Model Setup', exact: true }).click();
+  await page.evaluate(async (wire) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.getState().onConnect(wire);
+  }, recipeWire);
+  await page.getByRole('button', { name: 'Return to Model Setup', exact: true }).click();
+  await expect(runtimeOffload).toHaveText('Off');
+  await expect(offload).toHaveCount(0);
   expect(mutations).toEqual([]);
 });
 

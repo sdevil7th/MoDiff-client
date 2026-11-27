@@ -1,6 +1,11 @@
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { Edge } from '@xyflow/react';
-import { arrangeGraphNodes, waitForGraphNodeMeasurements } from '../workflow/graphLayout';
+import { enqueueSnackbar } from '../ui/snackbar';
+import {
+  FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS,
+  arrangeGraphNodes,
+  waitForGraphNodeMeasurements,
+} from '../workflow/graphLayout';
 import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
 import { workflowSnapshotFromGraph } from './workflowInference';
 import { setBlockPresentationV2 } from './blockRuntimeV2';
@@ -9,6 +14,7 @@ import {
   captureWorkflowOperationContext,
   assertWorkflowOperationContext,
   isWorkflowOperationCancelled,
+  workflowOperationContextIsCurrent,
   useStudioStore,
 } from '../stores/useStudioStore';
 
@@ -50,10 +56,24 @@ export function exampleWorkflowSnapshotFromGraph(
 export async function settleExampleWorkflowCanvas() {
   const context = captureWorkflowOperationContext();
   try {
-    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000);
+    const initialHistory = useFlowStore.getState().historyPast;
+    const ownsLayout = () =>
+      workflowOperationContextIsCurrent(context, { includeForm: false }) &&
+      useFlowStore.getState().historyPast === initialHistory;
+    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000, {
+      controlLoadTimeoutMs: FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS,
+      isCurrent: ownsLayout,
+    });
     assertWorkflowOperationContext(context, { includeForm: false });
-    if (!measured)
-      throw new Error('The example controls did not finish measuring. Reopen the example to retry its layout.');
+    if (!measured || !ownsLayout()) {
+      if (ownsLayout())
+        enqueueSnackbar(
+          'The workflow opened with its original layout. Once controls have loaded, use Fit height to controls on a stage and Arrange graph if needed.',
+          { variant: 'warning' },
+        );
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+      return true;
+    }
     await useFlowStore
       .getState()
       .arrangeGraph({ history: false, fitNewNodeContents: true, reserveFirstImagePreviewSpace: true });

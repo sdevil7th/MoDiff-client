@@ -15,7 +15,13 @@ import {
 import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
 import { NodeParams, type NodeParamOptions, type NodeParamSignal, useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
-import { adapterConsumesOffloadMode, nodeControlGate, orderedActiveNodeControls } from '../workflow/gatedNodeControls';
+import {
+  adapterConsumesOffloadMode,
+  EXECUTION_RECIPE_NODE,
+  nodeControlGate,
+  orderedActiveNodeControls,
+  visibleExecutionRecipeControls,
+} from '../workflow/gatedNodeControls';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
 import {
   blockRuntimeOptionPresentation,
@@ -236,7 +242,24 @@ const NodeContent = memo(function NodeContent({
   const modeRequiredByAdapter = useNodesStore(
     (state) => gate === 'auto_offload' && adapterConsumesOffloadMode(fullParams, state),
   );
-  const activeControls = orderedActiveNodeControls(identity, params, fullParams, connectedGate, modeRequiredByAdapter);
+  const suppliedRecipeFields = useFlowStore(
+    useShallow((state) =>
+      identity === EXECUTION_RECIPE_NODE
+        ? state.edges.filter((edge) => edge.target === nodeId).map((edge) => edge.targetHandle)
+        : [],
+    ),
+  );
+  const activeParams =
+    identity === EXECUTION_RECIPE_NODE
+      ? visibleExecutionRecipeControls(params, fullParams, (key) => suppliedRecipeFields.includes(key))
+      : params;
+  const activeControls = orderedActiveNodeControls(
+    identity,
+    activeParams,
+    fullParams,
+    connectedGate,
+    modeRequiredByAdapter,
+  );
   const fields = activeControls.flatMap(([key, data]: [string, NodeParams]) => {
     const declaredLabel = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
     const label =

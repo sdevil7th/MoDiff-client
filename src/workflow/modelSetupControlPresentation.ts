@@ -5,20 +5,30 @@ import { blockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
 import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
-import { adapterConsumesOffloadMode, literalControlIsOff, nodeControlGate } from './gatedNodeControls';
+import {
+  adapterConsumesOffloadMode,
+  EXECUTION_RECIPE_NODE,
+  literalControlIsOff,
+  nodeControlGate,
+  visibleExecutionRecipeControls,
+} from './gatedNodeControls';
 import { nodeDisplayLabel } from './nodePresentation';
 
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
 const AUDIO_LOADER = 'modules.DiffusersAudio.LoadPipeline';
-const EXECUTION_RECIPE = 'modules.DiffusersRuntime.DiffusersExecutionRecipe';
 const CONDITIONING_KIND = 'conditioning_kind';
 const CONDITIONING_MODEL = 'conditioning_model_id';
 const CONDITIONING_REVISION = 'conditioning_revision';
 const RECIPE_SOCKET = 'execution_recipe';
 const RECIPE_TYPE = 'diffusers_execution_recipe';
-const VAE_FALLBACKS: Record<string, Record<string, string>> = {
-  [IMAGE_LOADER]: { enable_vae_slicing: 'vae_slicing', enable_vae_tiling: 'vae_tiling' },
-  [AUDIO_LOADER]: { enable_vae_tiling: 'vae_tiling' },
+// The reviewed direct loaders prefer an execution recipe's device and derive
+// both offload settings from its mode. Device map and dtype have other rules.
+const placementFallbacks = { auto_offload: 'offload_mode', offload_mode: 'offload_mode', device: 'device' };
+const RECIPE_FALLBACKS: Record<string, Record<string, string>> = {
+  [IMAGE_LOADER]: { ...placementFallbacks, enable_vae_slicing: 'vae_slicing', enable_vae_tiling: 'vae_tiling' },
+  [AUDIO_LOADER]: { ...placementFallbacks, enable_vae_tiling: 'vae_tiling' },
+  'modules.DiffusersVideo.LoadPipeline': placementFallbacks,
+  'modules.DiffusersThreeD.LoadPipeline': placementFallbacks,
 };
 
 // Only a section copied from one member's own title should follow its
@@ -34,13 +44,13 @@ export function modelSetupControlGroupLabel(
   return member?.data.label === group ? nodeDisplayLabel(member.data) : group;
 }
 
-function hasConditioningSupplier(
+function hasControlSupplier(
   instance: BlockInstanceV2,
   owner: CustomNodeType,
+  fields: string[],
   internalEdges: readonly Edge[],
   workflowEdges: readonly Edge[],
 ) {
-  const fields = [CONDITIONING_KIND, CONDITIONING_MODEL, CONDITIONING_REVISION];
   if (internalEdges.some((edge) => edge.target === owner.id && fields.includes(edge.targetHandle ?? ''))) return true;
   const nodeId = owner.data.blockProjectionNodeId!;
   const handles = new Set(
@@ -81,7 +91,7 @@ export function modelSetupControlParams(
       isModelSetupAdapterKey(`${owner.data.module}.${owner.data.action}`)
     );
   });
-  const visible = { ...params };
+  let visible = { ...params };
   for (const control of controls) {
     const { nodeId, fieldId } = control.binding;
     const owner = leaf(nodeId);
@@ -139,7 +149,13 @@ export function modelSetupControlParams(
       !conditioning.signal &&
       !declared.isConnected &&
       !declared.signal &&
-      !hasConditioningSupplier(instance, owner, graph.edges, workflowEdges)
+      !hasControlSupplier(
+        instance,
+        owner,
+        [CONDITIONING_KIND, CONDITIONING_MODEL, CONDITIONING_REVISION],
+        graph.edges,
+        workflowEdges,
+      )
     ) {
       delete visible[control.controlId];
       continue;
@@ -152,7 +168,7 @@ export function modelSetupControlParams(
     ) {
       visible[control.controlId] = { ...visible[control.controlId]!, label: 'Base model revision' };
     }
-    const recipeField = VAE_FALLBACKS[nodeKey]?.[fieldId];
+    const recipeField = RECIPE_FALLBACKS[nodeKey]?.[fieldId];
     const recipeInput = owner.data.params[RECIPE_SOCKET];
     if (
       !recipeField ||
@@ -162,7 +178,12 @@ export function modelSetupControlParams(
       owner.data.uiState?.disabled ||
       recipeInput?.type !== RECIPE_TYPE ||
       !(recipeInput.display === 'input' || recipeInput.isInput) ||
-      graph.edges.some((edge) => edge.target === owner.id && edge.targetHandle === fieldId)
+      declared?.dataSource ||
+      declared?.isConnected ||
+      declared?.signal ||
+      recipeInput.dataSource ||
+      hasControlSupplier(instance, owner, [fieldId], graph.edges, workflowEdges) ||
+      hasControlSupplier(instance, owner, [RECIPE_SOCKET], [], workflowEdges)
     )
       continue;
     const incoming = graph.edges.filter((edge) => edge.target === owner.id && edge.targetHandle === RECIPE_SOCKET);
@@ -170,11 +191,24 @@ export function modelSetupControlParams(
     const recipe = nodes.get(incoming[0].source);
     if (
       !recipe ||
-      `${recipe.data.module}.${recipe.data.action}` !== EXECUTION_RECIPE ||
+      `${recipe.data.module}.${recipe.data.action}` !== EXECUTION_RECIPE_NODE ||
       recipe.data.uiState?.disabled ||
       recipe.data.params[RECIPE_SOCKET]?.type !== RECIPE_TYPE ||
-      recipe.data.params[RECIPE_SOCKET].display !== 'output' ||
-      recipe.data.params[recipeField]?.type !== 'bool'
+      recipe.data.params[RECIPE_SOCKET].display !== 'output'
+    )
+      continue;
+    const setting = recipe.data.params[recipeField];
+    const placement = recipeField === 'offload_mode' || recipeField === 'device';
+    if (setting?.type !== (placement ? 'string' : 'bool')) continue;
+    const literal = setting.value ?? setting.default;
+    if (
+      placement &&
+      (typeof literal !== 'string' ||
+        !literal.trim() ||
+        setting.dataSource ||
+        setting.signal ||
+        setting.isConnected ||
+        hasControlSupplier(instance, recipe, [recipeField], graph.edges, workflowEdges))
     )
       continue;
     const effective = controls.find(
@@ -183,6 +217,28 @@ export function modelSetupControlParams(
     );
     const effectiveParam = effective && params[effective.controlId];
     if (effectiveParam && !effectiveParam.hidden) delete visible[control.controlId];
+  }
+  for (const member of graph.nodes) {
+    if (`${member.data.module}.${member.data.action}` !== EXECUTION_RECIPE_NODE || member.data.uiState?.disabled)
+      continue;
+    const localControls = new Map(
+      controls
+        .filter(
+          (control) =>
+            control.binding.nodeId === member.data.blockProjectionNodeId &&
+            !control.sealed &&
+            !control.mirrorBindings?.length &&
+            control.group === member.data.label?.trim() &&
+            control.label === member.data.params[control.binding.fieldId]?.label,
+        )
+        .map((control) => [control.binding.fieldId, control.controlId]),
+    );
+    visible = visibleExecutionRecipeControls(
+      visible,
+      member.data.params,
+      (key) => hasControlSupplier(instance, member, [key], graph.edges, workflowEdges),
+      (key) => localControls.get(key),
+    );
   }
   return visible;
 }

@@ -507,7 +507,7 @@ uses the current registry to check which model identities the Guider accepts.
 
 ## Opening and inspecting a workflow
 
-Fresh tasks, templates and examples measure the controls, open sections and sockets on each node before arranging the graph. This includes nodes supplied by a Python extension. Long forms start with up to 960 pixels of controls. Right-click the stage and choose **Fit height to controls** to expand a stage further. Saved workflows reopen at their authored sizes and positions.
+Fresh tasks, templates and examples wait for each stage’s controls to load, then measure the open sections and sockets before arranging the graph. If a stage’s controls cannot load, its workflow remains available. Choose **Reload workspace to retry** in the affected stage to recover its controls. This includes nodes supplied by a Python extension. Long forms start with up to 960 pixels of controls. Right-click the stage and choose **Fit height to controls** to expand a stage further. Saved workflows reopen at their authored sizes and positions.
 
 **Enabled** opens the settings for a guidance operation. Switching it off preserves your settings for the next time you enable it. A modular model loader shows **Offload Mode** when automatic offload is enabled, supplied by a wire, or required by the selected model’s adapter settings. Canvas and inspector controls edit the same stored values.
 

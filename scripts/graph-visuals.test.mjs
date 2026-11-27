@@ -1340,6 +1340,92 @@ test('measurement waiting starts its deadline on the first available browser fra
   }
 });
 
+test('fresh layout waits for downloaded controls, stops on failure or a changed document, and bounds a stalled download', async () => {
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const previousFrame = window.requestAnimationFrame;
+  const previousNow = Date.now;
+  let frame = 0;
+  let releaseFrame = 6;
+  let failed = false;
+  const target = node('downloaded-controls', 0, 0);
+  target.measured = { width: 320, height: 240 };
+  try {
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        getElementById: () => ({
+          querySelector: (selector) => (selector === '[data-node-load-error]' ? failed : frame < releaseFrame),
+        }),
+      },
+    });
+    Date.now = () => frame * 1000;
+    window.requestAnimationFrame = (callback) => {
+      frame++;
+      queueMicrotask(() => callback(Date.now()));
+      return frame;
+    };
+    const wait = (isCurrent = () => true) =>
+      graphLayout.waitForGraphNodeMeasurements(() => [target], 2000, { controlLoadTimeoutMs: 8000, isCurrent });
+    assert.equal(await wait(), true);
+    assert.equal(frame, 7, 'Only real controls with two stable frames can complete fresh layout.');
+    frame = 0;
+    releaseFrame = Infinity;
+    assert.equal(await wait(), false);
+    assert.equal(frame, 11);
+    frame = 0;
+    assert.equal(await wait(() => frame < 3), false);
+    assert.equal(frame, 3, 'A tab switch or authored edit cancels before application.');
+    frame = 0;
+    failed = true;
+    assert.equal(await wait(), false);
+    assert.equal(frame, 1);
+  } finally {
+    window.requestAnimationFrame = previousFrame;
+    Date.now = previousNow;
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else delete globalThis.document;
+  }
+});
+
+test('late fresh-workflow measurements preserve an intervening layout edit and leave a replacement tab alone', async () => {
+  const { settleExampleWorkflowCanvas } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const studio = studioStoreModule.useStudioStore;
+  const flow = flowStoreModule.useFlowStore;
+  studio.getState().ensureWorkflowTabs();
+  flow.getState().replaceGraph({ nodes: [node('first', 130, 260), node('second', 600, 260)], edges: [] });
+  const previousFrame = window.requestAnimationFrame;
+  try {
+    let nextFrame;
+    window.requestAnimationFrame = (callback) => {
+      nextFrame = callback;
+      return 1;
+    };
+    const editing = settleExampleWorkflowCanvas();
+    const finishEditing = nextFrame;
+    flow.getState().withHistory('Move second node', () =>
+      flow.getState().replaceGraph({
+        nodes: [node('first', 130, 260), node('second', 831, 733)],
+        edges: [],
+      }),
+    );
+    finishEditing();
+    assert.equal(await editing, true);
+    assert.deepEqual(flow.getState().nodes[1].position, { x: 831, y: 733 });
+    const switching = settleExampleWorkflowCanvas();
+    const finishSwitching = nextFrame;
+    studio.getState().createWorkflowTab('Another document');
+    flow.getState().replaceGraph({ nodes: [node('other', 345, 543)], edges: [] });
+    finishSwitching();
+    assert.equal(await switching, false);
+    assert.deepEqual(
+      flow.getState().nodes.map(({ id, position }) => ({ id, position })),
+      [{ id: 'other', position: { x: 345, y: 543 } }],
+    );
+  } finally {
+    window.requestAnimationFrame = previousFrame;
+  }
+});
+
 test('measurement readiness excludes hidden and folded Block projection leaves', async () => {
   const root = node('measured-root', 0, 0);
   root.data.blockInstanceV2 = {};

@@ -42,16 +42,19 @@ export default function StageNodeControls({
         .map((n) => n.data.blockProjectionNodeId),
     );
     const adapters = new Set(graph.nodes.filter(isModelSetupAdapter).map((node) => node.data.blockProjectionNodeId));
-    const controls = instance.effectiveInterface.controls.filter(
-      (control) =>
-        controlParams[control.controlId] !== undefined &&
-        !(
-          setup &&
-          owners.has(control.binding.nodeId) &&
-          ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
-        ) &&
-        !(setup && adapters.has(control.binding.nodeId)),
-    );
+    const byId = new Map(instance.effectiveInterface.controls.map((control) => [control.controlId, control]));
+    const controls = Object.keys(controlParams)
+      .map((id) => byId.get(id)!)
+      .filter(
+        (control) =>
+          control &&
+          !(
+            setup &&
+            owners.has(control.binding.nodeId) &&
+            ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
+          ) &&
+          !(setup && adapters.has(control.binding.nodeId)),
+      );
     const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => {
       const groupControls = controls.filter((control) => (control.group ?? 'Settings') === group);
       return {

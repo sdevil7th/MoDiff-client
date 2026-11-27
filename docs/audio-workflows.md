@@ -21,7 +21,10 @@ internal computation editable. MiniMax's semantic generation is an actual stage
 and must remain distinct from prompt encoding.
 
 Grouping is an explicit, undoable presentation change using the existing Block
-contract. Inspect implementation and Separate stages expose the original leaves.
+contract. Choose **Inspect implementation** to see which operations a stage contains.
+Use **Edit stages** to wire those operations, then **Done editing** to return.
+To place the operations directly on the canvas, select **Convert to independent nodes…**
+and confirm the list.
 Flattened execution, connected values and model ownership stay authoritative.
 Existing saved workflows retain their presentation until deliberately changed.
 Shared, ambiguous or custom branches require explicit structural editing.

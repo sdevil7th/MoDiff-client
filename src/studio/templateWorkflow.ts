@@ -9,6 +9,7 @@ import {
   captureWorkflowOperationContext,
   currentAutoResourcePlanTarget,
   isWorkflowOperationCancelled,
+  workflowOperationContextIsCurrent,
   useStudioStore,
   type WorkflowOperationContext,
 } from '../stores/useStudioStore';
@@ -26,7 +27,7 @@ import { isPlanningOnlyTemplate } from './templateCreationPolicy';
 import { normalizeStudioRuntimeDevice } from './runReadiness';
 import { exactStudioExecutionSpecForForm } from './executionSpecs';
 import { materializeTemplateDefaultInputs } from './templateInputs';
-import { waitForGraphNodeMeasurements } from '../workflow/graphLayout';
+import { FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS, waitForGraphNodeMeasurements } from '../workflow/graphLayout';
 import {
   addLoraWorkflowBlock,
   addLyricVideoWorkflowBlock,
@@ -412,11 +413,21 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
         throw new Error(`${template.label} graph preparation timed out. No incomplete graph was kept; try again.`);
       }
     }
-    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000);
+    const initialHistory = useFlowStore.getState().historyPast;
+    const ownsLayout = () =>
+      workflowOperationContextIsCurrent(context) && useFlowStore.getState().historyPast === initialHistory;
+    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000, {
+      controlLoadTimeoutMs: FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS,
+      isCurrent: ownsLayout,
+    });
     assertWorkflowOperationContext(context);
-    if (!measured)
-      throw new Error('The template controls did not finish measuring. Reopen the template to retry its layout.');
-    await useFlowStore.getState().arrangeGraph({ history: false, fitNewNodeContents: true });
+    // The executable graph is complete. A delayed form cannot invalidate its recipe or erase an edit.
+    if (measured && ownsLayout())
+      await useFlowStore.getState().arrangeGraph({ history: false, fitNewNodeContents: true });
+    else if (ownsLayout())
+      warnings.push(
+        'The workflow opened with its original layout. Once controls have loaded, use Fit height to controls on a stage and Arrange graph if needed.',
+      );
     assertWorkflowOperationContext(context);
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);

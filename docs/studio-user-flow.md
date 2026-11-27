@@ -34,6 +34,8 @@ When the canvas is empty, the task launcher offers common guided entry points:
 
 **Browse recipes** opens the template browser. Templates are often the clearest way to discover image, video, audio, or advanced workflows that are not shown as first-screen shortcuts.
 
+In **All templates**, search for a card title, recipe ID, model name or words from its prompt. The **Recommended** sort puts matching names ahead of recipes that only mention the words in their prompts. Choose **Task**, **Model** or **Runtime** to order the same matches by that field.
+
 The model list is filtered by task. A model profile being visible means the client understands its intended fields and requirements; it does not guarantee that the current backend, artifact, or machine can run it.
 
 ## Understand The Interface

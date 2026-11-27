@@ -385,32 +385,39 @@ export function arrangeGraphNodes(
   return nodes.map((node) => nextById.get(node.id) ?? node);
 }
 
+export const FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS = 30_000;
+
 export async function waitForGraphNodeMeasurements(
   getNodes: () => CustomNodeType[],
   timeoutMs = 500,
+  options: { controlLoadTimeoutMs?: number; isCurrent?: () => boolean } = {},
 ): Promise<boolean> {
   if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return false;
   return new Promise<boolean>((resolve) => {
     let startedAt: number | undefined;
+    let geometryStartedAt: number | undefined;
     let lastMeasuredSignature: string | null = null;
     let stableMeasuredFrames = 0;
     const check = () => {
       // A large initial React render can hold the main thread past the whole
       // measurement budget. Start at the first actual frame so ResizeObserver
       // still gets a chance to publish bounds before an incomplete timeout.
-      startedAt ??= Date.now();
+      if (options.isCurrent && !options.isCurrent()) return resolve(false);
+      const now = Date.now();
+      startedAt ??= now;
       const candidates = graphLayoutNodes(getNodes()).filter(
         (node) => !node.hidden && node.data.type !== 'group' && node.data.type !== 'loop',
       );
-      const measured = candidates.every(
-        (node) =>
-          finiteDimension(node.measured?.width) &&
-          finiteDimension(node.measured?.height) &&
-          !(
-            typeof document !== 'undefined' &&
-            document.getElementById(node.id)?.querySelector('[data-node-layout-pending]')
-          ),
-      );
+      // A lazy controls placeholder has measurable bounds before its actual form arrives.
+      // Let its download finish before starting the ResizeObserver settling budget.
+      const roots = typeof document === 'undefined' ? [] : candidates.map((node) => document.getElementById(node.id));
+      if (roots.some((root) => root?.querySelector('[data-node-load-error]'))) return resolve(false);
+      const loadingControls = roots.some((root) => root?.querySelector('[data-node-layout-pending]'));
+      if (loadingControls) geometryStartedAt = undefined;
+      else geometryStartedAt ??= now;
+      const measured =
+        !loadingControls &&
+        candidates.every((node) => finiteDimension(node.measured?.width) && finiteDimension(node.measured?.height));
       if (measured) {
         const signature = candidates
           .map((node) => `${node.id}:${node.measured!.width}x${node.measured!.height}`)
@@ -422,7 +429,12 @@ export async function waitForGraphNodeMeasurements(
         lastMeasuredSignature = null;
         stableMeasuredFrames = 0;
       }
-      if (stableMeasuredFrames >= 2 || Date.now() - startedAt >= timeoutMs) {
+      const controlBudget = options.controlLoadTimeoutMs ?? 0;
+      if (
+        stableMeasuredFrames >= 2 ||
+        now - startedAt >= controlBudget + timeoutMs ||
+        (geometryStartedAt !== undefined && now - geometryStartedAt >= timeoutMs)
+      ) {
         resolve(stableMeasuredFrames >= 2);
         return;
       }

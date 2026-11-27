@@ -110,7 +110,9 @@ Encode Inputs uses the ordinary node layout, scrolling controls and status-strip
 resize grip. It is not an expandable canvas Block. Backend encoding stages remain
 separate, with typed conditioning, latent and route-state outputs. Guidance uses
 the same ordinary node shell, with Guider/Layers controls and a secondary options
-menu for inspection, reusable saving and **Separate guidance stages**. Schedulers
+menu for inspection and reusable saving. Choose **Edit stages** to work inside
+Guidance and **Done editing** to return. To place the Guider and Layers directly
+on the canvas, choose **Convert to independent nodes…** and confirm. Schedulers
 and adapters remain separate.
 
 Guider selection and layer-stack selection use the backend's declared field
@@ -136,7 +138,8 @@ are not silently repaired or structurally rewritten when opened.
    in one Undo step. Cancelling node search or failing preparation changes nothing.
 3. Required encoding stages are prepared behind the same Encode Inputs node.
    Text and image can both be used; section collapse only hides fields. Load Image
-   stays separate, as do Denoise, Decode and Preview.
+   stays separate. In native image workflows, Generate owns its matching denoiser
+   and decoder, and Image Output displays the result.
    Existing ControlNet and custom branches are retained; Image does not mean
    Control Image. Unsupported or ambiguous preparation reports an error rather
    than silently choosing a different operation or discarding existing work.
@@ -189,13 +192,21 @@ with declared non-image outputs omits the empty image LoRA panel. Existing
 adapter rows and external connections remain inspectable, and supported audio
 routes retain their declared adapter controls.
 
-When a directly connected execution recipe supplies a VAE setting inside Model
-Setup, the node and inspector show the recipe control. The loader's saved
-fallback value remains available in the implementation and returns to the node
-when the recipe is disconnected. Base model and adapter revisions keep their
+When a built-in execution recipe supplies placement inside Model Setup, the
+canvas and inspector show **Execution Device** and **Runtime Offload**. Direct
+image, audio, video and 3D loaders use these settings. Disconnect the recipe
+to edit the loader's saved device, automatic offload switch and offload mode.
+A connected VAE setting follows the same rule. Custom controls and ambiguous
+connections stay visible. Base model and adapter revisions keep their
 separate values. A stock image loader whose conditioning selector is set to None
 hides the auxiliary model picker and revision in Model Setup and Inspector.
 Connected supplier controls and the saved values remain available when applicable.
+
+In a built-in execution recipe, **Layerwise Casting** reveals its components,
+storage dtype and compute dtype. **Channels Last** reveals its own components.
+Show each switch first on the raw node, grouped stage and inspector. A wired
+switch keeps its settings available, and a wired option stays visible. Turning
+a switch off preserves its saved options for the next time it is enabled.
 
 Use role-specific captions for inputs and outputs. Image composition names the
 overlay and base separately, and generated dimensions are labeled as measured
@@ -244,10 +255,11 @@ contains the required nodes:
   straight to Preview, so that single node is not wrapped.
 
 These groups use the ordinary node shell, with real controls and declared
-sockets. Image Output displays the existing backend preview. Use their options
-menu to inspect the implementation, configure interfaces, separate stages or
-explicitly save a reusable node. Separate and grouping are one Undo step;
-refresh keeps the chosen layout and settings. Saving snapshots current values
+sockets. Image Output displays the existing backend preview. The stage menu opens
+inspection and interface configuration, saves eligible stages as reusable Blocks,
+or converts the listed operations to independent nodes after confirmation.
+Converting or grouping operations takes one Undo step. Refreshing keeps the
+chosen layout and settings. Saving snapshots current values
 and creates independent reusable instances through the same User Node contract.
 
 Model Setup retains the model picker and Change model / task review. Applying a

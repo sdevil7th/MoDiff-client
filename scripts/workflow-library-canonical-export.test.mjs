@@ -399,6 +399,155 @@ test('Model Setup subsections use the bound loader caption without renaming a sa
   assert.deepEqual(api(grouped), api(source));
 });
 
+test('direct image, audio, video and 3D setup shows effective recipe placement and restores saved loader fallbacks', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  for (const pathToGraph of [
+    'ddim-pipeline/unconditional-image',
+    'long-cat-audio-di-t-pipeline/text-to-audio',
+    'wan-vace-pipeline/control-to-video',
+    'shap-e-pipeline/text-to-3d',
+  ]) {
+    const saved = JSON.parse(readFileSync(path.join(backend, 'data/graphs/studio', `${pathToGraph}.json`), 'utf8'));
+    const grouped = groups.groupNewOperationGraph(saved);
+    const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(setup, pathToGraph);
+    const original = structuredClone(setup);
+    const instance = setup.data.blockInstanceV2;
+    const graph = blockRuntime.blockOperationGraphV2(instance);
+    const recipe = graph.nodes.find((node) => node.data.action === 'DiffusersExecutionRecipe');
+    const loader = graph.nodes.find((node) => node.data.action === 'LoadPipeline');
+    const params = blockRuntime.blockViewModelV2(instance).controlParams;
+    const control = (node, key) =>
+      instance.effectiveInterface.controls.find(
+        (entry) => entry.binding.nodeId === node.data.blockProjectionNodeId && entry.binding.fieldId === key,
+      ).controlId;
+    const visible = (g, edges = []) => modelSetupControlParams(instance, g, params, edges);
+    const recipeWire = graph.edges.find(
+      (edge) => edge.source === recipe.id && edge.target === loader.id && edge.targetHandle === 'execution_recipe',
+    );
+    assert.ok(recipeWire, pathToGraph);
+    const unplugged = { ...graph, edges: graph.edges.filter((edge) => edge !== recipeWire) };
+    const unknown = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node !== recipe
+          ? node
+          : {
+              ...node,
+              data: { ...node.data, module: 'custom.local', action: 'UserRecipe' },
+            },
+      ),
+    };
+    const inspector = graphNodeControlParams(setup);
+    for (const [raw, effective] of [
+      ['auto_offload', 'offload_mode'],
+      ['offload_mode', 'offload_mode'],
+      ['device', 'device'],
+    ]) {
+      const rawId = control(loader, raw);
+      const effectiveId = control(recipe, effective);
+      assert.equal(visible(graph)[rawId], undefined, `${pathToGraph}: ${raw}`);
+      assert.equal(inspector[rawId], undefined);
+      assert.deepEqual(visible(graph)[effectiveId], params[effectiveId]);
+      assert.equal(inspector[effectiveId].label, params[effectiveId].label);
+      assert.deepEqual(visible(unplugged)[rawId], params[rawId], 'disconnect restores the stored value');
+      assert.deepEqual(visible(unknown)[rawId], params[rawId], 'an unknown supplier cannot hide the loader field');
+      const customWire = {
+        id: 'custom-placement',
+        source: 'custom',
+        sourceHandle: 'value',
+        target: recipe.id,
+        targetHandle: effective,
+      };
+      assert.deepEqual(
+        visible({ ...graph, edges: [...graph.edges, customWire] })[rawId],
+        params[rawId],
+        'a connected custom placement value keeps the original control available',
+      );
+      assert.deepEqual(visible({ ...unplugged, edges: [...unplugged.edges, recipeWire] }), visible(graph));
+    }
+    assert.deepEqual(setup, original, 'presenting any of these states preserves the durable graph');
+    const reopened = JSON.parse(JSON.stringify(grouped));
+    const savedSetup = reopened.nodes.find((node) => node.id === setup.id);
+    assert.deepEqual(graphNodeControlParams(savedSetup), inspector);
+    const exported = (sourceGraph) =>
+      canonicalGraphIdentity(
+        flowStore.getState().exportGraph('placement-presentation', undefined, { sourceGraph, randomizeSeeds: false }),
+      );
+    assert.deepEqual(exported(reopened), exported(saved));
+  }
+});
+
+test('execution recipe switches govern only their own literal settings in raw nodes, Model Setup and inspector', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const original = JSON.parse(
+    readFileSync(path.join(backend, 'data/graphs/studio/ddim-pipeline/unconditional-image.json'), 'utf8'),
+  );
+  const sections = {
+    layerwise_casting: ['layerwise_casting_components', 'layerwise_storage_dtype', 'layerwise_compute_dtype'],
+    channels_last: ['channels_last_components'],
+  };
+  for (const selected of [null, 'channels_last', 'layerwise_casting']) {
+    const saved = structuredClone(original);
+    const raw = saved.nodes.find((node) => node.data.action === 'DiffusersExecutionRecipe');
+    for (const name of Object.keys(sections)) {
+      const field = raw.data.params[name];
+      delete raw.data.params[name];
+      raw.data.params[name] = { ...field, value: name === selected };
+    }
+    const before = structuredClone(raw);
+    const grouped = groups.groupNewOperationGraph(saved);
+    const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    const instance = setup.data.blockInstanceV2;
+    const graph = blockRuntime.blockOperationGraphV2(instance);
+    const recipe = graph.nodes.find((node) => node.data.action === raw.data.action);
+    const id = (name) =>
+      instance.effectiveInterface.controls.find(
+        (control) => control.binding.nodeId === recipe.data.blockProjectionNodeId && control.binding.fieldId === name,
+      ).controlId;
+    const params = blockRuntime.blockViewModelV2(instance).controlParams;
+    const rawView = graphNodeControlParams(raw);
+    const stageView = modelSetupControlParams(instance, graph, params);
+    const inspector = graphNodeControlParams(setup);
+    for (const [gate, fields] of Object.entries(sections)) {
+      assert.equal(rawView[gate].value, selected === gate);
+      assert.equal(stageView[id(gate)].value, selected === gate);
+      const knownGate = {
+        id: 'external-switch',
+        source: 'switch',
+        sourceHandle: 'value',
+        target: recipe.id,
+        targetHandle: gate,
+      };
+      const unknown = modelSetupControlParams(instance, { ...graph, edges: [...graph.edges, knownGate] }, params);
+      const rawUnknown = graphNodeControlParams(raw, [{ ...knownGate, target: raw.id }]);
+      for (const key of fields) {
+        for (const [view, switchId, keyId] of [
+          [rawView, gate, key],
+          [stageView, id(gate), id(key)],
+          [inspector, id(gate), id(key)],
+        ]) {
+          assert.equal(Object.hasOwn(view, keyId), selected === gate, `${gate}: ${key}`);
+          if (selected === gate) assert.ok(Object.keys(view).indexOf(switchId) < Object.keys(view).indexOf(keyId));
+        }
+        assert.ok(unknown[id(key)] && rawUnknown[key], 'a connected external switch keeps its options accessible');
+        const connectedOption = { ...knownGate, targetHandle: key };
+        assert.ok(graphNodeControlParams(raw, [{ ...connectedOption, target: raw.id }])[key]);
+        assert.ok(
+          modelSetupControlParams(instance, { ...graph, edges: [...graph.edges, connectedOption] }, params)[id(key)],
+        );
+      }
+    }
+    assert.deepEqual(raw, before, 'opening or editing disclosure must not change authored values');
+    assert.deepEqual(graphNodeControlParams(JSON.parse(JSON.stringify(setup))), inspector);
+    const custom = { ...raw, data: { ...raw.data, module: 'custom.user' } };
+    assert.ok(
+      graphNodeControlParams(custom).layerwise_storage_dtype,
+      'a similarly shaped custom node keeps its own policy',
+    );
+  }
+});
+
 test('Model Setup shows connected VAE recipe controls and retains each loader fallback', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const examples = [
@@ -623,7 +772,34 @@ test('Model Setup scopes VAE precedence to each owner and distinguishes base mod
     (control) => control.binding.fieldId === 'enable_vae_tiling',
   );
   assert.equal(Object.hasOwn(audio.visible, audioFallback.controlId), false);
-  assert.deepEqual(video.visible, video.controlParams);
+  const videoLoader = video.instance.effectiveGraph.nodes.find((node) => node.data.action === 'LoadPipeline');
+  const placementFallbackIds = video.instance.effectiveInterface.controls
+    .filter(
+      (control) =>
+        control.binding.nodeId === videoLoader.nodeId &&
+        ['auto_offload', 'offload_mode', 'device'].includes(control.binding.fieldId),
+    )
+    .map((control) => control.controlId);
+  assert.equal(placementFallbackIds.length, 3);
+  const disabledRecipeFields = [
+    'layerwise_casting_components',
+    'layerwise_storage_dtype',
+    'layerwise_compute_dtype',
+    'channels_last_components',
+  ];
+  const recipe = video.instance.effectiveGraph.nodes.find((node) => node.data.action === 'DiffusersExecutionRecipe');
+  const inactiveRecipeIds = video.instance.effectiveInterface.controls
+    .filter(
+      (control) => control.binding.nodeId === recipe.nodeId && disabledRecipeFields.includes(control.binding.fieldId),
+    )
+    .map((control) => control.controlId);
+  assert.equal(inactiveRecipeIds.length, 4);
+  const otherVideoControls = Object.fromEntries(
+    Object.entries(video.controlParams).filter(
+      ([id]) => !placementFallbackIds.includes(id) && !inactiveRecipeIds.includes(id),
+    ),
+  );
+  assert.deepEqual(video.visible, otherVideoControls);
 
   const [adapterExample] = stageControls('studio/flux-dev-pipeline/text-to-image--flux-lora-ghibli-story.json');
   const revisionControls = adapterExample.instance.effectiveInterface.controls.filter(

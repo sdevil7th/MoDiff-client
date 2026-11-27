@@ -4437,6 +4437,34 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
   );
 });
 
+test('template search puts exact card, recipe and model names ahead of incidental prompt matches', () => {
+  const { STUDIO_TEMPLATES } = templatesModule;
+  const { filterStudioTemplates, templateModelDisplayName } = browserModule;
+  const form = profilesModule.DEFAULT_STUDIO_FORM;
+  const filter = { category: 'all', modelType: 'all', difficulty: 'all', sort: 'recommended' };
+  const exactText = STUDIO_TEMPLATES.find((item) => item.id === 'qwen_text_rendering');
+  const preview = STUDIO_TEMPLATES.find((item) => item.id === 'low_vram');
+  assert.ok(exactText && preview);
+  const queryCatalog = (query) => filterStudioTemplates(STUDIO_TEMPLATES, form, { ...filter, query });
+  for (const query of [exactText.label, 'Exact Text', 'QWEN_text_rendering']) {
+    assert.equal(queryCatalog(query)[0].id, exactText.id, query);
+  }
+  assert.equal(queryCatalog('Quick Preview')[0].id, preview.id);
+
+  const model = templateModelDisplayName(exactText);
+  const promptMatch = {
+    ...preview,
+    prompt: `Reference lighting from ${model} (${exactText.modelType}). Exact text on a small sign.`,
+  };
+  const recipes = [promptMatch, exactText];
+  const search = (query, sort = 'recommended') =>
+    filterStudioTemplates(recipes, form, { ...filter, query, sort }, (item) => (item === promptMatch ? 1 : 15));
+  assert.deepEqual(search(model), [exactText, promptMatch]);
+  assert.deepEqual(search(exactText.modelType), [exactText, promptMatch]);
+  assert.deepEqual(search('Exact Text'), [exactText, promptMatch]);
+  assert.deepEqual(search('Exact Text', 'runtime'), [promptMatch, exactText]);
+});
+
 test('template browser exposes the complete workflow catalog across task and adapter categories', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
   const { TEMPLATE_BROWSER_CATEGORIES, filterStudioTemplates, templateCategoryId, templateCategoryIds } = browserModule;

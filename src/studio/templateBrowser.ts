@@ -1,4 +1,4 @@
-import { matchesSearchKeywords } from '../utils/searchKeywords';
+import { matchesSearchKeywords, normalizeSearchText } from '../utils/searchKeywords';
 import {
   AUDIO_STUDIO_MODES,
   isStudioModelVisibleInCatalog,
@@ -169,6 +169,8 @@ export function templateCategoryIds(template: StudioTemplate): TemplateBrowserCa
 
 export function templateSearchText(template: StudioTemplate) {
   return [
+    template.id,
+    templateDisplayName(template),
     template.label,
     template.description,
     template.prompt,
@@ -176,6 +178,7 @@ export function templateSearchText(template: StudioTemplate) {
     template.difficulty,
     template.vramEstimate,
     STUDIO_MODE_LABELS[template.mode],
+    template.modelType,
     templateModelDisplayName(template),
     template.modelArtifact?.value,
     ...(template.tags ?? []),
@@ -185,6 +188,19 @@ export function templateSearchText(template: StudioTemplate) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+}
+
+function templateSearchRank(template: StudioTemplate, query: string) {
+  const names = [template.id, templateDisplayName(template), template.label].map(normalizeSearchText);
+  if (names.includes(query)) return 0;
+  const modelNames = [template.modelType, templateModelDisplayName(template), template.modelArtifact?.value ?? ''].map(
+    normalizeSearchText,
+  );
+  if (modelNames.includes(query)) return 1;
+  const identity = [...names, ...modelNames];
+  if (identity.some((name) => name.includes(query))) return 2;
+  if (matchesSearchKeywords(query, identity)) return 3;
+  return 4;
 }
 
 function recommendedRank(template: StudioTemplate, form: StudioFormState) {
@@ -261,6 +277,11 @@ export function filterStudioTemplates(
     return true;
   });
 
+  const searchRanks = new Map<StudioTemplate, number>();
+  if (query && filter.sort === 'recommended') {
+    const normalized = normalizeSearchText(query);
+    for (const recipe of filtered) searchRanks.set(recipe, templateSearchRank(recipe, normalized));
+  }
   return filtered.sort((left, right) => {
     if (filter.sort === 'runtime') {
       return (
@@ -270,7 +291,11 @@ export function filterStudioTemplates(
     }
     if (filter.sort === 'model') return templateModelDisplayName(left).localeCompare(templateModelDisplayName(right));
     if (filter.sort === 'task') return STUDIO_MODE_LABELS[left.mode].localeCompare(STUDIO_MODE_LABELS[right.mode]);
-    return recommendedRank(left, form) - recommendedRank(right, form) || left.label.localeCompare(right.label);
+    return (
+      (searchRanks.get(left) ?? 0) - (searchRanks.get(right) ?? 0) ||
+      recommendedRank(left, form) - recommendedRank(right, form) ||
+      left.label.localeCompare(right.label)
+    );
   });
 }
 

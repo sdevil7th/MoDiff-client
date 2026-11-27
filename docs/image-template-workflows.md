@@ -46,9 +46,10 @@ pairs are not folded. Any external latent consumer keeps its boundary connection
 Additional media preparation, control, composite or upscale branches remain visible;
 the four-stage presentation is the core native diffusion path, not a limit on all
 workflow node counts. Existing saved layouts change only through explicit stage
-actions. Combine encoding and Guidance and Separate encoding stages each support
-one-step Undo. Inspecting or saving a workflow never changes a reusable library
-definition implicitly.
+actions. **Combine encoding and Guidance** groups the connected operations. To
+put the operations back on the canvas as individual nodes, open the stage menu,
+choose **Convert to independent nodes…**, then confirm. Either change takes one
+Undo step. Inspecting or saving a workflow preserves its reusable library definition.
 
 MiniMax H3 Image uses the same generic Model Setup, Encode Inputs, Generate and
 Preview stages. Generate combines the real denoising and decoding calls, with

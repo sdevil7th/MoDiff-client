@@ -13,6 +13,7 @@ import type { BlockJsonValue } from './blockSchemaV2';
 import { syncManagedNodeControlChange } from './managedControlSync';
 import type { AppModeInput } from './types';
 import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { EXECUTION_RECIPE_NODE, visibleExecutionRecipeControls } from '../workflow/gatedNodeControls';
 import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 export type GraphInputCandidate = AppModeInput & { node: CustomNodeType; param: NodeParams };
@@ -34,13 +35,18 @@ export function graphNodeControlParams(
   const source = instance ?? node.data.params;
   const setup = instance && visualOperationGroup(node) === 'setup';
   // Model Setup depends on current adapter policy and connected suppliers.
-  const cacheable = !setup;
+  const recipe = !instance && `${node.data.module}.${node.data.action}` === EXECUTION_RECIPE_NODE;
+  const cacheable = !setup && !recipe;
   const cached = cacheable ? controlsBySource.get(source) : undefined;
   if (cached) return cached;
   const base = instance ? blockControlParamsV2(instance) : node.data.params;
   const params = setup
     ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base, workflowEdges, catalog)
-    : base;
+    : recipe
+      ? visibleExecutionRecipeControls(base, node.data.params, (key) =>
+          workflowEdges.some((edge) => edge.target === node.id && edge.targetHandle === key),
+        )
+      : base;
   const controls = Object.fromEntries(
     Object.entries(params)
       .filter(([key, param]) => {
