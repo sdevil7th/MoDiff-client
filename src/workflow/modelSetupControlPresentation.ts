@@ -1,7 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
-import { blockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
+import { blockCrossingHandleV2, blockMemberHasExternalWireV2 } from '../studio/blockCrossingConnectionsV2';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
 import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
@@ -13,6 +13,7 @@ import {
   visibleExecutionRecipeControls,
 } from './gatedNodeControls';
 import { nodeDisplayLabel } from './nodePresentation';
+import { effectiveRecipeTiling, stageRecipeTilingPolicy } from './recipeTilingPresentation';
 
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
 const AUDIO_LOADER = 'modules.DiffusersAudio.LoadPipeline';
@@ -52,24 +53,12 @@ function hasControlSupplier(
   workflowEdges: readonly Edge[],
 ) {
   if (internalEdges.some((edge) => edge.target === owner.id && fields.includes(edge.targetHandle ?? ''))) return true;
-  const nodeId = owner.data.blockProjectionNodeId!;
-  const handles = new Set(
-    fields.map((fieldOrPortId) => blockCrossingHandleV2({ nodeId, fieldOrPortId, direction: 'input' })),
-  );
-  for (const port of instance.effectiveInterface.boundary.inputs) {
-    if (
-      blockInputPortBindingsV2(port).some(
-        (binding) => binding.nodeId === nodeId && fields.includes(binding.fieldOrPortId),
-      )
-    )
-      handles.add(port.portId);
-  }
-  return workflowEdges.some((edge) => edge.target === instance.instanceId && handles.has(edge.targetHandle ?? ''));
+  return blockMemberHasExternalWireV2(instance, owner.data.blockProjectionNodeId!, fields, 'input', workflowEdges);
 }
 
 /** Only compact Model Setup's displayed controls change. The loader's
  * fallback still belongs to its saved leaf and becomes active on disconnect. */
-export function modelSetupControlParams(
+export function modelSetupControlPresentation(
   instance: BlockInstanceV2,
   graph: BlockFlowGraphV2,
   params: Record<string, NodeParams>,
@@ -78,7 +67,7 @@ export function modelSetupControlParams(
     ReturnType<typeof useNodesStore.getState>,
     'workflowModelDescriptors' | 'studioModelCapabilities'
   > = useNodesStore.getState(),
-): Record<string, NodeParams> {
+) {
   const controls = instance.effectiveInterface.controls;
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const leaf = (nodeId: string) => nodes.get(blockProjectionNodeIdV2(instance.instanceId, nodeId));
@@ -92,6 +81,7 @@ export function modelSetupControlParams(
     );
   });
   let visible = { ...params };
+  const activePlacementIds = new Set<string>();
   for (const control of controls) {
     const { nodeId, fieldId } = control.binding;
     const owner = leaf(nodeId);
@@ -216,8 +206,12 @@ export function modelSetupControlParams(
         candidate.binding.nodeId === recipe.data.blockProjectionNodeId && candidate.binding.fieldId === recipeField,
     );
     const effectiveParam = effective && params[effective.controlId];
-    if (effectiveParam && !effectiveParam.hidden) delete visible[control.controlId];
+    if (effective && effectiveParam && !effectiveParam.hidden) {
+      delete visible[control.controlId];
+      if (placement) activePlacementIds.add(effective.controlId);
+    }
   }
+  const placementByRecipe: string[][] = [];
   for (const member of graph.nodes) {
     if (`${member.data.module}.${member.data.action}` !== EXECUTION_RECIPE_NODE || member.data.uiState?.disabled)
       continue;
@@ -233,12 +227,29 @@ export function modelSetupControlParams(
         )
         .map((control) => [control.binding.fieldId, control.controlId]),
     );
+    const placement = ['offload_mode', 'device']
+      .map((key) => localControls.get(key))
+      .filter((id): id is string => id !== undefined && activePlacementIds.has(id));
+    if (placement.length) placementByRecipe.push(placement);
     visible = visibleExecutionRecipeControls(
       visible,
       member.data.params,
       (key) => hasControlSupplier(instance, member, [key], graph.edges, workflowEdges),
       (key) => localControls.get(key),
     );
+    const tiling = controls.filter(
+      (control) =>
+        control.binding.nodeId === member.data.blockProjectionNodeId &&
+        control.binding.fieldId === 'vae_tiling' &&
+        !control.mirrorBindings?.length,
+    );
+    if (tiling.length) {
+      const policy = stageRecipeTilingPolicy(member, graph, instance, workflowEdges, catalog.studioModelCapabilities);
+      for (const control of tiling) visible = effectiveRecipeTiling(visible, control.controlId, policy);
+    }
   }
-  return visible;
+  // A single placement section must never combine different recipes' controls.
+  const placementIds = new Set(placementByRecipe.length === 1 ? placementByRecipe[0] : []);
+  const primary = Object.fromEntries([...placementIds].map((id) => [id, visible[id]!]));
+  return { params: { ...primary, ...visible }, placementIds };
 }

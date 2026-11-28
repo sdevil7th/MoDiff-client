@@ -20,6 +20,13 @@ Splitting it into decorative Encode, Denoise and Decode nodes would not make its
 internal computation editable. MiniMax's semantic generation is an actual stage
 and must remain distinct from prompt encoding.
 
+In Model Setup, **Device and offload** puts the connected execution recipe's
+Runtime Offload and Execution Device immediately below the model picker. These
+are the same controls used by the loader. Quantization and manual device maps
+remain in their own sections. Disconnecting the recipe restores the loader's
+saved placement settings. Opening the stage leaves the resource mode and
+workflow recipe intact.
+
 Grouping is an explicit, undoable presentation change using the existing Block
 contract. Choose **Inspect implementation** to see which operations a stage contains.
 Use **Edit stages** to wire those operations, then **Done editing** to return.

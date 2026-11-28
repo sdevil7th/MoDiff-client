@@ -3,6 +3,7 @@ import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useMemo } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
+import type { BlockControlV2 } from '../studio/blockSchemaV2';
 import { operationOwnsModel } from '../workflow/operationContracts';
 import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 import { ModiffDisclosure } from '../ui';
@@ -10,7 +11,7 @@ import { BlockOwnerChoices } from './OperationOwnerControls';
 import NodeContent from './NodeContent';
 import ModelSetupAdapterControls from './ModelSetupAdapterControls';
 import { isModelSetupAdapter } from '../workflow/modelSetupAdapters';
-import { modelSetupControlGroupLabel, modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { modelSetupControlGroupLabel, modelSetupControlPresentation } from '../workflow/modelSetupControlPresentation';
 
 /** The same exposed fields, model planner and preview authority as Block V2,
  * presented within the ordinary node shell. No second state or executor. */
@@ -30,12 +31,13 @@ export default function StageNodeControls({
   const { view, groups } = useMemo(() => {
     const view = blockViewModelV2(instance);
     const graph = blockOperationGraphV2(instance);
-    const controlParams = setup
-      ? modelSetupControlParams(instance, graph, view.controlParams, edges, {
+    const presentation = setup
+      ? modelSetupControlPresentation(instance, graph, view.controlParams, edges, {
           workflowModelDescriptors,
           studioModelCapabilities,
         })
-      : view.controlParams;
+      : undefined;
+    const controlParams = presentation?.params ?? view.controlParams;
     const owners = new Set(
       graph.nodes
         .filter((n) => operationOwnsModel(n.data.operationAuthoring?.operation))
@@ -55,11 +57,18 @@ export default function StageNodeControls({
           ) &&
           !(setup && adapters.has(control.binding.nodeId)),
       );
-    const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => {
-      const groupControls = controls.filter((control) => (control.group ?? 'Settings') === group);
+    const section = (control: BlockControlV2) =>
+      presentation?.placementIds.has(control.controlId) ? null : (control.group ?? 'Settings');
+    const groups = [...new Set(controls.map(section))].map((group) => {
+      const groupControls = controls.filter((control) => section(control) === group);
       return {
-        key: group,
-        label: setup ? modelSetupControlGroupLabel(group, groupControls, graph) : group,
+        key: group === null ? 'placement' : `section:${group}`,
+        label:
+          group === null
+            ? 'Device and offload'
+            : setup
+              ? modelSetupControlGroupLabel(group, groupControls, graph)
+              : group,
         params: Object.fromEntries(
           groupControls.map((control) => [control.controlId, controlParams[control.controlId]!]),
         ),

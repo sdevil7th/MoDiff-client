@@ -23,6 +23,7 @@ import {
   visibleExecutionRecipeControls,
 } from '../workflow/gatedNodeControls';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
+import { effectiveRecipeTiling, workflowRecipeTilingPolicy } from '../workflow/recipeTilingPresentation';
 import {
   blockRuntimeOptionPresentation,
   registeredRuntimeOptionPresentation,
@@ -239,6 +240,14 @@ const NodeContent = memo(function NodeContent({
     Boolean(gate && state.edges.some((e) => e.target === nodeId && e.targetHandle === gate)),
   );
   const fullParams = graphNode?.data.params ?? params;
+  const tilingCapabilities = useNodesStore((state) =>
+    identity === EXECUTION_RECIPE_NODE ? state.studioModelCapabilities : undefined,
+  );
+  const tilingPolicy = useFlowStore((state) =>
+    tilingCapabilities && graphNode && params.vae_tiling
+      ? workflowRecipeTilingPolicy(graphNode, state.nodes, state.edges, tilingCapabilities)
+      : undefined,
+  );
   const modeRequiredByAdapter = useNodesStore(
     (state) => gate === 'auto_offload' && adapterConsumesOffloadMode(fullParams, state),
   );
@@ -251,7 +260,9 @@ const NodeContent = memo(function NodeContent({
   );
   const activeParams =
     identity === EXECUTION_RECIPE_NODE
-      ? visibleExecutionRecipeControls(params, fullParams, (key) => suppliedRecipeFields.includes(key))
+      ? visibleExecutionRecipeControls(effectiveRecipeTiling(params, 'vae_tiling', tilingPolicy), fullParams, (key) =>
+          suppliedRecipeFields.includes(key),
+        )
       : params;
   const activeControls = orderedActiveNodeControls(
     identity,

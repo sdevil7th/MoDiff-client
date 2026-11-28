@@ -13126,7 +13126,8 @@ for (const direction of ['source', 'target'] as const) {
     await expect(suggestions.getByRole('option', { name: /^Workbench image\b/u })).toHaveCount(0);
     const popupSearch = page.getByLabel('Search nodes', { exact: true }).last();
     await popupSearch.fill('Workbench image');
-    await expect(page.getByText('No compatible nodes found', { exact: true })).toBeVisible();
+    await expect(page.getByText('No nodes match this search', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Use .+ output$/u })).toHaveCount(0);
     await expect(suggestions.getByRole('option')).toHaveCount(0);
     await popupSearch.fill(direction === 'source' ? 'retired_consumer' : 'producer Workbench');
     await expect(matchingOption).toBeVisible();
@@ -35272,7 +35273,7 @@ for (const [mediaType, reverse] of [
   });
 }
 
-test('known-compatible drag search inserts the image socket instead of the earlier wildcard socket', async ({
+test('terminal output offers its usable image sibling and known-compatible drag search inserts the exact socket', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -35281,6 +35282,9 @@ test('known-compatible drag search inserts the image socket instead of the earli
   await installSearchExtension(page, ['Source', 'Mixed']);
   const source = {
     ...nodeDef('custom.Search', 'Source', 'custom', {
+      prediction_map: { label: 'Native prediction map', type: 'prediction_map', display: 'output' },
+      receipt: { label: 'Receipt', type: 'any', display: 'output' },
+      hidden_image: { label: 'Internal image', type: 'image', display: 'output', hidden: true },
       image: { label: 'Image', type: 'image', display: 'output' },
     }),
     label: 'Image search source',
@@ -35307,7 +35311,7 @@ test('known-compatible drag search inserts the image socket instead of the earli
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
   await dismissTaskLauncher(page);
-  await page.getByTestId('left-tab-nodes').click();
+  await openNodesLibrary(page);
   await page.getByLabel('Search nodes', { exact: true }).fill('Image search source');
   await page
     .getByTestId('node-group-custom-nodes')
@@ -35315,9 +35319,25 @@ test('known-compatible drag search inserts the image socket instead of the earli
     .click();
   const original = page.locator('.react-flow__node-custom').first();
   const id = (await original.getAttribute('data-id'))!;
-  await dragWireToCanvas(page, original.getByTestId(`node-handle-${id}-image`));
+  const nativeMap = original.getByTestId(`node-handle-${id}-prediction_map`);
+  await dragWireToCanvas(page, nativeMap);
   const list = page.getByRole('listbox', { name: 'Matching nodes' });
-  await expect(list).toBeVisible();
+  await expect(list.getByRole('option')).toHaveCount(0);
+  const alternate = page.getByRole('button', { name: 'Use Image output', exact: true });
+  await expect(alternate).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('terminal-output-alternative.png'), animations: 'disabled' });
+  await alternate.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Connect output · Image', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Search nodes', { exact: true }).last()).toBeFocused();
+  await page.getByRole('button', { name: 'Back to Native prediction map' }).click();
+  await expect(list.getByRole('option')).toHaveCount(0);
+  await expect(alternate).toBeVisible();
+  await page.keyboard.press('Escape');
+  expect((await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).edges).toHaveLength(0);
+  await dragWireToCanvas(page, nativeMap);
+  await expect(page.getByText('Connect output · Native prediction map', { exact: true })).toBeVisible();
+  await alternate.click();
   await page.getByLabel('Search nodes', { exact: true }).last().fill('Mixed search target');
   await list.getByRole('option').filter({ hasText: 'Mixed search target' }).click();
   const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
@@ -37990,6 +38010,67 @@ test('Model Setup VAE and placement settings show the connected recipe once on t
   await rawSwitch.click();
   await expect(raw.getByLabel('Layerwise Storage DType', { exact: true })).toHaveText('float8_e4m3fn');
   await expect(raw.getByLabel(channelsOption, { exact: true })).toHaveCount(0);
+});
+
+test('Mochi mandatory tiling stays on across the saved example and restores the editable fallback on disconnect', async ({
+  page,
+}) => {
+  const original = JSON.parse(
+    await fs.readFile(path.join(BACKEND_ROOT, 'data/graphs/studio/mochi-pipeline/text-to-video.json'), 'utf8'),
+  );
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  // Generate the real backend declarations while the browser loads the app.
+  const fixture = imageTemplateSchemas();
+  await page.route('**/model_capabilities**', async (route) => route.fulfill({ json: (await fixture).publicPayload }));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const id = await page.evaluate(async (source) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { groupNewOperationGraph, visualOperationGroup } = await import('/src/workflow/visualOperationGroups.ts');
+    const graph = groupNewOperationGraph(source);
+    useFlowStore.getState().replaceGraph(graph);
+    return graph.nodes.find((node) => visualOperationGroup(node) === 'setup')!.id;
+  }, original);
+  const card = page.getByTestId(`setup-node-${id}`);
+  const required = (surface: Locator) =>
+    surface.getByRole('switch', { name: 'VAE Tiling (required by model)', exact: true });
+  await expect(required(card)).toBeChecked();
+  await expect(required(card)).toBeDisabled();
+  const before = await optionalStageApi(page);
+  await card.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+  await expect(required(inspector)).toBeChecked();
+  await expect(required(inspector)).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Mochi preview tiling');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(required(card)).toBeChecked();
+  expect(await optionalStageApi(page)).toEqual(before);
+  const wire = await page.evaluate(async (source) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.getState().replaceGraph(source);
+    return useFlowStore.getState().edges.find((e) => e.sourceHandle === 'execution_recipe')!;
+  }, original);
+  const raw = page.locator(`.react-flow__node[data-id="${wire.source}"]`);
+  await expect(required(raw)).toBeChecked();
+  await expect(required(raw)).toBeDisabled();
+  await page.evaluate(
+    async (edge) => (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().removeEdges(edge),
+    wire.id,
+  );
+  const fallback = raw.getByRole('switch', { name: 'VAE Tiling', exact: true });
+  await expect(fallback).toBeEnabled();
+  await expect(fallback).not.toBeChecked();
+  await page.evaluate(async () => (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().undo());
+  await expect(required(raw)).toBeChecked();
+  expect(await optionalStageApi(page)).toEqual(before);
 });
 
 test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
@@ -41061,6 +41142,29 @@ it('aliased audio Model Setup renders human offload choices and preserves the se
   const offload = setup.getByRole('button', { name: 'Offload Mode', exact: true });
   const runtimeOffload = setup.getByRole('button', { name: 'Runtime Offload', exact: true });
   await expect(runtimeOffload).toHaveText('Off');
+  // Check before any click can scroll the field into view. Both resource controls
+  // should be accessible above the quantization and manual-map editors.
+  await expect
+    .poll(async () => {
+      const body = await page.getByTestId(`node-scroll-body-${root}`).boundingBox();
+      const offloadBox = await runtimeOffload.boundingBox();
+      const deviceBox = await setup.getByLabel('Execution Device', { exact: true }).boundingBox();
+      const mapBox = await setup.getByLabel('Max Memory (JSON)', { exact: true }).boundingBox();
+      const quantizationBox = await setup
+        .getByRole('button', { name: 'Pipeline Quantization Config V2', exact: true })
+        .boundingBox();
+      return Boolean(
+        body &&
+        offloadBox &&
+        deviceBox &&
+        mapBox &&
+        quantizationBox &&
+        body.y <= offloadBox.y &&
+        offloadBox.y + offloadBox.height <= deviceBox.y &&
+        deviceBox.y + deviceBox.height <= Math.min(body.y + body.height, mapBox.y, quantizationBox.y),
+      );
+    })
+    .toBe(true);
   await expect(offload).toHaveCount(0);
   await setup.getByRole('button', { name: 'Edit stages: Model Setup', exact: true }).click();
   const recipeWire = await page.evaluate(async (ownerId) => {

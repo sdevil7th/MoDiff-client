@@ -69,8 +69,9 @@ test('repeated shot processors retain only unanimous fallback defaults with unch
 });
 import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
-let server, hooks, flowStore, groups, blockSchema, blockRuntime, modelSetupControlParams, graphNodeControlParams;
-let modelSetupControlGroupLabel;
+let server, hooks, flowStore, groups, blockSchema, blockRuntime, graphNodeControlParams;
+let modelSetupControlGroupLabel, modelSetupControlPresentation;
+const modelSetupControlParams = (...args) => modelSetupControlPresentation(...args).params;
 let fixture, templates, builder, defaults, exactness, operations;
 let requests;
 let shared;
@@ -101,7 +102,7 @@ before(async () => {
   ({ useFlowStore: flowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
   groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
-  ({ modelSetupControlGroupLabel, modelSetupControlParams } = await server.ssrLoadModule(
+  ({ modelSetupControlGroupLabel, modelSetupControlPresentation } = await server.ssrLoadModule(
     '/src/workflow/modelSetupControlPresentation.ts',
   ));
   ({ graphNodeControlParams } = await server.ssrLoadModule('/src/studio/graphNodeControls.ts'));
@@ -402,6 +403,7 @@ test('Model Setup subsections use the bound loader caption without renaming a sa
 test('direct image, audio, video and 3D setup shows effective recipe placement and restores saved loader fallbacks', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   for (const pathToGraph of [
+    'ace-step-audio-pipeline/text-to-audio',
     'ddim-pipeline/unconditional-image',
     'long-cat-audio-di-t-pipeline/text-to-audio',
     'wan-vace-pipeline/control-to-video',
@@ -439,6 +441,20 @@ test('direct image, audio, video and 3D setup shows effective recipe placement a
       ),
     };
     const inspector = graphNodeControlParams(setup);
+    const placementIds = ['offload_mode', 'device'].map((key) => control(recipe, key));
+    for (const surface of [visible(graph), inspector]) {
+      assert.deepEqual(
+        Object.keys(surface).slice(0, 2),
+        placementIds,
+        `${pathToGraph}: effective placement comes first`,
+      );
+    }
+    assert.deepEqual([...modelSetupControlPresentation(instance, graph, params).placementIds], placementIds);
+    assert.equal(modelSetupControlPresentation(instance, unplugged, params).placementIds.size, 0);
+    assert.equal(modelSetupControlPresentation(instance, unknown, params).placementIds.size, 0);
+    const custom = structuredClone(instance);
+    custom.effectiveInterface.controls.find((entry) => entry.controlId === placementIds[0]).group = 'My settings';
+    assert.deepEqual([...modelSetupControlPresentation(custom, graph, params).placementIds], [placementIds[1]]);
     for (const [raw, effective] of [
       ['auto_offload', 'offload_mode'],
       ['offload_mode', 'offload_mode'],
@@ -476,6 +492,97 @@ test('direct image, audio, video and 3D setup shows effective recipe placement a
       );
     assert.deepEqual(exported(reopened), exported(saved));
   }
+});
+
+test('Mochi required tiling reflects the connected loader and preserves the original recipe through sharing and reopen', async () => {
+  const saved = JSON.parse(
+    readFileSync(path.resolve('../MoDiff/data/graphs/studio/mochi-pipeline/text-to-video.json'), 'utf8'),
+  );
+  const grouped = groups.groupNewOperationGraph(saved);
+  const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+  const instance = setup.data.blockInstanceV2;
+  const graph = blockRuntime.blockOperationGraphV2(instance);
+  const recipe = graph.nodes.find((node) => node.data.action === 'DiffusersExecutionRecipe');
+  const loader = graph.nodes.find((node) => node.data.action === 'LoadPipeline');
+  const wire = graph.edges.find((edge) => edge.source === recipe.id && edge.target === loader.id);
+  const control = instance.effectiveInterface.controls.find((c) => c.binding.fieldId === 'vae_tiling');
+  const params = blockRuntime.blockViewModelV2(instance).controlParams;
+  const capability = {
+    requiresVaeTiling: true,
+    defaultRepo: loader.data.params.model_id.value.value,
+    revisionCandidates: [loader.data.params.revision.value],
+    executionProfiles: [
+      {
+        pipeline_class: loader.data.params.pipeline_class.value,
+        loader_module: loader.data.module,
+        loader_action: loader.data.action,
+        default_repo: loader.data.params.model_id.value.value,
+      },
+    ],
+  };
+  const catalog = { workflowModelDescriptors: [], studioModelCapabilities: [capability] };
+  const shown = (g, authority = catalog) =>
+    modelSetupControlParams(instance, g, params, [], authority)[control.controlId];
+  const unmodified = structuredClone(grouped);
+  assert.equal(params[control.controlId].value, false, 'ship the recorded request exactly');
+  assert.equal(shown(graph).value, true);
+  assert.equal(shown(graph).disabled, true);
+  assert.match(shown(graph).label, /required/u);
+  const renamed = structuredClone(instance);
+  const renamedControl = renamed.effectiveInterface.controls.find((field) => field.controlId === control.controlId);
+  renamedControl.label = 'Tile the decoder';
+  renamedControl.group = 'My custom settings';
+  const renamedParams = {
+    ...params,
+    [control.controlId]: { ...params[control.controlId], label: renamedControl.label },
+  };
+  const effective = modelSetupControlParams(renamed, graph, renamedParams, [], catalog)[control.controlId];
+  assert.equal(effective.label, 'Tile the decoder (required by model)');
+  assert.equal(effective.value, true);
+  assert.deepEqual(shown(graph, { ...catalog, studioModelCapabilities: [] }), params[control.controlId]);
+  assert.deepEqual(shown({ ...graph, edges: graph.edges.filter((e) => e !== wire) }), params[control.controlId]);
+  const other = structuredClone(loader);
+  other.id += '-other';
+  other.data.params.pipeline_class.value = 'AllegroPipeline';
+  const shared = shown({
+    ...graph,
+    nodes: [...graph.nodes, other],
+    edges: [...graph.edges, { ...wire, id: 'secondary-consumer', target: other.id }],
+  });
+  assert.equal(shared.value, false);
+  assert.ok(!shared.disabled, 'the shared recipe continues to control the other model');
+  assert.match(shared.label, /optional/u);
+  const switched = structuredClone(graph);
+  const replacement = switched.nodes.find((node) => node.id === loader.id);
+  replacement.data.params.revision.value = '0'.repeat(40);
+  assert.deepEqual(
+    shown(switched),
+    params[control.controlId],
+    'an unreviewed revision cannot claim the model behavior',
+  );
+  assert.deepEqual(grouped, unmodified);
+  const reopened = JSON.parse(JSON.stringify(setup));
+  assert.equal(graphNodeControlParams(reopened, [], catalog)[control.controlId].value, true);
+  // A previously pinned recipe leaf is still readable while Model Setup is collapsed.
+  const { graphParamInputCandidates } = await server.ssrLoadModule('/src/studio/graphNodeControls.ts');
+  const { useNodesStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const previous = useNodesStore.getState().studioModelCapabilities;
+  const pinId = `graph:${recipe.id}:vae_tiling`;
+  try {
+    useNodesStore.setState({ studioModelCapabilities: [capability] });
+    const pin = graphParamInputCandidates(grouped.nodes, [pinId], grouped.edges).find(
+      (candidate) => candidate.id === pinId,
+    );
+    assert.equal(pin.param.value, true);
+    assert.equal(pin.param.disabled, true);
+  } finally {
+    useNodesStore.setState({ studioModelCapabilities: previous });
+  }
+  const exported = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore.getState().exportGraph('mochi-tiling', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  assert.deepEqual(exported(JSON.parse(JSON.stringify(grouped))), exported(saved));
 });
 
 test('execution recipe switches govern only their own literal settings in raw nodes, Model Setup and inspector', () => {

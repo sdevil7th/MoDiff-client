@@ -475,6 +475,18 @@ test('model capability discovery accepts only versioned app-owned built-in repos
   );
 });
 
+test('required VAE tiling accepts only an explicit boolean in a model capability', () => {
+  const parse = (fields) =>
+    nodeStoreModule.parseStudioModelCapabilities({
+      schemaVersion: 2,
+      capabilities: [{ modelType: 'MochiPipeline', modes: ['text_to_video'], ...fields }],
+    }).capabilities[0];
+  assert.equal(parse({}).requiresVaeTiling, undefined);
+  for (const value of [true, false]) assert.equal(parse({ requiresVaeTiling: value }).requiresVaeTiling, value);
+  for (const value of ['false', 1, null])
+    assert.throws(() => parse({ requiresVaeTiling: value }), /Invalid model-capabilities response/u);
+});
+
 test('model capability discovery remains bounded while admitting catalogs beyond the legacy 128-entry limit', () => {
   const capability = {
     modelType: 'BuiltinImageOperation',

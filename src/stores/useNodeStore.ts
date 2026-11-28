@@ -912,6 +912,7 @@ export function parseStudioModelCapabilities(value: unknown) {
     const artifactLabel = item.artifactLabel;
     if (
       qualifiedModes?.some((mode) => !modes.includes(mode)) ||
+      (item.requiresVaeTiling !== undefined && typeof item.requiresVaeTiling !== 'boolean') ||
       [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
         (flag) => flag !== undefined && typeof flag !== 'boolean',
       ) ||

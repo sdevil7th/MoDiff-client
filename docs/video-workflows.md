@@ -27,6 +27,12 @@ different roles, such as first and last frames, keep separate loaders. An absent
 or incompatible loader produces a connection notice instead of a guessed wire.
 Existing saved graphs are not rewritten.
 
+For a model that requires VAE tiling, Model Setup shows **VAE Tiling
+(required by model)** switched on and locked. This also appears in the node
+inspector and on the execution recipe when viewing its individual nodes.
+A shared recipe's **VAE Tiling (optional models only)** switch still controls
+its other models. Disconnecting the required loader restores the saved choice.
+
 Encode Inputs can reuse unchanged prompt data. Denoise consumes encoding from the
 same model owner, and Video Output decodes that owner's current latents. Changing
 the owner or relevant recipe requires fresh runtime data. Saved values and wires

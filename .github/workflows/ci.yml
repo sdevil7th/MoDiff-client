@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          ref: 9f8011dfa8250a6aeaa20524a157dcdaff3fecce
+          ref: 1120ed11c3b8dd134044fc3eae152e1d11278f82
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 9f8011dfa8250a6aeaa20524a157dcdaff3fecce
+          ref: 1120ed11c3b8dd134044fc3eae152e1d11278f82
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

@@ -1274,6 +1274,8 @@ export type StudioModelProfile = {
   defaultDtype: StudioFormState['dtype'];
   /** Backend-owned default for new drafts; never an execution-time override. */
   defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
+  /** The reviewed loader enables VAE tiling regardless of its input recipe. */
+  requiresVaeTiling?: boolean;
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };
   recommendedSteps: number;
   recommendedGuidance: number;

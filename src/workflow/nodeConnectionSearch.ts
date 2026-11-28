@@ -5,6 +5,9 @@ import { matchesSearchKeywords } from '../utils/searchKeywords';
 import { runtimeNodeIdentityV2 } from '../studio/nodeLibraryAuditV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { connectionTypes } from '../theme/connectionTypeCompatibility';
+import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
+import { encodingVisibleConnectors } from './encodingNodePresentation';
+import { visualOperationStageKind } from './visualOperationGroupProjection';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import {
   nodeCatalogEntries,
@@ -22,6 +25,52 @@ import {
 import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
 
 export { matchingNodeHandleForDrop, nodeConnectionSemanticsAreCompatible } from './nodeConnectionMatching';
+
+/** Only offer another output when the ordinary strict picker can name a destination.
+ * Prefer media or text over bookkeeping outputs such as width or elapsed time. */
+export function usableSiblingOutput(
+  origin: ConnectionSearchOrigin,
+  firstDestination: (sibling: ConnectionSearchOrigin, type: NodeParams['type']) => string | undefined,
+) {
+  const ports = nodeConnectorParams({ data: origin.node });
+  const instance = origin.node.blockInstanceV2;
+  const visible = instance && visualOperationStageKind(instance) ? encodingVisibleConnectors(ports, instance) : ports;
+  const candidates = Object.entries(visible)
+    .flatMap(([handleId, field]) => {
+      const types = connectionTypes(field.type);
+      if (
+        handleId === origin.handleId ||
+        field.display !== 'output' ||
+        field.hidden ||
+        field.disabled ||
+        !types.length ||
+        types.includes('any')
+      )
+        return [];
+      const material = types.some((type) => ['image', 'audio', 'video', 'video_asset', 'string'].includes(type));
+      return [{ handleId, field, material, types }];
+    })
+    .sort((a, b) => Number(b.material) - Number(a.material));
+  // Ordinary outputs with identical unqualified types share one matching contract.
+  // Model-bound Block ports can belong to different owners even when the types agree.
+  const triedPlainTypes = new Set<string>();
+  for (const { handleId, field, types } of candidates) {
+    if (
+      !origin.node.blockInstanceV2 &&
+      !field.signal &&
+      !field.onSignal &&
+      !field.signalCompatibility &&
+      !field.connectionRole &&
+      !field.connectionRoleSelector
+    ) {
+      const key = JSON.stringify(types);
+      if (triedPlainTypes.has(key)) continue;
+      triedPlainTypes.add(key);
+    }
+    const destination = firstDestination({ node: origin.node, handleId }, field.type);
+    if (destination) return { handleId, label: field.label || handleId.replace(/_/gu, ' '), destination };
+  }
+}
 
 export function savedBlockSearchEntries(blocks: StoredUserBlockDefinition[]) {
   return uniqueStoredUserBlocks(blocks).map((block) => ({

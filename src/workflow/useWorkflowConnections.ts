@@ -135,7 +135,7 @@ export function useWorkflowConnections({
   const [isConnectionValid, setIsConnectionValid] = useState<boolean | null>(null);
   const [connectionDataType, setConnectionDataType] = useState<string | string[] | null>(null);
   const connectionTypeRef = useRef<string | string[] | null>(null);
-  const dropHandleRef = useRef<DropHandle | null>(null);
+  const [dropHandle, setDropHandle] = useState<DropHandle | null>(null);
   const searchContextRef = useRef<ReturnType<typeof captureWorkflowOperationContext> | null>(null);
 
   const handleDoubleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
@@ -145,7 +145,7 @@ export function useWorkflowConnections({
     }
 
     event.preventDefault();
-    dropHandleRef.current = null;
+    setDropHandle(null);
     searchContextRef.current = captureWorkflowOperationContext();
     setAnchorPosition({
       top: event.clientY,
@@ -157,7 +157,6 @@ export function useWorkflowConnections({
     async (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean, requiredHandleId?: string) => {
       if (!anchorPosition || !searchContextRef.current) return;
       const context = searchContextRef.current;
-      const dropHandle = dropHandleRef.current;
       let committed = false;
       try {
         assertWorkflowOperationContext(context, { includeForm: false });
@@ -215,10 +214,23 @@ export function useWorkflowConnections({
         prepareWorkflowForManualInsertion();
         committed = true;
       } finally {
-        if (committed && searchContextRef.current === context) dropHandleRef.current = null;
+        if (committed && searchContextRef.current === context) setDropHandle(null);
       }
     },
-    [anchorPosition, screenToFlowPosition, edgeType, onEncodingConnect],
+    [anchorPosition, screenToFlowPosition, edgeType, onEncodingConnect, dropHandle],
+  );
+
+  const switchSearchOutput = useCallback(
+    (handleId: string) => {
+      if (!dropHandle || dropHandle.handleType !== 'source' || !searchContextRef.current) return false;
+      assertWorkflowOperationContext(searchContextRef.current, { includeForm: false });
+      const current = useFlowStore.getState().nodes.find((node) => node.id === dropHandle.nodeId);
+      const output = nodeConnectorParam(current, handleId);
+      if (!output || output.display !== 'output' || output.hidden || output.disabled) return false;
+      setDropHandle(captureWorkflowDropHandle(current, handleId, 'source'));
+      return true;
+    },
+    [dropHandle],
   );
 
   const connectionError = useCallback(
@@ -298,7 +310,7 @@ export function useWorkflowConnections({
       const sourceType = getParam(params.nodeId, params.handleId, 'type') || 'default';
       connectionTypeRef.current = sourceType;
       setConnectionDataType(sourceType);
-      dropHandleRef.current = null;
+      setDropHandle(null);
       document.addEventListener('mousemove', handleMouseMove);
     },
     [getParam, handleMouseMove],
@@ -314,11 +326,13 @@ export function useWorkflowConnections({
       const handleId = conn.fromHandle?.id;
       if (handleId) {
         const fromNode = conn.fromNode as unknown as CustomNodeType | undefined;
-        dropHandleRef.current = captureWorkflowDropHandle(
-          fromNode,
-          handleId,
-          conn.fromHandle?.type === 'source' ? 'source' : 'target',
-          fromNode ? getParam(fromNode.id, handleId, 'type') : null,
+        setDropHandle(
+          captureWorkflowDropHandle(
+            fromNode,
+            handleId,
+            conn.fromHandle?.type === 'source' ? 'source' : 'target',
+            fromNode ? getParam(fromNode.id, handleId, 'type') : null,
+          ),
         );
       }
 
@@ -458,7 +472,7 @@ export function useWorkflowConnections({
 
   const closeNodeSearchDialog = useCallback(() => {
     setAnchorPosition(null);
-    dropHandleRef.current = null;
+    setDropHandle(null);
     searchContextRef.current = null;
   }, []);
 
@@ -474,8 +488,9 @@ export function useWorkflowConnections({
     handleNodeSearchSelect,
     isConnecting,
     isConnectionValid,
-    nodeSearchDataType: dropHandleRef.current?.dataType ?? undefined,
-    nodeSearchHandleType: dropHandleRef.current?.handleType,
-    nodeSearchOrigin: dropHandleRef.current ?? undefined,
+    nodeSearchDataType: dropHandle?.dataType ?? undefined,
+    nodeSearchHandleType: dropHandle?.handleType,
+    nodeSearchOrigin: dropHandle ?? undefined,
+    switchSearchOutput,
   };
 }

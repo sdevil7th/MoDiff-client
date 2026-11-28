@@ -12,9 +12,11 @@ import {
 import type { BlockJsonValue } from './blockSchemaV2';
 import { syncManagedNodeControlChange } from './managedControlSync';
 import type { AppModeInput } from './types';
-import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { modelSetupControlPresentation } from '../workflow/modelSetupControlPresentation';
 import { EXECUTION_RECIPE_NODE, visibleExecutionRecipeControls } from '../workflow/gatedNodeControls';
 import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
+import { effectiveRecipeTiling, workflowRecipeTilingPolicy } from '../workflow/recipeTilingPresentation';
 
 export type GraphInputCandidate = AppModeInput & { node: CustomNodeType; param: NodeParams };
 
@@ -30,6 +32,7 @@ export function graphNodeControlParams(
     ReturnType<typeof useNodesStore.getState>,
     'workflowModelDescriptors' | 'studioModelCapabilities'
   > = useNodesStore.getState(),
+  workflowNodes: readonly CustomNodeType[] = useFlowStore.getState().nodes,
 ): Record<string, NodeParams> {
   const instance = node.data.blockInstanceV2;
   const source = instance ?? node.data.params;
@@ -41,10 +44,16 @@ export function graphNodeControlParams(
   if (cached) return cached;
   const base = instance ? blockControlParamsV2(instance) : node.data.params;
   const params = setup
-    ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base, workflowEdges, catalog)
+    ? modelSetupControlPresentation(instance, blockOperationGraphV2(instance), base, workflowEdges, catalog).params
     : recipe
-      ? visibleExecutionRecipeControls(base, node.data.params, (key) =>
-          workflowEdges.some((edge) => edge.target === node.id && edge.targetHandle === key),
+      ? visibleExecutionRecipeControls(
+          effectiveRecipeTiling(
+            base,
+            'vae_tiling',
+            workflowRecipeTilingPolicy(node, workflowNodes, workflowEdges, catalog.studioModelCapabilities),
+          ),
+          node.data.params,
+          (key) => workflowEdges.some((edge) => edge.target === node.id && edge.targetHandle === key),
         )
       : base;
   const controls = Object.fromEntries(
@@ -77,9 +86,10 @@ export function graphParamInputCandidates(
   nodes: CustomNodeType[],
   pinnedIds: string[] = [],
   workflowEdges: readonly Edge[] = [],
+  workflowNodes: readonly CustomNodeType[] = nodes,
 ): GraphInputCandidate[] {
   const candidates: GraphInputCandidate[] = nodes.flatMap((node) =>
-    Object.entries(graphNodeControlParams(node, workflowEdges)).map(([key, param]) => ({
+    Object.entries(graphNodeControlParams(node, workflowEdges, undefined, workflowNodes)).map(([key, param]) => ({
       id: `graph:${node.id}:${key}`,
       kind: 'graph-param' as const,
       label: `${node.data.label || node.id} / ${param.label || key}`,
@@ -105,7 +115,12 @@ export function graphParamInputCandidates(
           ...root.data,
           blockInstanceV2: {
             ...instance,
-            presentation: { ...instance.presentation, expanded: true, collapsedContainerNodeIds: [] },
+            presentation: {
+              ...instance.presentation,
+              expanded: true,
+              ...(isFocusedStageNode(instance) ? { stageEditorOpen: true } : {}),
+              collapsedContainerNodeIds: [],
+            },
           },
         },
       }).nodes;
@@ -116,6 +131,7 @@ export function graphParamInputCandidates(
         expanded.filter(({ id }) => !visibleIds.has(id)),
         [],
         workflowEdges,
+        workflowNodes,
       ).filter(({ id }) => missingPins.has(id)),
     );
   }
@@ -137,6 +153,7 @@ export function revealPinnedGraphInput(workflowId: string | null, node: CustomNo
   }
   useFlowStore.getState().setBlockPresentationV2(ownerId, {
     expanded: true,
+    ...(isFocusedStageNode(instance) ? { stageEditorOpen: true } : {}),
     collapsedContainerNodeIds: (instance.presentation.collapsedContainerNodeIds ?? []).filter(
       (id) => !ancestors.has(id),
     ),

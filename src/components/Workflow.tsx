@@ -521,6 +521,7 @@ function Workflow() {
     nodeSearchDataType,
     nodeSearchHandleType,
     nodeSearchOrigin,
+    switchSearchOutput,
   } = useWorkflowConnections({
     edgeType,
     getParam: getConnectionParam,
@@ -1439,6 +1440,7 @@ function Workflow() {
             dataType={nodeSearchDataType}
             handleType={nodeSearchHandleType}
             origin={nodeSearchOrigin}
+            onSwitchOutput={switchSearchOutput}
           />
         </Suspense>
       ) : null}

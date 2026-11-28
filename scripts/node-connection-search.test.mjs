@@ -31,6 +31,64 @@ const definition = (params, action = 'Process') => ({
   params,
 });
 
+test('an unmatched output recommends a usable material sibling and respects the exact role on each output', () => {
+  const output = (type, label, extra = {}) => ({ display: 'output', type, label, ...extra });
+  const source = definition({
+    original: output('prediction_map', 'Native prediction'),
+    width: output('int', 'Width'),
+    hidden: output('image', 'Internal preview', { hidden: true }),
+    off: output('image', 'Inactive preview', { disabled: true }),
+    metadata: output('any', 'Metadata'),
+    input: { display: 'input', type: 'image' },
+    mask: output('image', 'Mask', { connectionRole: 'mask' }),
+    color: output('image', 'Color preview', { connectionRole: 'source' }),
+  });
+  const target = definition({
+    image: { display: 'input', type: 'image', signalCompatibility: { role: 'source' } },
+    width: { display: 'input', type: 'int' },
+  });
+  const origin = { node: source, handleId: 'original' };
+  const probed = [];
+  const result = search.usableSiblingOutput(origin, (sibling, type) => {
+    probed.push(sibling.handleId);
+    return search.matchingNodeHandleForDrop(target, type, 'source', sibling, false)?.[0];
+  });
+  assert.deepEqual(result, { handleId: 'color', label: 'Color preview', destination: 'image' });
+  assert.deepEqual(probed, ['mask', 'color']);
+  assert.equal(
+    search.usableSiblingOutput(origin, () => undefined),
+    undefined,
+  );
+});
+
+test('the shipped Marigold workflow points from its native depth map to its wired preview image', () => {
+  const graph = JSON.parse(
+    readFileSync(
+      new URL('../../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json', import.meta.url),
+    ),
+  );
+  const source = graph.nodes.find((node) => node.data.action === 'PredictMap');
+  const preview = graph.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Preview');
+  const origin = { node: source.data, handleId: 'prediction_map' };
+  assert.equal(
+    search.matchingNodeHandleForDrop(preview.data, source.data.params.prediction_map.type, 'source', origin, false),
+    undefined,
+  );
+  const suggestion = search.usableSiblingOutput(origin, (sibling, type) =>
+    search.matchingNodeHandleForDrop(preview.data, type, 'source', sibling, false) ? preview.data.label : undefined,
+  );
+  assert.deepEqual(suggestion, { handleId: 'preview_images', label: 'Preview', destination: 'Preview Image' });
+  assert.ok(
+    graph.edges.some(
+      (edge) =>
+        edge.source === source.id &&
+        edge.sourceHandle === suggestion.handleId &&
+        edge.target === preview.id &&
+        edge.targetHandle === 'image',
+    ),
+  );
+});
+
 test('backend-declared component role selectors accept only an exact unconnected literal selection', async () => {
   const storage = new Map();
   globalThis.localStorage ??= {

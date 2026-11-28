@@ -14,6 +14,7 @@ import {
 import { formatStudioFieldValue } from '../studio/presetDiff';
 import { ModiffDisclosure, StatusLine, StudioButton } from '../ui';
 import { cx } from '../utils/classNames';
+import { EXECUTION_RECIPE_NODE } from '../workflow/gatedNodeControls';
 import NodeContent from './NodeContent';
 import NodeInspectorSections from './NodeInspectorSections';
 
@@ -49,8 +50,13 @@ export function GraphNodeInputs({
   );
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-  const incomingEdges = useFlowStore(
-    useShallow((state) => (selectedNode ? state.edges.filter((edge) => edge.target === selectedNode.id) : [])),
+  const controlEdges = useFlowStore(
+    useShallow((state) => {
+      if (!selectedNode) return [];
+      // A recipe depends on each downstream loader and on any wire supplying its model selection.
+      if (`${selectedNode.data.module}.${selectedNode.data.action}` === EXECUTION_RECIPE_NODE) return state.edges;
+      return state.edges.filter((edge) => edge.target === selectedNode.id || edge.source === selectedNode.id);
+    }),
   );
   const groups = useMemo(() => {
     const byNode = new Map<string, { node: CustomNodeType; params: Record<string, NodeParams> }>();
@@ -62,7 +68,7 @@ export function GraphNodeInputs({
     });
 
     if (selectedNode) {
-      const selectedParams = graphNodeControlParams(selectedNode, incomingEdges, modelCatalog);
+      const selectedParams = graphNodeControlParams(selectedNode, controlEdges, modelCatalog);
       byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
     }
 
@@ -74,7 +80,7 @@ export function GraphNodeInputs({
       const group = byNode.get(id);
       return group ? [group] : [];
     });
-  }, [nodes, pinnedInputs, selectedNode, incomingEdges, modelCatalog]);
+  }, [nodes, pinnedInputs, selectedNode, controlEdges, modelCatalog]);
 
   const updateParam = useCallback(
     (nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {
