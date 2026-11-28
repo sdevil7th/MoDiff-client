@@ -1,3 +1,4 @@
+import { workflowTaskLabel } from '../workflow/workflowChoices';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useShallow } from 'zustand/react/shallow';
@@ -19,6 +20,8 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useRunRecoveryFocus } from '../studio/useRunRecoveryFocus';
+import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
@@ -56,10 +59,12 @@ import {
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
+import { studioSpeechTimestampContract, studioSupportsStrength } from '../studio/effectiveControls';
 import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
 import {
+  declaredGraphModelLabel,
   getPreferredRuntimeDevice,
   inspectCurrentGraph,
   runtimeDeviceIsAvailable,
@@ -69,6 +74,7 @@ import { useStudioReadiness } from '../studio/useStudioReadiness';
 import { summarizeRunReadinessIssues, useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun, useStudioRunActions } from '../studio/useStudioRunActions';
@@ -92,6 +98,12 @@ import {
 } from '../ui';
 import { cx } from '../utils/classNames';
 
+const SPEECH_TIMESTAMP_LABELS = {
+  none: 'No timestamps',
+  segment: 'Segment timestamps',
+  word: 'Word timestamps',
+} satisfies Record<StudioFormState['speechTimestamps'], string>;
+
 const ASPECT_OPTIONS: { label: StudioAspectRatio; width: number; height: number }[] = [
   { label: '1:1', width: 1024, height: 1024 },
   { label: '4:3', width: 1152, height: 864 },
@@ -111,6 +123,7 @@ function copyText(value: string, label: string) {
 }
 
 export default function StudioPanel() {
+  const recoveryFocusRef = useRunRecoveryFocus('studio');
   const [isWorking, setIsWorking] = useState(false);
   const modelUsageTerms = useModelUsageTermsGate();
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
@@ -137,6 +150,7 @@ export default function StudioPanel() {
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
     studioExecutionSpecInvalid,
+    workflowModelDescriptors,
     installHfModel,
   } = useNodesStore(
     useShallow((state) => ({
@@ -148,6 +162,7 @@ export default function StudioPanel() {
       studioModelCapabilities: state.studioModelCapabilities,
       studioModelCapabilitiesAuthoritative: state.studioModelCapabilitiesAuthoritative,
       studioExecutionSpecInvalid: state.studioExecutionSpecInvalid,
+      workflowModelDescriptors: state.workflowModelDescriptors,
       installHfModel: state.installHfModel,
     })),
   );
@@ -223,6 +238,10 @@ export default function StudioPanel() {
   const isUnconditionalMode = form.mode === 'unconditional_image';
   const isPerceptionMode = form.mode === 'depth_estimation';
   const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
+  const speechTimestampContract = isSpeechMode
+    ? studioSpeechTimestampContract(form, { studioModelCapabilities, studioExecutionSpecInvalid, nodesRegistry })
+    : undefined;
+  const speechTimestampOptions = speechTimestampContract?.options ?? (['none', 'segment', 'word'] as const);
   const isThreeDMode = THREE_D_STUDIO_MODES.includes(form.mode);
   const usesPrompt =
     !isUnconditionalMode &&
@@ -255,15 +274,17 @@ export default function StudioPanel() {
         }
       : null);
   const canvasTransition = useStudioStore((state) => state.canvasTransition);
-  const templateGraphPreparing = Boolean(
-    canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId,
-  );
+  const templateGraphPreparing = Boolean(canvasTransition && canvasTransition.workflowTabId === activeWorkflowTabId);
   const graphInspectionSignature = useFlowStore(
     useShallow((state) => ({
       nodes: state.nodes
         .map((node) => {
           const modelParams = Object.entries(node.data.params)
-            .filter(([key]) => /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key))
+            .filter(([key]) =>
+              /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter|pipeline_class|execution_profile_id/i.test(
+                key,
+              ),
+            )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
             .join(',');
           return `${node.id}:${node.data.module}:${node.data.action}:${node.data.uiState?.disabled ? 'disabled' : 'enabled'}:${modelParams}`;
@@ -290,10 +311,27 @@ export default function StudioPanel() {
     !templateGraphPreparing &&
     ((!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence));
 
+  const graphModel = graphInspection.declaredModel;
+  const modelLabel = declaredGraphModelLabel(graphModel, workflowModelDescriptors);
+  const profile =
+    graphModel &&
+    studioModelCapabilities.find((candidate) =>
+      candidate.executionProfiles?.some(
+        (profile) =>
+          profile.id === graphModel.profileId &&
+          profile.default_repo === graphModel.repo &&
+          profile.pipeline_class === graphModel.pipeline,
+      ),
+    );
   const customGraphModelText =
-    graphInspection.modelRefs.length > 0
+    (graphModel && modelLabel === graphModel.pipeline
+      ? profile
+        ? getStudioModelDisplayName(profile)
+        : graphModel.repo.split('/').pop()
+      : modelLabel) ??
+    (graphInspection.modelRefs.length > 0
       ? `${new Set(graphInspection.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size} model refs`
-      : 'Graph-defined';
+      : 'Graph-defined');
   const runReadiness = useRunReadinessIssues({ sid, isConnected, includeStudio: !customGraphMode });
   const runReadinessSummary = useMemo(() => summarizeRunReadinessIssues(runReadiness.issues), [runReadiness.issues]);
   const studioReadinessMeta =
@@ -303,6 +341,7 @@ export default function StudioPanel() {
         ? `${runReadiness.warningIssues.length} warning${runReadiness.warningIssues.length === 1 ? '' : 's'}`
         : undefined;
   const graphNodes = useFlowStore(useShallow((state) => state.nodes));
+  const graphEdges = useFlowStore((state) => state.edges);
   // A template can fail before its graph skeleton is committed (for example,
   // when the connected backend is missing a required node contract). Keep the
   // selected template's task controls and readiness issue visible in that
@@ -313,8 +352,8 @@ export default function StudioPanel() {
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
   const inspectExactNode = true;
   const graphInputCandidates = useMemo(
-    () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds) : []),
-    [graphNodes, inspectExactNode, pinnedGraphInputIds],
+    () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds, graphEdges) : []),
+    [graphNodes, graphEdges, inspectExactNode, pinnedGraphInputIds],
   );
   const effectivePinnedGraphInputIds = pinnedGraphInputIds.filter((id) =>
     graphInputCandidates.some((input) => input.id === id),
@@ -344,6 +383,7 @@ export default function StudioPanel() {
     backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
   const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
+  const supportsStrength = studioSupportsStrength(form, studioModelCapabilities, activeTemplate);
   const requiresSourceVideo = requiredVideos.includes('sourceVideo');
   const requiresReferenceVideos = requiredVideos.includes('referenceVideos');
   const requiresControlVideo = requiredVideos.includes('controlVideo');
@@ -417,12 +457,12 @@ export default function StudioPanel() {
   ]);
 
   useEffect(() => {
-    if (!runtimeStatus) return;
+    if (!runtimeStatus || templateGraphPreparing) return;
     const preferredDevice = getPreferredRuntimeDevice(runtimeStatus);
     if (preferredDevice === form.device || runtimeDeviceIsAvailable(runtimeStatus, form.device)) return;
     if (form.device !== DEFAULT_STUDIO_FORM.device && !form.device.toLowerCase().startsWith('cuda')) return;
     updateAndSync({ device: preferredDevice });
-  }, [form.device, runtimeStatus, updateAndSync]);
+  }, [form.device, runtimeStatus, templateGraphPreparing, updateAndSync]);
 
   const handleAspectChange = (aspectRatio: StudioAspectRatio) => {
     const aspect = ASPECT_OPTIONS.find((item) => item.label === aspectRatio);
@@ -495,7 +535,7 @@ export default function StudioPanel() {
     }
   }, []);
 
-  const handleExportApiGraph = useCallback(() => {
+  const handleExportApiGraph = useCallback(async () => {
     if (!sid) {
       enqueueSnackbar('Connect to the MoDiff server before exporting the API graph.', {
         variant: 'error',
@@ -503,13 +543,20 @@ export default function StudioPanel() {
       });
       return;
     }
-    const apiGraph = applyStudioRuntimeHints(useFlowStore.getState().exportGraph(sid));
-    const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
-    const anchor = document.createElement('a');
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = 'modiff-api-graph.json';
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
+    try {
+      const pending = prepareExecutionScope();
+      const executionScope = pending ? await pending : undefined;
+      const exported = useFlowStore.getState().exportGraph(sid, undefined, { executionScope, randomizeSeeds: false });
+      const apiGraph = executionScope ? exported : applyStudioRuntimeHints(exported);
+      const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = 'modiff-api-graph.json';
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, 'Could not export this workflow.'), { variant: 'error' });
+    }
   }, [sid]);
 
   const restoreLatestOutput = useCallback(() => {
@@ -540,12 +587,15 @@ export default function StudioPanel() {
     try {
       useStudioStore.getState().restoreWorkflowFromOutput(latest);
       const context = captureWorkflowOperationContext();
-      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
       await coordinateGraphRun({
         sid,
         studioContext: { forceDeterministic: !latest.formSnapshot.randomSeed },
         workflowContext: context,
+        executionScope,
       });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -563,7 +613,7 @@ export default function StudioPanel() {
   }, [setLightboxOpener]);
 
   const handleReviewRunIssues = useCallback(() => {
-    showRunIssues(runReadiness.issues);
+    showRunIssues(runReadiness.issues, captureRunRecoveryOrigin());
   }, [runReadiness.issues, showRunIssues]);
 
   const handleRunSweep = useCallback(
@@ -597,13 +647,16 @@ export default function StudioPanel() {
           advanceWorkflowOperationContext(context);
           const nextForm = useStudioStore.getState().form;
           syncStudioGraphValues(nextForm);
-          const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+          const pending = prepareExecutionScope({ workflowContext: context });
+          const executionScope = pending ? await pending : undefined;
+          const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
           if (!autoReady) break;
-          await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+          if (!executionScope) await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
           assertWorkflowOperationContext(context);
           const { response } = await coordinateGraphRun({
             sid,
             workflowContext: context,
+            executionScope,
             studioContext: {
               forceDeterministic: true,
               variation: {
@@ -663,7 +716,7 @@ export default function StudioPanel() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-3 p-3" data-testid="studio-panel">
+    <div ref={recoveryFocusRef} className="flex flex-col gap-3 p-3" data-testid="studio-panel">
       <div
         ref={stickyHeaderRef}
         className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg p-3 shadow-modiff-node"
@@ -771,18 +824,25 @@ export default function StudioPanel() {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
-                    {customGraphMode ? 'Current graph' : 'Current task'}
+                    {customGraphMode && !graphInspection.declaredTask ? 'Current graph' : 'Current task'}
                   </p>
                   <h2 className="truncate text-base font-bold text-modiff-text">
-                    {customGraphMode ? 'Custom graph' : STUDIO_MODE_LABELS[form.mode]}
+                    {customGraphMode
+                      ? graphInspection.declaredTask
+                        ? workflowTaskLabel(graphInspection.declaredTask)
+                        : 'Custom graph'
+                      : STUDIO_MODE_LABELS[form.mode]}
                   </h2>
                 </div>
                 <div className="min-w-0 text-right">
                   <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
-                    {customGraphMode ? 'Graph models' : 'Selected model'}
+                    {customGraphMode && !graphModel ? 'Graph models' : 'Selected model'}
                   </p>
                   <div className="flex items-center justify-end gap-1">
-                    <h3 className="truncate text-base font-bold text-hf-yellow">
+                    <h3
+                      title={customGraphMode ? graphModel?.repo : undefined}
+                      className="truncate text-base font-bold text-hf-yellow"
+                    >
                       {customGraphMode ? customGraphModelText : selectedModelName}
                     </h3>
                     {!customGraphMode && (
@@ -798,6 +858,7 @@ export default function StudioPanel() {
               <>
                 <StudioSelect
                   aria-label="Task"
+                  data-run-recovery-field="mode"
                   value={form.mode}
                   data-testid="studio-task-select"
                   onValueChange={(value) => {
@@ -810,6 +871,7 @@ export default function StudioPanel() {
                 />
                 <StudioSelect
                   aria-label="Model"
+                  data-run-recovery-field="modelType"
                   value={form.modelType}
                   data-testid="studio-model-select"
                   onValueChange={(value) => {
@@ -1087,6 +1149,7 @@ export default function StudioPanel() {
               ) : capability.layerResolutions?.length ? (
                 <StudioSelect
                   aria-label="Layer resolution"
+                  data-run-recovery-field="width"
                   data-testid="studio-layer-resolution-select"
                   value={String(form.width)}
                   onValueChange={(value) => {
@@ -1331,7 +1394,7 @@ export default function StudioPanel() {
                       }
                     </>
                   )}
-                  {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
+                  {supportsStrength && !isVideoMode && !isPerceptionMode && (
                     <>
                       <ModiffFieldShell label={`Strength: ${form.strength}`}>
                         <StudioSlider
@@ -1368,6 +1431,7 @@ export default function StudioPanel() {
                   )}
                   {capability.supportsLayers && (
                     <StudioInput
+                      name="layers"
                       label={
                         capability.layerCount
                           ? `Layers (${capability.layerCount.min}–${capability.layerCount.max})`
@@ -1387,10 +1451,11 @@ export default function StudioPanel() {
                 </div>
               </section>
             )}
-            {usesPrompt && <StudioParameterExplainers form={form} />}
+            {usesPrompt && <StudioParameterExplainers form={form} supportsStrength={supportsStrength} />}
             {usesPrompt && (
               <StudioVariationPlanner
                 form={form}
+                supportsStrength={supportsStrength}
                 template={activeTemplate}
                 onChange={updateAndSync}
                 onRunSweep={(variations) => {
@@ -1587,11 +1652,10 @@ export default function StudioPanel() {
                   onValueChange={(value) =>
                     updateAndSync({ speechTimestamps: value as StudioFormState['speechTimestamps'] })
                   }
-                  options={[
-                    { value: 'none', label: 'No timestamps' },
-                    { value: 'segment', label: 'Segment timestamps' },
-                    { value: 'word', label: 'Word timestamps' },
-                  ]}
+                  options={speechTimestampOptions.map((value) => ({
+                    value,
+                    label: SPEECH_TIMESTAMP_LABELS[value],
+                  }))}
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <StudioInput
@@ -1672,6 +1736,7 @@ export default function StudioPanel() {
                   )}
                   <StudioSelect
                     aria-label="Offload mode"
+                    data-run-recovery-field="offloadMode"
                     data-testid="studio-offload-mode-select"
                     value={form.offloadMode}
                     onValueChange={(value) => updateAndSync({ offloadMode: value as StudioFormState['offloadMode'] })}
@@ -1757,6 +1822,7 @@ export default function StudioPanel() {
                   </p>
                   {form.mode.includes('control_union') && (
                     <StudioInput
+                      name="controlMode"
                       label="ControlNet Union mode (0–5)"
                       value={form.controlMode}
                       onChange={(value) => updateAndSync({ controlMode: numberValue(value, form.controlMode) })}

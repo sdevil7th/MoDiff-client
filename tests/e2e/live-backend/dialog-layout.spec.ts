@@ -45,8 +45,8 @@ test('live Model Manager and Settings remain bounded and usable without installi
   const manager = page.getByTestId('model-manager-dialog');
   await expect(manager.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled({ timeout: 120_000 });
   await page.screenshot({ path: `${outputDirectory}/models-all.png` });
-  await manager.getByRole('tab', { name: 'Installed', exact: true }).click();
-  await expect(manager.getByRole('tab', { name: 'Installed', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await manager.getByRole('tab', { name: 'Local files', exact: true }).click();
+  await expect(manager.getByRole('tab', { name: 'Local files', exact: true })).toHaveAttribute('aria-selected', 'true');
   await manager.getByLabel('Filter models and artifacts').fill('qwen');
   await expect(manager.getByTestId('model-manager-installed')).toContainText('Qwen');
   await page.screenshot({ path: `${outputDirectory}/models-installed-qwen.png`, animations: 'disabled' });
@@ -145,6 +145,7 @@ test('live Model Manager and Settings remain bounded and usable without installi
   await page.keyboard.press('Escape');
   await expect(workflowSave).toHaveCount(0);
   await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-download-menu-0').click();
   await page.getByTestId('gallery-download-image-0').click();
   const exporter = page.getByTestId('media-export-dialog');
   await expect(exporter).toBeVisible();

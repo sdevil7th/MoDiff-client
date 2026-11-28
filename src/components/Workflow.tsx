@@ -11,7 +11,8 @@ import {
   IsValidConnection,
   ReactFlow,
   useReactFlow,
-  Viewport,
+  useNodesInitialized,
+  type Viewport,
   useUpdateNodeInternals,
   ConnectionLineType,
   Panel,
@@ -19,7 +20,7 @@ import {
 } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Network } from 'lucide-react';
+import { Network, Scan, ScanLine } from 'lucide-react';
 
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
@@ -39,7 +40,7 @@ import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
 import BlockNode from './BlockNode';
 import EncodingNode from './EncodingNodeRenderer';
-import { isFocusedImageEncoding, isFocusedStageNode } from '../workflow/encodingNodePresentation';
+import { isFocusedImageEncoding, isFocusedStageNode, isStageEditorOpen } from '../workflow/encodingNodePresentation';
 import ProjectedBlockNodeV2 from './ProjectedBlockNodeV2';
 import { expandedBlockV2AtPosition } from '../studio/blockDropTargetsV2';
 
@@ -60,7 +61,8 @@ import {
 import { useGraphFixModule } from '../studio/useGraphFixModule';
 import { rejectedBlockDragPresentationPatchV2 } from '../studio/blockRuntimeV2';
 import { connectionColor, decorateConnectionEdges } from '../theme/connectionTypes';
-import { ModiffDialog, ModiffIconButton, ModiffPopover, ModiffSelect } from '../ui';
+import { setStageEditorOpen } from '../workflow/stageEditing';
+import { ModiffButton, ModiffDialog, ModiffIconButton, ModiffPopover, ModiffSelect } from '../ui';
 import { GraphConnectionSurface } from '../ui/GraphConnectionSurface';
 import type { PendingBlock } from './CreateUserBlockDialog';
 import { executionProgressFrom } from '../studio/executionProgress';
@@ -257,8 +259,7 @@ function Workflow() {
   const migratedBlueprintIds = useRef<Set<string>>(new Set());
   const updateNodeInternals = useUpdateNodeInternals();
   const canvasSuspended = Boolean(
-    !workflowCanvasHydrated ||
-    (canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId),
+    !workflowCanvasHydrated || (canvasTransition && canvasTransition.workflowTabId === activeWorkflowTabId),
   );
   const requiresCompleteCompositeMount = nodes.some(
     (node) =>
@@ -276,9 +277,29 @@ function Workflow() {
       },
     [graphFix.module, graphFixPreviewCandidate, nodes, nodesRegistry],
   );
-  const exactVisibleNodes = [...nodes, ...graphFixPreview.nodes];
+  const openStageEditors = nodes.filter((node) => isStageEditorOpen(node.data.blockInstanceV2));
+  const editingStageId = openStageEditors[0]?.id;
+  // Freeze the outside IDs when entering the editor. New nodes stay visible so a
+  // user can wire them or move them into the stage before returning to the graph.
+  const outsideStage = useMemo(() => {
+    if (!editingStageId || !activeWorkflowTabId) return null;
+    return new Set(
+      useFlowStore
+        .getState()
+        .nodes.filter((n) => n.id !== editingStageId && n.data.blockProjectionOwnerId !== editingStageId)
+        .map((n) => n.id),
+    );
+  }, [editingStageId, activeWorkflowTabId]);
+  const exactVisibleNodes = [...nodes, ...graphFixPreview.nodes].filter(
+    (n) =>
+      !outsideStage ||
+      (!outsideStage.has(n.id) && !outsideStage.has(n.data.blockProjectionOwnerId ?? n.parentId ?? '')),
+  );
+  const editingNodeIds = outsideStage ? new Set(exactVisibleNodes.map((n) => n.id)) : null;
   const canvasNodes = exactVisibleNodes.map((node) =>
-    isFocusedStageNode(node.data.blockInstanceV2) ? { ...node, type: 'encoding' as const } : node,
+    isFocusedStageNode(node.data.blockInstanceV2) && !isStageEditorOpen(node.data.blockInstanceV2)
+      ? { ...node, type: 'encoding' as const }
+      : node,
   );
   // Mount on first selection, then retain dialog/menu state when focus changes.
   // An untouched empty graph does not need selection-only action code.
@@ -314,7 +335,8 @@ function Workflow() {
   // children are intentionally inert while collapsed, so rendering those
   // edges would create a missing-handle loop even though no link is visible.
   const exactVisibleEdges = [...decoratedEdges, ...graphFixPreview.edges].filter((edge) => {
-    if (edge.hidden) return false;
+    if (edge.hidden || (editingNodeIds && (!editingNodeIds.has(edge.source) || !editingNodeIds.has(edge.target))))
+      return false;
     const instanceId =
       clusterInstanceByExecutionNode.get(edge.source) ?? clusterInstanceByExecutionNode.get(edge.target);
     return !instanceId || clusterEdgesReady.get(instanceId) === true;
@@ -390,10 +412,12 @@ function Workflow() {
       setLightboxOpener: state.setLightboxOpener,
     })),
   );
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
+  const nodesMeasured = useNodesInitialized();
   const workflowCanvasRef = useRef<HTMLDivElement>(null);
   const lastFitLayoutRevision = useRef(layoutRevision);
   const handledWorkflowFocusKey = useRef('');
+  const stageReturnViews = useRef(new Map<string, Viewport>());
   const suppressAutomaticFitUntil = useRef(0);
   const connectionScopeIsValid = useCallback(
     (connection: {
@@ -497,6 +521,7 @@ function Workflow() {
     nodeSearchDataType,
     nodeSearchHandleType,
     nodeSearchOrigin,
+    switchSearchOutput,
   } = useWorkflowConnections({
     edgeType,
     getParam: getConnectionParam,
@@ -515,12 +540,15 @@ function Workflow() {
     if (!workflowFocusRequest || workflowFocusRequest.workflowTabId !== activeWorkflowTabId) return;
     const requestKey = `${workflowFocusRequest.workflowTabId}:${workflowFocusRequest.nodeId}:${workflowFocusRequest.requestId}`;
     if (handledWorkflowFocusKey.current === requestKey) return;
+    // A slow pan must not clear a newer focus request from a different action.
+    const clearCurrentFocus = () => {
+      if (useSettingsStore.getState().workflowFocusRequest === workflowFocusRequest) setWorkflowFocusRequest(null);
+    };
     if (!workflowFocusRequest.nodeId) {
+      if (!nodesMeasured) return;
       handledWorkflowFocusKey.current = requestKey;
       suppressAutomaticFitUntil.current = Date.now() + 750;
-      void fitView({ padding: 0.16, duration: 240, includeHiddenNodes: true }).finally(() => {
-        setWorkflowFocusRequest(null);
-      });
+      void fitView({ padding: 0.12, duration: 0 }).finally(clearCurrentFocus);
       return;
     }
     const targetId = nodes.find((node) => node.id === workflowFocusRequest.nodeId)?.id;
@@ -536,10 +564,30 @@ function Workflow() {
         ? state.nodes
         : state.nodes.map((node) => ({ ...node, selected: node.id === targetId })),
     }));
-    void fitView({ nodes: [{ id: targetId }], padding: 0.5, duration: 240 }).finally(() => {
-      setWorkflowFocusRequest(null);
-    });
-  }, [activeWorkflowTabId, fitView, nodes, setWorkflowFocusRequest, workflowFocusRequest]);
+    const stageKey = JSON.stringify([activeWorkflowTabId, targetId]);
+    if (workflowFocusRequest.stageEditor === 'enter') stageReturnViews.current.set(stageKey, getViewport());
+    if (workflowFocusRequest.stageEditor === 'leave') {
+      const previous = stageReturnViews.current.get(stageKey);
+      stageReturnViews.current.delete(stageKey);
+      if (previous) void setViewport(previous, { duration: 0 });
+      else void fitView({ padding: 0.12, duration: 0 });
+    } else if (workflowFocusRequest.stageEditor === 'enter') {
+      void fitView({ nodes: [{ id: targetId }], padding: 0.5, duration: 0 });
+    } else {
+      void fitView({ nodes: [{ id: targetId }], padding: 0.5, duration: 240 }).finally(clearCurrentFocus);
+      return;
+    }
+    clearCurrentFocus();
+  }, [
+    activeWorkflowTabId,
+    fitView,
+    getViewport,
+    nodes,
+    nodesMeasured,
+    setViewport,
+    setWorkflowFocusRequest,
+    workflowFocusRequest,
+  ]);
 
   useEffect(() => {
     refreshConnectionVisuals();
@@ -1012,7 +1060,7 @@ function Workflow() {
   const handleCreateBlockFromSelection = useCallback(async () => {
     const context = captureWorkflowOperationContext();
     try {
-      const { createUserBlockDraftV2 } = await import('../studio/userBlockCreationV2');
+      const { createUserBlockDraftV2, suggestNewBlockInterface } = await import('../studio/userBlockCreationV2');
       assertWorkflowOperationContext(context);
       const result = createUserBlockDraftV2({ nodes, edges }, userBlocks);
       if (!result.ok) {
@@ -1024,7 +1072,7 @@ function Workflow() {
         name: result.block.name,
         inputLabels: Object.fromEntries(result.block.inputs.map((port) => [port.id, port.label])),
         outputLabels: Object.fromEntries(result.block.outputs.map((port) => [port.id, port.label])),
-        exposedParamIds: new Set(result.block.exposedParams.map((input) => input.id)),
+        ...suggestNewBlockInterface(result),
       });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -1043,14 +1091,18 @@ function Workflow() {
     const block = {
       ...pendingBlock.result.block,
       name,
-      inputs: pendingBlock.result.block.inputs.map((port) => ({
-        ...port,
-        label: pendingBlock.inputLabels[port.id]?.trim() || port.label,
-      })),
-      outputs: pendingBlock.result.block.outputs.map((port) => ({
-        ...port,
-        label: pendingBlock.outputLabels[port.id]?.trim() || port.label,
-      })),
+      inputs: pendingBlock.result.block.inputs
+        .filter((port) => pendingBlock.exposedInputIds.has(port.id))
+        .map((port) => ({
+          ...port,
+          label: pendingBlock.inputLabels[port.id]?.trim() || port.label,
+        })),
+      outputs: pendingBlock.result.block.outputs
+        .filter((port) => pendingBlock.exposedOutputIds.has(port.id))
+        .map((port) => ({
+          ...port,
+          label: pendingBlock.outputLabels[port.id]?.trim() || port.label,
+        })),
       exposedParams: pendingBlock.result.block.exposedParams.filter((input) =>
         pendingBlock.exposedParamIds.has(input.id),
       ),
@@ -1133,15 +1185,17 @@ function Workflow() {
         } else {
           undo();
         }
+        saveActiveWorkflowTab(true);
       } else if (key === 'y') {
         event.preventDefault();
         redo();
+        saveActiveWorkflowTab(true);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [redo, undo]);
+  }, [redo, saveActiveWorkflowTab, undo]);
 
   return (
     <GraphConnectionSurface
@@ -1163,6 +1217,7 @@ function Workflow() {
         </div>
       ) : null}
       <ReactFlow
+        inert={canvasSuspended}
         nodeTypes={nodeTypes}
         nodes={
           blockDragTarget
@@ -1184,6 +1239,15 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
+        onBeforeDelete={async ({ nodes: removedNodes, edges: removedEdges }) => {
+          // React Flow normally emits edge removal before node removal, which
+          // would create two history entries for one keyboard action.
+          useFlowStore.getState().removeElements(
+            removedNodes.map((node) => node.id),
+            removedEdges.map((edge) => edge.id),
+          );
+          return false;
+        }}
         proOptions={{ hideAttribution: true }}
         // Composite execution children can be outside the viewport even while
         // their root is collapsed. Their retained graph edges still require
@@ -1224,7 +1288,9 @@ function Workflow() {
         nodesDraggable
         nodesConnectable
         elementsSelectable
-        elevateEdgesOnSelect
+        // Selection keeps its stroke emphasis without lifting a wire's wide
+        // hit path over unrelated node controls. XYFlow still layers child edges.
+        elevateEdgesOnSelect={false}
         className={`${canvasSuspended ? 'pointer-events-none opacity-0' : ''} ${isConnecting ? 'connecting' : ''} ${isConnectionValid !== null ? (isConnectionValid ? 'valid-connection' : 'invalid-connection') : ''}`}
       >
         <style>{reactFlowCss}</style>
@@ -1244,10 +1310,50 @@ function Workflow() {
             </marker>
           </defs>
         </svg>
+        {openStageEditors.length > 0 ? (
+          <Panel
+            position="top-center"
+            className="flex flex-wrap items-center gap-2 rounded-modiff-panel border border-modiff-border bg-modiff-panel p-1 shadow-modiff-panel"
+          >
+            {openStageEditors.map((stage) => (
+              <ModiffButton
+                key={stage.id}
+                tone="secondary"
+                size="compact"
+                aria-label={'Return to ' + stage.data.label}
+                onClick={() => setStageEditorOpen(stage.id, false)}
+              >
+                Done editing {stage.data.label}
+              </ModiffButton>
+            ))}
+          </Panel>
+        ) : null}
         <Panel
           position="top-left"
           className="rounded-modiff-compact border border-modiff-border bg-modiff-panel/90 shadow-modiff-panel"
         >
+          <ModiffIconButton
+            label="Fit workflow in view"
+            disabled={!nodesMeasured || canvasSuspended}
+            onClick={() => void fitView({ padding: 0.12, duration: 240 })}
+          >
+            <Scan size={16} />
+          </ModiffIconButton>
+          {nodes.some((node) => node.selected && !node.hidden) ? (
+            <ModiffIconButton
+              label="Focus selected stages"
+              onClick={() =>
+                void fitView({
+                  nodes: nodes.filter((node) => node.selected && !node.hidden),
+                  padding: 0.2,
+                  maxZoom: 1,
+                  duration: 240,
+                })
+              }
+            >
+              <ScanLine size={16} />
+            </ModiffIconButton>
+          ) : null}
           <ModiffIconButton
             label="Arrange graph"
             data-testid="arrange-graph"
@@ -1279,9 +1385,13 @@ function Workflow() {
         </ModiffDialog>
       ) : null}
       {canvasSuspended && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-3 py-2 text-sm font-semibold text-modiff-text shadow-modiff-node">
-            {workflowCanvasHydrated ? 'Building template graph' : 'Restoring workflow'}
+            {!workflowCanvasHydrated
+              ? 'Restoring workflow'
+              : canvasTransition?.type === 'task_graph_building'
+                ? 'Preparing workflow'
+                : 'Building template graph'}
           </div>
         </div>
       )}
@@ -1330,6 +1440,7 @@ function Workflow() {
             dataType={nodeSearchDataType}
             handleType={nodeSearchHandleType}
             origin={nodeSearchOrigin}
+            onSwitchOutput={switchSearchOutput}
           />
         </Suspense>
       ) : null}

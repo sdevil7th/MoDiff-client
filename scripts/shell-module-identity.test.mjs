@@ -67,3 +67,13 @@ test('the built shell has one versioned URL per emitted JavaScript and CSS modul
   assert.ok(references > 10, 'Inspect actual cross-chunk references, not an empty fixture.');
   assert.equal(versions.size, 1, 'All static, dynamic and preload references must share one shell identity.');
 });
+
+test('the production bundle retains the H3 editorial card independently of private generated examples', () => {
+  const name = 'assets/minimax-h3-old-town.card-poster.png';
+  const expected = readFileSync(new URL(`../public/${name}`, import.meta.url));
+  const emitted = readFileSync(new URL(`../dist/${name}`, import.meta.url));
+  assert.deepEqual(emitted, expected);
+  assert.equal(emitted.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.equal(emitted.readUInt32BE(16), 1536);
+  assert.equal(emitted.readUInt32BE(20), 864);
+});

@@ -5,6 +5,7 @@ import { createOperationStarter, type OperationStarter } from './operationAuthor
 import { createNodeFromRegistry } from './nodeFactory';
 import { groupNewOperationGraph } from './visualOperationGroups';
 import { workflowTaskCategory } from './workflowTaskBrowser';
+import { refreshPromptEnhancementParents } from '../studio/promptEnhancementAuthoring';
 
 const OUTPUTS = [
   { type: 'image', key: 'modules.Image.Preview', input: 'image' },
@@ -12,6 +13,25 @@ const OUTPUTS = [
   { type: 'video', key: 'modules.Video.ExportAsset', input: 'video' },
   { type: 'video_asset', key: 'modules.Video.ExportAsset', input: 'video' },
 ];
+const MEDIA_LOADERS = {
+  image: 'modules.Image.Load',
+  audio: 'modules.Audio.Load',
+  video: 'modules.Video.Load',
+};
+
+function seedVideoFrameRate(source: ReturnType<typeof createOperationStarter>['nodes'][number], target: typeof source) {
+  const rates = source.data.operationAuthoring?.operation.ports.filter(
+    (port) =>
+      port.direction === 'input' &&
+      !port.hidden &&
+      port.semanticName === 'frame_rate' &&
+      port.semantics?.kind === 'value',
+  );
+  const field = rates?.length === 1 ? source.data.params[rates[0]!.name] : undefined;
+  const value = field?.value ?? field?.default;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0 && target.data.params.fps)
+    target.data.params.fps = { ...target.data.params.fps, value };
+}
 
 /** Add ordinary typed output nodes, without turning metadata into execution permission. */
 export function createWorkflowDraft(starter: OperationStarter, registry: Record<string, NodeData>) {
@@ -19,9 +39,9 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
   const notices: string[] = [];
   const sources = [...graph.nodes];
   // Starters describe execution stages, not media pickers. Complete only fresh
-  // image/audio drafts, using exact required ports rather than guessing by task.
+  // media drafts, using exact required ports rather than guessing by task.
   // Same-role consumers share one source; masks/references keep separate sources.
-  if (['Image', 'Audio'].includes(workflowTaskCategory(starter.task))) {
+  if (['Image', 'Audio', 'Video'].includes(workflowTaskCategory(starter.task))) {
     const loaders = new Map<string, (typeof graph.nodes)[number]>();
     for (const required of starter.requiredInputs) {
       const target = sources.find(
@@ -30,7 +50,13 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
       const port = target?.data.operationAuthoring!.operation.ports.find(
         (item) => item.direction === 'input' && item.name === required.field,
       );
-      const kind = port?.types.includes('image') ? 'image' : port?.types.includes('audio') ? 'audio' : null;
+      const kind = port?.types.includes('image')
+        ? 'image'
+        : port?.types.includes('audio')
+          ? 'audio'
+          : port?.types.includes('video')
+            ? 'video'
+            : null;
       if (
         !target ||
         !port ||
@@ -40,7 +66,7 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
       )
         continue;
       const field = target.data.params[port.name];
-      const key = kind === 'image' ? 'modules.Image.Load' : 'modules.Audio.Load';
+      const key = MEDIA_LOADERS[kind];
       const output = registry[key]?.params[kind];
       if (
         !field ||
@@ -61,7 +87,7 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
       if (!loader) {
         loader = createNodeFromRegistry(key, registry, { x: 80, y: 800 + loaders.size * 600 })!;
         if (port.semanticName.includes('mask')) loader.data.label = 'Load Mask';
-        else if (!['image', 'images', 'audio', 'source_audio'].includes(port.semanticName))
+        else if (!['image', 'images', 'audio', 'source_audio', 'video', 'source_video'].includes(port.semanticName))
           loader.data.label = `Load ${String(field.label || port.semanticName.replace(/_/gu, ' '))}`;
         graph.nodes.push(loader);
         loaders.set(role, loader);
@@ -78,6 +104,53 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
   }
   let outputCount = 0;
   for (const node of sources) {
+    const available = node.data.operationAuthoring!.operation.ports.filter(
+      (port) =>
+        port.direction === 'output' &&
+        !port.hidden &&
+        port.semantics?.kind === 'media' &&
+        !graph.edges.some((edge) => edge.source === node.id && edge.sourceHandle === port.name),
+    );
+    const video = available.filter((port) => connectionTypes(port.types).includes('video'));
+    const audio = available.filter((port) => connectionTypes(port.types).includes('audio'));
+    if (video.length === 1 && audio.length === 1 && video[0]!.name !== audio[0]!.name) {
+      const key = 'modules.Video.ExportWithAudio';
+      const definition = registry[key];
+      const pair = [
+        [video[0]!, 'video'],
+        [audio[0]!, 'audio'],
+      ] as const;
+      if (
+        definition &&
+        pair.every(([port, input]) => {
+          const field = definition.params[input];
+          return (
+            field &&
+            !field.hidden &&
+            (field.display === 'input' || field.isInput) &&
+            connectionTypesAreCompatible(port.types, field.type)
+          );
+        })
+      ) {
+        const target = createNodeFromRegistry(key, registry, {
+          x: 80 + sources.length * 420,
+          y: 120 + outputCount * 340,
+        })!;
+        seedVideoFrameRate(node, target);
+        graph.nodes.push(target);
+        for (const [port, input] of pair)
+          graph.edges.push({
+            id: `edge-${nanoid()}`,
+            source: node.id,
+            sourceHandle: port.name,
+            target: target.id,
+            targetHandle: input,
+            type: 'default',
+          });
+        outputCount++;
+      } else
+        notices.push('A compatible joined video/audio exporter is unavailable. Connect both streams before export.');
+    }
     for (const port of node.data.operationAuthoring!.operation.ports) {
       if (
         port.direction !== 'output' ||
@@ -102,6 +175,7 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
         x: 80 + sources.length * 420,
         y: 120 + outputCount * 340,
       })!;
+      if (output.type === 'video' || output.type === 'video_asset') seedVideoFrameRate(node, target);
       graph.nodes.push(target);
       graph.edges.push({
         id: `edge-${nanoid()}`,
@@ -116,5 +190,14 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
   }
   if (!outputCount)
     notices.push('No compatible output node is registered. Connect a Preview, Save or Export node before running.');
-  return { graph: groupNewOperationGraph(graph), notices };
+  return {
+    graph: groupNewOperationGraph(
+      refreshPromptEnhancementParents(
+        graph,
+        starter.authoring,
+        sources.map((node) => node.id),
+      ),
+    ),
+    notices,
+  };
 }

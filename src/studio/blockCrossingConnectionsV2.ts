@@ -14,6 +14,28 @@ export function blockCrossingHandleV2(endpoint: BlockCrossingEndpointV2) {
   return `${PREFIX}${endpoint.direction}:${encodeURIComponent(endpoint.nodeId)}:${encodeURIComponent(endpoint.fieldOrPortId)}`;
 }
 
+/** A member port can be wired through a named boundary, a mirrored input, or its crossing handle. */
+export function blockMemberHasExternalWireV2(
+  instance: BlockInstanceV2,
+  nodeId: string,
+  fields: readonly string[],
+  direction: 'input' | 'output',
+  edges: readonly Edge[],
+) {
+  const handles = new Set(fields.map((fieldOrPortId) => blockCrossingHandleV2({ nodeId, fieldOrPortId, direction })));
+  const ports = instance.effectiveInterface.boundary[direction === 'input' ? 'inputs' : 'outputs'];
+  for (const port of ports) {
+    const bindings = [port.binding, ...(direction === 'input' ? (port.mirrorBindings ?? []) : [])];
+    if (bindings.some((binding) => binding.nodeId === nodeId && fields.includes(binding.fieldOrPortId)))
+      handles.add(port.portId);
+  }
+  return edges.some((edge) =>
+    direction === 'input'
+      ? edge.target === instance.instanceId && handles.has(edge.targetHandle ?? '')
+      : edge.source === instance.instanceId && handles.has(edge.sourceHandle ?? ''),
+  );
+}
+
 export function parseBlockCrossingHandleV2(handle: string | null | undefined): BlockCrossingEndpointV2 | null {
   if (!handle?.startsWith(PREFIX)) return null;
   const parts = handle.slice(PREFIX.length).split(':');

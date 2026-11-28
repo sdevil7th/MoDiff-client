@@ -1,6 +1,7 @@
 artifacts/
 config/template-assets.v1.json
 .pytest_cache/
+.playwright-cli/
 dist/
 node_modules/
 output/

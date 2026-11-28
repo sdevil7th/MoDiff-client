@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { dragWireToCanvas } from '../dragWireToCanvas';
 
 // Run against scripts/run_node_ux_backend.py, never an operator's normal state.
 const remote = process.env.MODIFF_NODE_UX_REPO;
@@ -9,6 +10,7 @@ const python = `from modiff.NodeBase import NodeBase
 MODIFF_RUNTIME_ROLE = "data"
 class Proof(NodeBase):
     label = "Local import proof"
+    searchTerms = ["initial phrase lookup"]
     params = {"text": {"type": "string", "display": "text", "default": "local proof"}, "result": {"type": "string", "display": "output"}}
     def execute(self, text):
         return {"result": text + " passed"}
@@ -32,22 +34,33 @@ test('detecting a Python file does not enable it; intentional Load and Reload do
     .last();
   await card.getByRole('button', { name: 'Load', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Reload', exact: true })).toBeVisible();
-  await writeFile(file, python.replace('Local import proof', 'Reloaded local proof'));
+  await writeFile(
+    file,
+    python
+      .replace('Local import proof', 'Reloaded local proof')
+      .replace('initial phrase lookup', 'refreshed phrase lookup'),
+  );
   await card.getByRole('button', { name: 'Reload', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('loaded');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByPlaceholder('Search nodes').fill(name);
+  await page.getByPlaceholder('Search nodes').fill('initial phrase lookup');
+  await expect(group.getByRole('button', { name: 'Reloaded local proof', exact: true })).toHaveCount(0);
+  await page.getByPlaceholder('Search nodes').fill('refreshed phrase lookup');
   await expect(group.getByRole('button', { name: 'Reloaded local proof', exact: true })).toBeVisible();
 });
 
 test.beforeEach(async ({ page }) => {
   page.setDefaultTimeout(15_000);
   test.skip(process.env.MODIFF_NODE_UX_ISOLATED !== '1', 'Requires explicitly isolated backend');
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated, null, {
+    timeout: 90_000,
+  });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
   const launcher = page.getByTestId('task-launcher');
   if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByTestId('left-tab-nodes').click();
+  if (!(await page.getByTestId('node-group-custom-nodes').isVisible()))
+    await page.getByTestId('left-tab-nodes').click();
   await expect(page.getByTestId('node-group-custom-nodes')).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveCount(0);
 });
@@ -63,6 +76,8 @@ for (const kind of ['local', 'hub', 'git'] as const) {
       await modal
         .getByLabel('Choose Python node file')
         .setInputFiles({ name: name + '.py', mimeType: 'text/x-python', buffer: Buffer.from(python) });
+      await expect(modal.getByText(`Selected: ${name}.py`)).toBeVisible();
+      await modal.getByRole('button', { name: 'Add node', exact: true }).click();
     } else {
       await modal.getByRole('button', { name: kind === 'hub' ? /Hugging Face/u : /^Git/u }).click();
       await modal
@@ -90,17 +105,14 @@ for (const kind of ['local', 'hub', 'git'] as const) {
     const socket = page.locator(
       `.react-flow__handle.source[data-handleid="${kind === 'local' ? 'result' : 'out_result'}"]`,
     );
-    const box = await socket.boundingBox();
-    const pane = await page.locator('.react-flow__pane').boundingBox();
-    if (!box || !pane) throw new Error('Missing canvas or output socket');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(pane.x + pane.width - 150, pane.y + pane.height - 120, { steps: 12 });
-    await page.mouse.up();
+    await dragWireToCanvas(page, socket);
     await page.getByLabel('Show unverified matches (generic or missing types)').check();
     await page.getByPlaceholder('Search nodes and Blocks').fill('Data Viewer');
     await page.getByRole('option').filter({ hasText: 'Data Viewer' }).first().click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
+    // This operator-reviewed extension has no automatic resource contract.
+    const automatic = page.getByRole('button', { name: 'Memory policy: Automatic. Click to switch.', exact: true });
+    if (await automatic.isVisible()) await automatic.click();
     await page.getByTestId('studio-run').click();
     await expect
       .poll(
@@ -203,7 +215,7 @@ test('native image attachment uses backend roles, keeps prompt and supports Undo
   await page.locator(`.react-flow__node[data-id="${ownerId}"] header`).first().click();
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
-  await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Add image / audio input…', exact: true }).click();
   const attachment = page.getByRole('dialog', { name: 'Add image / audio input', exact: true });
   await attachment.getByLabel('Media input role', { exact: true }).click();

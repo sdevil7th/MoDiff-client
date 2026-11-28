@@ -32,7 +32,9 @@ export function PreviewMediaFrame({
         border === 'dashed' ? 'border border-dashed border-modiff-border' : 'border border-modiff-border',
         kind === 'visual' &&
           (compact ? 'aspect-video max-h-28 min-h-20 w-full' : 'aspect-video max-h-[360px] min-h-32 w-full'),
-        kind === 'audio' && (compact ? 'min-h-12 w-full' : 'min-h-16 w-full'),
+        // Reserve a 54px native player, the frame border and its vertical padding
+        // while the preview renderer or the selected recording is still loading.
+        kind === 'audio' && (compact ? 'min-h-14 w-full px-2' : 'min-h-[72px] w-full p-2'),
         kind === 'text' &&
           (compact ? 'max-h-32 min-h-16 w-full overflow-auto' : 'max-h-72 min-h-24 w-full overflow-auto'),
         className,

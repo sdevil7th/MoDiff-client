@@ -57,3 +57,27 @@ test('idle and unknown allocator status cannot produce an invented paused explan
     assert.equal(snapshot.accelerators[0].allocatedBytes, 1024);
   }
 });
+
+test('compact gauge names the highest measured resource and respects shared GPU accessibility', () => {
+  const snapshot = resources.parseRuntimeResourceSnapshot({
+    activeDevice: 'cuda:0',
+    system: { ramPercent: 12 },
+    accelerators: [
+      {
+        device: 'cuda:0',
+        memoryKind: 'shared',
+        memoryTotalBytes: 2,
+        memoryUsedBytes: 1,
+        accessibleMemoryTotalBytes: 100,
+        accessibleMemoryFreeBytes: 91,
+        dedicatedMemoryTotalBytes: 2,
+        dedicatedMemoryFreeBytes: 1,
+      },
+    ],
+    storage: { destinations: { modelCache: { path: '/models', freeBytes: 240 }, untrusted: { path: '/other' } } },
+  });
+  assert.equal(snapshot.accelerators[0].accessibleMemoryTotalBytes, 100);
+  assert.deepEqual(resources.runtimeResourceMetric(snapshot), { label: 'RAM', value: 12 });
+  assert.equal(resources.runtimeResourcePressure(resources.parseRuntimeResourceSnapshot({})), null);
+  assert.deepEqual(snapshot.storage.destinations, { modelCache: { path: '/models', freeBytes: 240 } });
+});

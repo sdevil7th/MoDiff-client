@@ -1,0 +1,254 @@
+import assert from 'node:assert/strict';
+import { dirname, join, resolve } from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { verifyConditioningModels } from './control-inpaint-evidence.mjs';
+import { selectBackendRuntimeFingerprintEvidence } from './live-proof-provenance.mjs';
+import { verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
+import { readCanonicalEvidenceFile, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
+import { integratedControlUploadFormat, verifySavedControlImageInputs } from './saved-control-image-evidence.mjs';
+
+const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
+const root = process.env.MODIFF_SAVED_CONTROL_EVIDENCE_DIR;
+const integratedRoot = process.env.MODIFF_SAVED_INTEGRATED_CONTROL_EVIDENCE_DIR;
+const revisedFluxRoot = process.env.MODIFF_REVISED_FLUX_CONTROL_EVIDENCE_DIR;
+const cases = [
+  ['linux-sd15-control-fixed', 'StableDiffusionPipeline:control_image', 'ControlNetModel', 'qa0wL-hE_WwQ'],
+  [
+    'linux-hunyuan-control-rgb',
+    'HunyuanDiTControlNetPipeline:control_image',
+    'HunyuanDiT2DControlNetModel',
+    '9FZlS44JVBae',
+  ],
+  ['linux-qwen-control-cabin', 'QwenImageControlNetPipeline:control_image', 'QwenImageControlNetModel', 'G2OjPY6F4u5L'],
+  ['linux-sd15-pag-control-fixed', 'StableDiffusionPAGPipeline:control_image', 'ControlNetModel', 'npMHx5LR2lWq'],
+  [
+    'linux-sdxl-controlnet-checked',
+    'StableDiffusionXLControlNetPipeline:control_image',
+    'ControlNetModel',
+    'UlftQtP0nIJk',
+  ],
+  ['linux-sdxl-pag-cabin-verified', 'StableDiffusionXLPAGPipeline:control_image', 'ControlNetModel', 'MVsWymJP8z5O'],
+  ['linux-canny-adapter-fixed', 'StableDiffusionXLAdapterPipeline:control_image', 'T2IAdapter', 'gWs5V9Dz1NY-'],
+  ['windows-sd15-control-print', 'StableDiffusionPipeline:control_edit_image', 'ControlNetModel', 'jlVMYFMnS--d'],
+  ['windows-sd15-control-inpaint-fixed', 'StableDiffusionPipeline:control_inpaint', 'ControlNetModel', '6TOEAhgF-bhi'],
+  [
+    'windows-sd15-pag-control-inpaint-fixed',
+    'StableDiffusionPAGPipeline:control_inpaint',
+    'ControlNetModel',
+    'Hujzhp32JY-C',
+  ],
+];
+
+for (const [slug, workflowId, taskId, strength] of [
+  ['canny-black-ink', 'FluxCannyPipeline:control_edit_image', '4gv8bcow7Kk7', 1],
+  ['depth-paint', 'FluxDepthPipeline:control_edit_image', 'GSYDNu2yTddj', 0.64],
+]) {
+  test(
+    `the revised ${slug} capture binds both original uploads and its consumed strength`,
+    { skip: !revisedFluxRoot },
+    async () => {
+      const evidencePath = resolve(revisedFluxRoot, `exact-${slug}-evidence`, 'evidence.json');
+      const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+        clientRoot,
+        backendRoot,
+        workflowId,
+        evidencePath,
+      });
+      assert.equal(evidence.format, integratedControlUploadFormat);
+      assert.equal(receipt.taskId, taskId);
+      assert.equal(receipt.conditioningModel.source, 'integrated_checkpoint');
+      assert.equal(receipt.guideBinding.sha256, evidence.inputs[0].file.sha256);
+      assert.equal(receipt.inputBinding.sha256, evidence.inputs[1].file.sha256);
+      assert.equal(receipt.observationLimits.originalUploadResponsesObserved, true);
+      assert.equal(receipt.qualificationClaims.rightsApproved, false);
+      const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+      const graph = read(evidence.graphRequest);
+      const { latestOutput: output } = read(evidence.outputPackage);
+      const sampler = output.resolvedExecutionInputs.nodes.find(({ action }) => action === 'ControlEdit');
+      assert.equal(sampler.fields.strength.value, strength);
+      sampler.fields.strength.value = 0.8;
+      assert.throws(
+        () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId, evidence.format),
+        /Saved control sampler fields differ/u,
+      );
+    },
+  );
+}
+
+test('the retained native host input witness is scoped to the task, output store and exact source files', () => {
+  const sourceValue = '@data/images/guide.png';
+  const sha256 = 'd'.repeat(64);
+  const inputs = [{ sourceValue, file: { bytes: 41, sha256 } }];
+  const task = { taskId: 'closed-task', persistedOutputSha256: '8'.repeat(64) };
+  const witness = { ...task, files: [{ sourceValue, byteSize: 41, sha256 }] };
+  verifyRetainedHostImageFiles(witness, { ...task, inputs });
+  assert.throws(
+    () => verifyRetainedHostImageFiles({ ...witness, taskId: 'wrong' }, { ...task, inputs }),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => verifyRetainedHostImageFiles({ ...witness, persistedOutputSha256: '0'.repeat(64) }, { ...task, inputs }),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedHostImageFiles({ ...witness, files: [{ ...witness.files[0], byteSize: 42 }] }, { ...task, inputs }),
+    /Original host inputs differ/u,
+  );
+});
+
+for (const [workflowId, variable] of [
+  ['StableDiffusionXLControlNetPipeline:control_edit_image', 'MODIFF_SDXL_CONTROL_BOATHOUSE_EVIDENCE'],
+  ['StableDiffusionXLPAGPipeline:control_edit_image', 'MODIFF_SDXL_PAG_PORT_HOLE_EVIDENCE'],
+  ['StableDiffusionXLPAGPipeline:control_edit_image', 'MODIFF_SDXL_PAG_TIERED_GLASS_EVIDENCE'],
+]) {
+  const fixture = process.env[variable];
+  test(workflowId + ' binds its source, guide and native edge preparation', { skip: !fixture }, async () => {
+    const evidencePath = resolve(fixture);
+    const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId,
+      evidencePath,
+    });
+    const [guide, source] = evidence.inputs;
+    assert.equal(receipt.inputBinding.sha256, source.file.sha256);
+    assert.equal(receipt.guideBinding.sha256, guide.file.sha256);
+    const loadFieldsOnly = variable === 'MODIFF_SDXL_PAG_TIERED_GLASS_EVIDENCE';
+    assert.equal(receipt.observationLimits.nativeEdgeMapObserved, !loadFieldsOnly);
+    assert.equal(receipt.observationLimits.processedControlPixelsObserved, false);
+    if (workflowId.startsWith('StableDiffusionXLPAG')) {
+      assert.equal(receipt.observationLimits.effectivePagSettingsObserved, false);
+    }
+    const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+    const graph = read(evidence.graphRequest);
+    const { latestOutput: output } = read(evidence.outputPackage);
+    if (loadFieldsOnly) {
+      assert.equal(receipt.observationLimits.sourceByteWitness, 'native-load-and-upload-with-typed-wire');
+      const load = output.resolvedExecutionInputs.nodes.find(({ nodeId }) => nodeId === receipt.guideBinding.nodeId);
+      load.fields.source_hashes.value[0] = 'b'.repeat(64);
+    } else {
+      const canny = output.resolvedExecutionInputs.nodes.find(({ action }) => action === 'Canny');
+      canny.mediaEvidence.inputs.image[0].sha256 = 'b'.repeat(64);
+    }
+    assert.throws(
+      () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId, evidence.format),
+      loadFieldsOnly ? /Saved image load fields differ for guide/u : /Canny guide bytes differ/u,
+    );
+  });
+}
+
+for (const [slug, workflowId, taskId] of [
+  ['linux-flux-canny-backdrop-mask-math', 'FluxCannyPipeline:control_inpaint', '6jBwgHT1CJzd'],
+  ['linux-flux-depth-boat-patch-math', 'FluxDepthPipeline:control_inpaint', 'fzHPC9ZCZoH-'],
+  ['linux-flux-canny-ink-cube-math', 'FluxCannyPipeline:control_edit_image', 'NSXOcA60DY5Q'],
+  ['linux-flux-depth-boat-paint-math', 'FluxDepthPipeline:control_edit_image', 'uJXjYkrtPtwr'],
+]) {
+  test('recovers the original integrated control run for ' + workflowId, { skip: !integratedRoot }, async () => {
+    const evidencePath = resolve(integratedRoot, slug, 'exact-native-evidence.json');
+    const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId,
+      evidencePath,
+    });
+    assert.equal(receipt.taskId, taskId);
+    assert.equal(receipt.conditioningModel.source, 'integrated_checkpoint');
+    assert.equal(receipt.observationLimits.originalUploadResponsesObserved, false);
+    assert.equal(receipt.observationLimits.hostFilesMatchedNativeLoads, true);
+    assert.equal(receipt.observationLimits.processedControlPixelsObserved, false);
+    assert.equal(receipt.qualificationClaims.rightsApproved, false);
+    const [guide, source, mask] = evidence.inputs;
+    assert.equal(receipt.guideBinding.sha256, guide.file.sha256);
+    assert.equal(receipt.inputBinding.sha256, source.file.sha256);
+    assert.equal(receipt.maskBinding?.sha256, mask?.file.sha256);
+    const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+    const graph = read(evidence.graphRequest);
+    const { latestOutput: output } = read(evidence.outputPackage);
+    const sampler = Object.values(graph.nodes).find(({ action }) => /^Control(?:Edit|Inpaint)$/u.test(action));
+    sampler.params.control_image.sourceId = sampler.params.image.sourceId;
+    assert.throws(
+      () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId),
+      assert.AssertionError,
+    );
+  });
+}
+
+for (const [slug, workflowId, componentClass, taskId] of cases) {
+  test('recovers the historical guide and verified sampler for ' + workflowId, { skip: !root }, async () => {
+    const evidencePath = resolve(root, slug, 'exact-native-evidence.json');
+    const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId,
+      evidencePath,
+    });
+    assert.equal(receipt.proofKind, 'real_backend_input_bound_model_variant');
+    assert.equal(receipt.taskId, taskId);
+    assert.equal(receipt.observationLimits.processedControlPixelsObserved, false);
+    assert.equal(receipt.qualificationClaims.rightsApproved, false);
+    assert.equal((receipt.guideBinding ?? receipt.inputBinding).sha256, evidence.inputs[0].file.sha256);
+    const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+    const graph = read(evidence.graphRequest);
+    const { latestOutput: output } = read(evidence.outputPackage);
+    const inputs = evidence.inputs;
+    const [input] = inputs;
+    const sampler = (api) =>
+      Object.values(api.nodes).find(({ action }) =>
+        ['ControlGenerate', 'ControlEdit', 'ControlInpaint'].includes(action),
+      );
+    const disconnected = structuredClone(graph);
+    sampler(disconnected).params.control_image.sourceKey = 'width';
+    assert.throws(() => verifySavedControlImageInputs(disconnected, output, inputs, workflowId), assert.AssertionError);
+
+    const changedGuide = { ...input, file: { ...input.file, sha256: '0'.repeat(64) } };
+    assert.throws(
+      () => verifySavedControlImageInputs(graph, output, [changedGuide, ...inputs.slice(1)], workflowId),
+      assert.AssertionError,
+    );
+
+    const changedSettings = structuredClone(output);
+    const action = sampler(graph).action;
+    const fields = changedSettings.resolvedExecutionInputs.nodes.find((row) => row.action === action).fields;
+    const guidance = fields.true_cfg_scale ?? fields.guidance_scale;
+    guidance.value += 1;
+    assert.throws(
+      () => verifySavedControlImageInputs(graph, changedSettings, inputs, workflowId),
+      /Saved control sampler fields differ/u,
+    );
+    if (inputs.length > 1) {
+      const [guide, source, ...other] = inputs;
+      assert.equal(receipt.inputBinding.sha256, source.file.sha256);
+      assert.throws(
+        () => verifySavedControlImageInputs(graph, output, [source, guide, ...other], workflowId),
+        /Saved image bytes differ for guide/u,
+      );
+    }
+    if (inputs.length === 3) {
+      assert.equal(receipt.maskBinding.sha256, inputs[2].file.sha256);
+      assert.equal(receipt.maskBinding.decodedImage.mode, 'L');
+    }
+
+    const completed = read(evidence.graphCompleted);
+    completed.runtimeHints.controlledArtifacts[0].componentClass = 'OtherComponent';
+    const loader = Object.values(graph.nodes).find(({ action }) => action === 'LoadPipeline').params;
+    assert.throws(
+      () =>
+        verifyConditioningModels({
+          loader,
+          target: receipt,
+          pipelineClass: loader.pipeline_class.value,
+          componentClass,
+          conditioningKind: loader.conditioning_kind.value,
+          componentParameter: componentClass === 'T2IAdapter' ? 'adapter' : 'controlnet',
+          completed,
+          hints: output.apiGraphSnapshot.runtimeHints,
+          runtime: selectBackendRuntimeFingerprintEvidence([read(evidence.runDetail).task.runtimeFingerprint]),
+          observations: evidence.modelObservations.map(read),
+        }),
+      /OtherComponent/u,
+    );
+  });
+}

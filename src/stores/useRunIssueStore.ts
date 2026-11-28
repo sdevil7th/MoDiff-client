@@ -1,17 +1,19 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import type { RunReadinessIssue, RuntimeFailure, StudioRunContext, WorkflowTab } from '../studio/types';
+import type { RunRecoveryOrigin } from '../studio/runRecovery';
 
 type RunIssueState = {
   issues: RunReadinessIssue[];
   issueDialogOpen: boolean;
+  issueOrigin: RunRecoveryOrigin | null;
   failure: RuntimeFailure | null;
   failureDialogOpen: boolean;
   failuresByTaskId: Record<string, RuntimeFailure>;
 };
 
 type RunIssueActions = {
-  showIssues: (issues: RunReadinessIssue[]) => void;
+  showIssues: (issues: RunReadinessIssue[], origin: RunRecoveryOrigin) => void;
   closeIssues: () => void;
   clearIssues: () => void;
   reportFailure: (
@@ -75,13 +77,14 @@ function withBoundedFailure(failuresByTaskId: Record<string, RuntimeFailure>, ta
 export const useRunIssueStore = create<RunIssueState & RunIssueActions>((set) => ({
   issues: [],
   issueDialogOpen: false,
+  issueOrigin: null,
   failure: null,
   failureDialogOpen: false,
   failuresByTaskId: {},
 
-  showIssues: (issues) => set({ issues, issueDialogOpen: true }),
+  showIssues: (issues, origin) => set({ issues, issueDialogOpen: true, issueOrigin: origin }),
   closeIssues: () => set({ issueDialogOpen: false }),
-  clearIssues: () => set({ issues: [], issueDialogOpen: false }),
+  clearIssues: () => set({ issues: [], issueDialogOpen: false, issueOrigin: null }),
   reportFailure: (failure, open = true) =>
     set((state) => {
       const nextFailure: RuntimeFailure = {

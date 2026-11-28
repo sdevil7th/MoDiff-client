@@ -360,6 +360,38 @@ test('connected built-in loaders need files only when supplying declared require
   }
 });
 
+test('required files name their Source Image and Mask while preserving custom names and targets', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const [role, caption] of [
+    ['loadImage', 'Source Image'],
+    ['loadMask', 'Mask'],
+  ]) {
+    const f = fixture('', { required: false });
+    f.instance.effectiveGraph.nodes = [{ nodeId: 'loadMask' }];
+    Object.assign(f.leaf.data, { label: 'Load Image', studioRole: role });
+    Object.assign(f.leaf.data.params.file, { required: true, label: 'file' });
+    const checks = [
+      [(visible) => inspectRequiredGraphInputs(visible, f.graph, {}), 'needs file before running.'],
+      [(visible) => inspect(visible, f.graph), 'needs a file before running.'],
+    ];
+    const before = structuredClone(f);
+    for (const [check, message] of checks) {
+      const [visible] = check([...f.roots, f.leaf]);
+      assert.equal(visible.message, caption + ' ' + message);
+      assert.equal(visible.nodeId, f.leaf.id);
+      assert.equal(visible.fieldId, 'file');
+      const [collapsed] = check(f.roots);
+      assert.equal(collapsed.message, visible.message);
+      assert.equal(collapsed.nodeId, f.root.id);
+      assert.equal(collapsed.fieldId, undefined);
+    }
+    assert.deepEqual(f, before);
+    f.leaf.data.label = 'My studio reference';
+    for (const [check, message] of checks)
+      assert.equal(check([...f.roots, f.leaf])[0].message, 'My studio reference ' + message);
+  }
+});
+
 test('required model inputs use current registry contracts inside collapsed Blocks', async () => {
   const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
   const { roots, graph, leaf, instance } = fixture('');
@@ -376,7 +408,14 @@ test('required model inputs use current registry contracts inside collapsed Bloc
   assert.equal(missing.length, 1);
   assert.equal(missing[0].blocking, true);
   assert.equal(missing[0].nodeId, 'root');
-  const source = { id: 'loader', data: { params: { models: { type: 'models', display: 'output' } } } };
+  const source = {
+    id: 'loader',
+    data: {
+      module: 'modules.Test',
+      action: 'Load',
+      params: { models: { type: 'models', display: 'output' } },
+    },
+  };
   graph.nodes.push(source);
   graph.edges.push({ id: 'wire', source: source.id, sourceHandle: 'models', target: leaf.id, targetHandle: 'models' });
   assert.deepEqual(inspectRequiredGraphInputs(roots, graph, registry), []);
@@ -386,5 +425,108 @@ test('required model inputs use current registry contracts inside collapsed Bloc
   for (const literal of [0, false, 'provided']) {
     leaf.data.params.models.value = literal;
     assert.deepEqual(inspectRequiredGraphInputs(roots, { nodes: [leaf], edges: [] }, registry), []);
+  }
+});
+
+test('structural stage file aliases do not mask valid nested loaders or duplicate their missing-input errors', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const kind of ['image', 'audio', 'video']) {
+    const f = fixture([`@data/${kind}/first`, `@data/${kind}/second`]);
+    f.instance.effectiveGraph.nodes = [{ nodeId: 'loadMask' }];
+    const container = {
+      id: 'stage-container',
+      data: {
+        type: 'group',
+        module: '',
+        action: 'stage-container',
+        label: `${kind} input`,
+        params: {
+          'load:file': { display: 'filebrowser', type: 'str', value: [], required: true },
+        },
+      },
+    };
+    f.graph.nodes.push(container);
+    const before = structuredClone(f);
+    assert.deepEqual(inspectRequiredGraphInputs(f.roots, f.graph, {}), [], kind);
+    assert.deepEqual(f, before, 'Readiness must not repair containers or rewrite selected files.');
+    f.leaf.data.params.file.value = [];
+    const missing = inspectRequiredGraphInputs(f.roots, f.graph, {});
+    assert.equal(missing.length, 1, kind);
+    assert.equal(missing[0].nodeId, 'root');
+    assert(missing[0].id.startsWith(`required-input:${f.leaf.id}:`));
+    container.data.params.file_out = { display: 'output', type: 'str' };
+    f.graph.edges.push({ source: container.id, sourceHandle: 'file_out', target: f.leaf.id, targetHandle: 'file' });
+    assert.equal(
+      inspectRequiredGraphInputs(f.roots, f.graph, {}).length,
+      1,
+      'A structural alias cannot supply a real file.',
+    );
+    f.leaf.data.uiState = { disabled: true };
+    assert.deepEqual(inspectRequiredGraphInputs(f.roots, f.graph, {}), [], kind);
+  }
+});
+
+test('selected backend block contracts own required inputs; authored hints and computed selectors do not', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  const key = 'modules.ModularDiffusers.WorkflowImageEncode';
+  const registry = {
+    [key]: {
+      params: {
+        image: { type: 'image', display: 'input', required: true },
+        state_in: { type: 'modular_workflow_state', display: 'input', required: true },
+      },
+    },
+  };
+  const node = {
+    id: 'encode',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'WorkflowImageEncode',
+      params: {
+        pipeline_class: { value: 'SelectedPipeline' },
+        workflow_id: { value: 'image_conditioned' },
+        block_path: { value: 'vae_encoder' },
+        image: { ...registry[key].params.image, required: false },
+        state_in: { ...registry[key].params.state_in, value: 'sealed state' },
+      },
+    },
+  };
+  const operation = {
+    nodeKey: key,
+    pipelineClass: 'SelectedPipeline',
+    decomposition: 'block',
+    binding: {
+      pipelineClass: 'SelectedPipeline',
+      values: {
+        pipeline_class: 'SelectedPipeline',
+        workflow_id: 'image_conditioned',
+        block_path: 'vae_encoder',
+      },
+    },
+    ports: [{ name: 'state_in', direction: 'input', required: true, hidden: false, types: ['modular_workflow_state'] }],
+  };
+  const graph = { nodes: [node], edges: [] };
+  const issues = (operations = [operation]) => inspectRequiredGraphInputs([node], graph, registry, operations);
+  assert.deepEqual(issues(), [], 'a prepared-state encoder must not require a nonexistent direct image socket');
+  assert.deepEqual(issues([operation, structuredClone(operation)]), [], 'identical declarations across tasks agree');
+  node.data.params.state_in.value = undefined;
+  assert.deepEqual(
+    issues().map((i) => i.id),
+    ['required-input:encode:state_in'],
+  );
+  node.data.params.state_in.value = 'sealed state';
+  const direct = structuredClone(operation);
+  direct.ports.push({ name: 'image', direction: 'input', required: true, hidden: false, types: ['image'] });
+  assert.equal(issues([direct]).length, 1, 'direct-image encoders remain required');
+  assert.equal(issues([operation, direct]).length, 1, 'conflicting declarations fall back conservatively');
+  node.data.operationAuthoring = { operation };
+  assert.equal(issues([]).length, 1, 'saved operation hints cannot override the backend registry');
+  for (const field of ['pipeline_class', 'workflow_id', 'block_path']) {
+    node.data.params[field].isConnected = true;
+    assert.equal(issues().length, 1, `computed ${field} is not a literal selection`);
+    delete node.data.params[field].isConnected;
+    graph.edges = [{ source: 'computed', target: node.id, targetHandle: field }];
+    assert.equal(issues().length, 1);
+    graph.edges = [];
   }
 });

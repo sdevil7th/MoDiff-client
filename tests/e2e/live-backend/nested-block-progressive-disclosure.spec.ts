@@ -167,7 +167,7 @@ test('fresh Qwen Block expands progressively and every visible upstream placemen
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
 
-  const advancedWorkflow = page.getByRole('button', { name: /Advanced workflow/u });
+  const advancedWorkflow = page.getByRole('button', { name: /Empty workflow/u });
   if (await advancedWorkflow.isVisible({ timeout: 1000 }).catch(() => false)) await advancedWorkflow.click();
   await page.getByTestId('topbar-new-workflow').click();
   await expect(advancedWorkflow).toBeVisible();
@@ -175,7 +175,7 @@ test('fresh Qwen Block expands progressively and every visible upstream placemen
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible({ timeout: 1000 }).catch(() => false))) await page.getByTestId('left-tab-nodes').click();
   await search.fill('Qwen Image — Text To Image');
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const group = page.getByTestId('node-group-Diffusers-Blocks');
   const disclosure = group.getByRole('button').first();
   if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
   const row = group
@@ -505,12 +505,12 @@ test('an unchanged legacy Qwen text-to-image snapshot hides unselected optional 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
 
-  const advancedWorkflow = page.getByRole('button', { name: /Advanced workflow/u });
+  const advancedWorkflow = page.getByRole('button', { name: /Empty workflow/u });
   if (await advancedWorkflow.isVisible({ timeout: 1000 }).catch(() => false)) await advancedWorkflow.click();
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible({ timeout: 1000 }).catch(() => false))) await page.getByTestId('left-tab-nodes').click();
   await search.fill('Qwen Image — Text To Image');
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const group = page.getByTestId('node-group-Diffusers-Blocks');
   const disclosure = group.getByRole('button').first();
   if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
   const row = group

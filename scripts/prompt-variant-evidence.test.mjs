@@ -1,0 +1,1031 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { canonicalJsonHash } from './canonical-json.mjs';
+import { canonicalGraphIdentity, directImagePromptRoutes } from './live-proof-provenance.mjs';
+import { verifyRetainedStructuredText } from './retained-structured-text-evidence.mjs';
+import {
+  bindPromptVariant,
+  validateNativeVideoDelivery,
+  validatePromptVariantText,
+  validatePromptVariantVideo,
+  validateSampledCpuWorkerMemory,
+} from './prompt-variant-evidence.mjs';
+import {
+  exportCanonicalWorkflowGraphs,
+  readCanonicalEvidenceFile,
+  readCanonicalWorkflowEvidence,
+} from './release-contract-core.mjs';
+
+const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
+const digest = (value) => createHash('sha256').update(value).digest('hex');
+
+const subwayDefaultEvidence = process.env.MODIFF_WAN_SUBWAY_DEFAULT_EVIDENCE;
+test(
+  'the original Subway run verifies both pinned models and its unchanged template',
+  { skip: !subwayDefaultEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'WanTI2VPipeline:text_to_video',
+      evidencePath: subwayDefaultEvidence,
+    });
+    assert.equal(receipt.taskId, 'q1OmLM7R0ueK');
+    assert.equal(receipt.sourceTemplateId, 'wan_22_ti2v_5b_seed_vault');
+    assert.equal(receipt.canonicalDefaultsExecuted, true);
+    assert.deepEqual(
+      receipt.modelSet.map(({ repoId }) => repoId),
+      ['ACE-Step/acestep-v15-xl-turbo-diffusers', 'Wan-AI/Wan2.2-TI2V-5B-Diffusers'],
+    );
+    assert.equal(receipt.decodedOutput.frames, 121);
+    assert.ok(receipt.decodedOutput.audio);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
+const miseEvidence = process.env.MODIFF_WAN_A14B_DEFAULT_OPENING_EVIDENCE;
+test(
+  'Final Mise en Place binds the original WebP in the current generic Generate recipe',
+  { skip: !miseEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'WanImageToVideoPipeline:image_to_video',
+      evidencePath: miseEvidence,
+    });
+    assert.equal(receipt.taskId, 'JFza3SGd1h5j');
+    assert.equal(receipt.sourceTemplateId, 'wan_22_i2v_seed_vault');
+    assert.equal(receipt.inputBinding.sha256, '0afd006835683f29a96f60652958fe696713da2ac15bf75170e0e87b96860e15');
+    assert.deepEqual(receipt.inputBinding.decodedImage, { width: 1536, height: 1024, mode: 'RGB' });
+    assert.equal(receipt.decodedOutput.frames, 81);
+    assert.equal(receipt.observationLimits.openingImageLoadFieldsObserved, true);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
+const framepackEvidence = process.env.MODIFF_FRAMEPACK_LANTERN_EVIDENCE;
+test(
+  'FramePack binds the three installed snapshots and reports its window-rounded delivery',
+  { skip: !framepackEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'HunyuanVideoFramepackPipeline:image_to_video',
+      evidencePath: framepackEvidence,
+    });
+    assert.equal(receipt.taskId, 'BvrI_dBb3QPQ');
+    assert.equal(receipt.modelSet.length, 3);
+    assert.equal(receipt.observationLimits.requestedFrames, 81);
+    assert.equal(receipt.observationLimits.nativeDeliveredFrames, 109);
+    assert.equal(receipt.decodedOutput.frames, 109);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
+for (const [workflowId, environment, proofKind, output] of [
+  [
+    'StableAudioPipeline:text_to_audio',
+    'MODIFF_STABLE_AUDIO_EVIDENCE',
+    'real_backend_prompt_bound_model_variant',
+    { kind: 'audio', durationSeconds: 30, sampleRate: 48000, channels: 2 },
+  ],
+  [
+    'StableVideoDiffusionPipeline:image_to_video',
+    'MODIFF_STABLE_VIDEO_EVIDENCE',
+    'real_backend_input_bound_model_variant',
+    { kind: 'video', width: 1024, height: 576, fps: 7, frames: 25 },
+  ],
+]) {
+  const evidencePath = process.env[environment];
+  test(`original ${workflowId} capture binds the native output`, { skip: !evidencePath }, async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({ clientRoot, backendRoot, workflowId, evidencePath });
+    assert.equal(receipt.proofKind, proofKind);
+    for (const [key, value] of Object.entries(output)) assert.equal(receipt.decodedOutput[key], value);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+    if (output.kind === 'video') assert.match(receipt.inputBinding.sha256, /^[a-f0-9]{64}$/u);
+  });
+}
+
+test('joint audio-video evidence keeps native LTX audio separate from the fitted soundtrack contract', () => {
+  const shape = { width: 768, height: 512, frames: 81, fps: 24 };
+  const item = {
+    mediaMetadata: {
+      source: 'encoded-file',
+      width: 768,
+      height: 512,
+      frame_count: 81,
+      fps: 24,
+      duration_seconds: 3.38,
+    },
+  };
+  const decoded = {
+    ...shape,
+    durationSeconds: 3.38,
+    uniqueFrameRatio: 1,
+    codecName: 'h264',
+    hasAudio: true,
+    embeddedAudio: {
+      sourceSampleRate: 24000,
+      channels: 2,
+      clippedSampleRatio: 0,
+      peakAmplitude: 0.01,
+      silenceRatio: 0.95,
+      hash: 'sha256:decoded-audio-pcm-s16le-48000-stereo:' + 'a'.repeat(64),
+    },
+  };
+  const joint = { ...shape, nativeJointAudio: true };
+  assert.deepEqual(validateNativeVideoDelivery(decoded, item, joint).audio, decoded.embeddedAudio);
+  assert.throws(() => validateNativeVideoDelivery({ ...decoded, hasAudio: false }, item, joint));
+  const wrongRate = { ...decoded, embeddedAudio: { ...decoded.embeddedAudio, sourceSampleRate: 48000 } };
+  assert.throws(() => validateNativeVideoDelivery(wrongRate, item, joint));
+  assert.throws(() => validateNativeVideoDelivery(wrongRate, item, { ...shape, soundtrack: true }));
+});
+
+test('a CPU capture measures sampled worker memory within its exact original task interval', () => {
+  const source = { fingerprint: 'original', gitCommit: null, files: [{}] };
+  const worker = {
+    origin: 'http://127.0.0.1:8088',
+    pid: 123,
+    source: { fingerprint: source.fingerprint, gitCommit: null, fileCount: 1 },
+  };
+  const task = { started_at: 9.5, completed_at: 11.5, runtimeMeasurement: { processRssBytes: 100 } };
+  const samples = [
+    { unixTime: 9, hostAvailable: 1000, workerRss: 999, accelerator: '{}' },
+    { unixTime: 10, hostAvailable: 1000, workerRss: 180, accelerator: '{}' },
+    { unixTime: 11, hostAvailable: 1000, workerRss: 120, accelerator: '{}' },
+    { unixTime: 12, hostAvailable: 1000, workerRss: 999, accelerator: '{}' },
+  ];
+  const capture = (entries) => Buffer.from(entries.map((entry) => JSON.stringify(entry)).join('\n'));
+  assert.equal(validateSampledCpuWorkerMemory(capture(samples), worker, source, task), 180);
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(samples.slice(0, -1)), worker, source, task));
+  assert.throws(() =>
+    validateSampledCpuWorkerMemory(capture(samples), worker, { ...source, fingerprint: 'other' }, task),
+  );
+  const contradicted = { ...task, runtimeMeasurement: { processRssBytes: 300 } };
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(samples), worker, source, contradicted));
+  const unordered = [samples[0], samples[2], samples[1], samples[3]];
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(unordered), worker, source, task));
+});
+
+test('a prompt variant fills a single empty literal and keeps all other fields and connections', () => {
+  const profile = {
+    chain: [
+      ['loader', 'Fixture', 'Load', 'device'],
+      ['generator', 'Fixture', 'Generate', 'prompt'],
+      ['preview', 'Fixture', 'Preview', ''],
+    ],
+  };
+  const baseline = {
+    sid: 'fixture',
+    paths: [['a', 'b', 'c']],
+    nodes: {
+      a: { module: 'Fixture', action: 'Load', params: { device: { value: 'cuda:0' } } },
+      b: {
+        module: 'Fixture',
+        action: 'Generate',
+        params: { prompt: { value: '' }, model: { display: 'input', sourceId: 'a', sourceKey: 'model' } },
+      },
+      c: {
+        module: 'Fixture',
+        action: 'Preview',
+        params: { input: { display: 'input', sourceId: 'b', sourceKey: 'result' } },
+      },
+    },
+  };
+  const creator = structuredClone(baseline);
+  creator.nodes.b.params.prompt.value = 'One example';
+  const submitted = { ...structuredClone(creator), runtimeHints: {} };
+  const baselineHash = canonicalGraphIdentity(baseline).hash;
+  assert.equal(bindPromptVariant(profile, baseline, creator, submitted, baselineHash).prompt, 'One example');
+  assert.equal(baseline.nodes.b.params.prompt.value, '');
+  const exactProfile = { ...profile, canonicalDefaults: true };
+  assert.throws(
+    () => bindPromptVariant(exactProfile, baseline, creator, submitted, baselineHash),
+    /Canonical prompt cannot be changed/u,
+  );
+  const exactSubmission = { ...structuredClone(baseline), runtimeHints: {} };
+  const changedDefault = { ...exactProfile, reviewedSettings: [['loader', 'device', 'cuda:0', 'cpu']] };
+  assert.throws(
+    () => bindPromptVariant(changedDefault, baseline, baseline, exactSubmission, baselineHash),
+    /Canonical settings and wires cannot be changed/u,
+  );
+
+  const wrongControl = structuredClone(submitted);
+  wrongControl.nodes.a.params.device.value = 'cpu';
+  assert.throws(
+    () => bindPromptVariant(profile, baseline, creator, wrongControl, baselineHash),
+    /outside the empty prompt/u,
+  );
+  const wrongWire = structuredClone(submitted);
+  wrongWire.nodes.b.params.model.sourceKey = 'alternate';
+  assert.throws(
+    () => bindPromptVariant(profile, baseline, creator, wrongWire, baselineHash),
+    /outside the empty prompt/u,
+  );
+  const disconnectedNode = structuredClone(submitted);
+  disconnectedNode.nodes.d = disconnectedNode.nodes.b;
+  assert.throws(
+    () => bindPromptVariant(profile, baseline, creator, disconnectedNode, baselineHash),
+    /uncontrolled node/u,
+  );
+  assert.throws(
+    () => bindPromptVariant(profile, baseline, creator, { ...submitted, deterministicMode: {} }, baselineHash),
+    /envelope/u,
+  );
+});
+
+test('an image prompt variant binds the authored seed with the prompt and accepts no other controls', () => {
+  const profile = {
+    bindSeed: true,
+    chain: [['generator', 'Fixture', 'Generate', 'prompt seed']],
+  };
+  const baseline = {
+    sid: 'fixture',
+    paths: [['generator']],
+    nodes: {
+      generator: {
+        module: 'Fixture',
+        action: 'Generate',
+        params: { prompt: { value: '' }, seed: { value: 42 }, num_inference_steps: { value: 2 } },
+      },
+    },
+  };
+  const creator = structuredClone(baseline);
+  creator.nodes.generator.params.prompt.value = 'A close photograph of a painted ceramic bowl.';
+  creator.nodes.generator.params.seed.value = 1093;
+  const submitted = { ...structuredClone(creator), runtimeHints: {} };
+  const baselineHash = canonicalGraphIdentity(baseline).hash;
+  const bound = bindPromptVariant(profile, baseline, creator, submitted, baselineHash);
+  assert.equal(bound.seed, 1093);
+  assert.deepEqual(bound.expected.nodes.generator.params, creator.nodes.generator.params);
+  assert.equal(baseline.nodes.generator.params.seed.value, 42);
+
+  const wrongStep = structuredClone(submitted);
+  wrongStep.nodes.generator.params.num_inference_steps.value = 4;
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, wrongStep, baselineHash), /outside the bound/u);
+  const invalidSeed = structuredClone(submitted);
+  invalidSeed.nodes.generator.params.seed.value = -1;
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, invalidSeed, baselineHash), /unsigned seed/u);
+  const connectedSeed = structuredClone(submitted);
+  connectedSeed.nodes.generator.params.seed.sourceId = 'generator';
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, connectedSeed, baselineHash), /literal seed/u);
+});
+
+test('retained Janus text and captions preserve the output modality and source image binding', () => {
+  const model = {
+    source: {
+      repository: 'deepseek-community/Janus-Pro-1B',
+      revision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
+    },
+  };
+  const modelReceiptDigest = `sha256:${canonicalJsonHash(model)}`;
+  const sourceImage = { decodedImage: { width: 640, height: 512 } };
+  for (const caption of [false, true]) {
+    const receipt = {
+      schemaVersion: 1,
+      format: 'modiff.canonical-workflow-run-receipt.v1',
+      proofKind: caption ? 'real_backend_input_bound_model_variant' : 'real_backend_prompt_bound_model_variant',
+      workflowId: `HuggingFaceAnyToAnyModel:${caption ? 'image_to_text' : 'text_generation'}`,
+      modelSet: [{ repoId: model.source.repository, revision: model.source.revision }],
+      decodedOutput: {
+        schemaVersion: 1,
+        kind: 'json',
+        finishReason: 'stop',
+        inputTokens: 7,
+        generatedTokens: 5,
+        modelReceiptDigest,
+      },
+      ...(caption && { inputBinding: sourceImage }),
+    };
+    const native = {
+      schemaVersion: 1,
+      task: 'any-to-any-generation',
+      outputModality: 'text',
+      text: caption ? 'A red triangle on white.' : 'Reykjavik is the capital of Iceland.',
+      finishReason: 'stop',
+      inputTokens: 7,
+      generatedTokens: 5,
+      inputImageCount: caption ? 1 : 0,
+      inputMediaPixels: caption ? 640 * 512 : 0,
+      modelReceipt: { ...model, receiptDigest: modelReceiptDigest },
+    };
+    function verify(result, receiptOverrides = {}) {
+      const transportBytes = Buffer.from(JSON.stringify([JSON.stringify(result)]));
+      const structuredBytes = Buffer.from(JSON.stringify(result));
+      return verifyRetainedStructuredText({
+        receipt: { ...receipt, outputHash: `sha256:bytes:${digest(transportBytes)}`, ...receiptOverrides },
+        transportBytes,
+        structuredBytes,
+        outputSha256: digest(structuredBytes),
+      });
+    }
+    assert.equal(verify(native).decodedMediaHash, `sha256:canonical-json:${canonicalJsonHash(native)}`);
+    assert.throws(() => verify(native, { inputBinding: caption ? undefined : sourceImage }), /source evidence/u);
+    assert.throws(() => verify({ ...native, outputModality: 'image' }));
+    assert.throws(() => verify({ ...native, inputImageCount: 2 }));
+    assert.throws(() => verify({ ...native, inputMediaPixels: 1 }));
+  }
+});
+
+test('the native text output binds exact durable JSON, prompt route and local model receipt', () => {
+  const model = {
+    schemaVersion: 1,
+    library: 'transformers',
+    task: 'text-generation',
+    loader: { modelAutoClass: 'AutoModelForCausalLM', preprocessorAutoClass: 'AutoTokenizer' },
+    runtime: {
+      architectures: ['LlamaForCausalLM'],
+      device: 'cuda:0',
+      dtype: 'float32',
+      modelClass: 'LlamaForCausalLM',
+      modelType: 'llama',
+      preprocessorClass: 'GPT2Tokenizer',
+      quantization: { mode: 'none' },
+      transformersVersion: '5.18.0',
+    },
+    security: { hostedInference: false, localFilesOnly: true, safetensorsOnly: true, trustRemoteCode: false },
+    source: {
+      kind: 'hub',
+      repository: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+      revision: '12fd25f77366fa6b3b4b768ec3050bf629380bac',
+    },
+  };
+  const result = {
+    schemaVersion: 1,
+    task: 'text-generation',
+    text: 'A technical fixture result.',
+    finishReason: 'stop',
+    inputTokens: 5,
+    generatedTokens: 7,
+    modelReceipt: { ...model, receiptDigest: `sha256:${canonicalJsonHash(model)}` },
+  };
+  const bound = {
+    generator: { node: { params: { max_new_tokens: { value: 256 } } } },
+    loader: { node: { params: { device: { value: 'cuda:0' }, dtype: { value: 'float32' } } } },
+  };
+  const runtime = { packages: { transformers: '5.18.0' } };
+  function data(value) {
+    const item = { value: [JSON.stringify(value)] };
+    return { item, bytes: Buffer.from(JSON.stringify(item.value)) };
+  }
+  const { item, bytes } = data(result);
+  const decodedOutput = validatePromptVariantText(bytes, item, bound, runtime);
+  assert.equal(decodedOutput.generatedTokens, 7);
+  assert.throws(
+    () => validatePromptVariantText(bytes, { value: ['"other output"'] }, bound, runtime),
+    /native output/u,
+  );
+  const wrongDigest = data({ ...result, modelReceipt: { ...result.modelReceipt, receiptDigest: 'sha256:changed' } });
+  assert.throws(
+    () => validatePromptVariantText(wrongDigest.bytes, wrongDigest.item, bound, runtime),
+    /receipt digest/u,
+  );
+  const excessiveTokens = data({ ...result, generatedTokens: 257 });
+  assert.throws(() => validatePromptVariantText(excessiveTokens.bytes, excessiveTokens.item, bound, runtime));
+
+  const structuredBytes = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
+  const releaseEvidence = {
+    receipt: {
+      schemaVersion: 1,
+      format: 'modiff.canonical-workflow-run-receipt.v1',
+      proofKind: 'real_backend_prompt_bound_model_variant',
+      workflowId: 'HuggingFaceTextGenerationModel:text_generation',
+      modelSet: [{ repoId: model.source.repository, revision: model.source.revision }],
+      outputHash: `sha256:bytes:${digest(bytes)}`,
+      decodedOutput,
+    },
+    transportBytes: bytes,
+    structuredBytes,
+    outputSha256: digest(structuredBytes),
+  };
+  const original = structuredClone(releaseEvidence.receipt);
+  const association = verifyRetainedStructuredText(releaseEvidence);
+  assert.equal(association.sourceOutputHash, releaseEvidence.receipt.outputHash);
+  assert.equal(association.outputEncodedSha256, `sha256:bytes:${digest(structuredBytes)}`);
+  assert.equal(association.decodedMediaHash, `sha256:canonical-json:${canonicalJsonHash(result)}`);
+  assert.deepEqual(releaseEvidence.receipt, original, 'The native receipt is immutable.');
+
+  // Byte identities remain exact even when a different file decodes to the same value.
+  assert.throws(
+    () => verifyRetainedStructuredText({ ...releaseEvidence, structuredBytes: Buffer.from(JSON.stringify(result)) }),
+    /approved structured result/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        transportBytes: Buffer.from(JSON.stringify(item.value, null, 2)),
+      }),
+    /original native transport/u,
+  );
+
+  // Rehashing substituted bytes cannot make a different answer the saved result.
+  const otherAnswer = Buffer.from(JSON.stringify({ ...result, text: 'An unrelated answer.' }));
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        structuredBytes: otherAnswer,
+        outputSha256: digest(otherAnswer),
+      }),
+    /decoded native result/u,
+  );
+  const identicalAnswerDifferentTokens = Buffer.from(JSON.stringify({ ...result, generatedTokens: 2 }));
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        structuredBytes: identicalAnswerDifferentTokens,
+        outputSha256: digest(identicalAnswerDifferentTokens),
+      }),
+    /decoded native result/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        receipt: { ...releaseEvidence.receipt, workflowId: 'ShapEPipeline:text_to_3d' },
+      }),
+    /reviewed text workflow/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        receipt: { ...releaseEvidence.receipt, decodedOutput: { ...decodedOutput, generatedTokens: 99 } },
+      }),
+    /native text receipt/u,
+  );
+  assert.throws(
+    () => verifyRetainedStructuredText({ ...releaseEvidence, transportBytes: Buffer.alloc(2 * 1024 * 1024 + 1) }),
+    /bounded file/u,
+  );
+});
+
+test('the video variant needs independently decoded and moving geometry at the native cadence', () => {
+  const bound = {
+    generator: { node: { params: { frame_size: { value: 256 } } } },
+    preview: { node: { params: { fps: { value: 12 } } } },
+  };
+  const item = {
+    mediaMetadata: {
+      source: 'encoded-file',
+      width: 256,
+      height: 256,
+      frame_count: 20,
+      fps: 12,
+      duration_seconds: 1.67,
+    },
+  };
+  const decoded = {
+    width: 256,
+    height: 256,
+    frames: 20,
+    fps: 12,
+    durationSeconds: 1.67,
+    codecName: 'h264',
+    hasAudio: false,
+    uniqueFrameRatio: 1,
+    hash: 'sha256:decoded-video-framemd5:fixture',
+  };
+  assert.equal(validatePromptVariantVideo(decoded, item, bound).frames, 20);
+  assert.throws(() => validatePromptVariantVideo({ ...decoded, fps: 24 }, item, bound), /differ from native/u);
+  assert.throws(() => validatePromptVariantVideo({ ...decoded, uniqueFrameRatio: 0.1 }, item, bound));
+});
+
+for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_model_variant'] of [
+  ['HuggingFaceAnyToAnyModel:text_generation', 'MODIFF_JANUS_TEXT_PROMPT_EVIDENCE', 'json'],
+  ['HuggingFaceAnyToAnyModel:text_to_image', 'MODIFF_JANUS_IMAGE_PROMPT_EVIDENCE', 'image'],
+  [
+    'HuggingFaceAnyToAnyModel:image_to_text',
+    'MODIFF_JANUS_CAPTION_EVIDENCE',
+    'json',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'HuggingFaceImageTextToTextModel:image_to_text',
+    'MODIFF_SMOLVLM_CAPTION_EVIDENCE',
+    'json',
+    'real_backend_input_bound_model_variant',
+  ],
+  ['LuminaPipeline:text_to_image', 'MODIFF_LUMINA_PROMPT_EVIDENCE', 'image'],
+  ['Kandinsky3Pipeline:text_to_image', 'MODIFF_KANDINSKY3_CPU_PROMPT_EVIDENCE', 'image'],
+  ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
+  ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
+  ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['WanTI2VPipeline:text_to_video', 'MODIFF_WAN_SUBWAY_SOUNDTRACK_EVIDENCE', 'video'],
+  [
+    'WanImageToVideoPipeline:image_to_video',
+    'MODIFF_WAN_A14B_OPENING_IMAGE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'WanAnimatePipeline:character_animate',
+    'MODIFF_WAN_CHARACTER_ANIMATE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'WanAnimatePipeline:character_replace',
+    'MODIFF_WAN_CHARACTER_REPLACE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['MochiPipeline:text_to_video', 'MODIFF_MOCHI_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['LattePipeline:text_to_video', 'MODIFF_LATTE_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateDiffPipeline:text_to_video', 'MODIFF_ANIMATEDIFF_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateLCMPipeline:text_to_video', 'MODIFF_ANIMATELCM_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['WanVACEPipeline:text_to_video', 'MODIFF_WAN_VACE_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['SanaVideoPipeline:text_to_video', 'MODIFF_SANA_VIDEO_PROMPT_EVIDENCE', 'video'],
+  [
+    'SanaImageToVideoPipeline:image_to_video',
+    'MODIFF_SANA_OPENING_IMAGE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  ['CogVideoXPipeline:text_to_video', 'MODIFF_COGVIDEOX_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateDiffPAGPipeline:text_to_video', 'MODIFF_ANIMATEDIFF_PAG_VIDEO_EVIDENCE', 'video'],
+  [
+    'AnimateDiffVideoToVideoPipeline:video_to_video',
+    'MODIFF_ANIMATEDIFF_EDIT_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'AnimateDiffControlNetPipeline:control_to_video',
+    'MODIFF_ANIMATEDIFF_GUIDE_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'AnimateDiffVideoToVideoControlNetPipeline:control_video_to_video',
+    'MODIFF_ANIMATEDIFF_DUAL_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'CogVideoXVideoToVideoPipeline:video_to_video',
+    'MODIFF_COGVIDEOX_EDIT_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  ['LongCatAudioDiTPipeline:text_to_audio', 'MODIFF_LONGCAT_AUDIO_PROMPT_EVIDENCE', 'audio'],
+  ['AudioLDM2Pipeline:text_to_audio', 'MODIFF_AUDIOLDM2_PROMPT_EVIDENCE', 'audio'],
+  ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
+  ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
+  ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],
+  ['AuraFlowPipeline:text_to_image', 'MODIFF_AURAFLOW_PROMPT_EVIDENCE', 'image'],
+  ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['SanaPipeline:text_to_image', 'MODIFF_SANA_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['ChromaPipeline:text_to_image', 'MODIFF_CHROMA_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['Lumina2Pipeline:text_to_image', 'MODIFF_LUMINA2_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['HunyuanDiTPipeline:text_to_image', 'MODIFF_HUNYUAN_DIT_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['HunyuanDiTPAGPipeline:text_to_image', 'MODIFF_HUNYUAN_DIT_PAG_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['OmniGenPipeline:text_to_image', 'MODIFF_OMNIGEN_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
+  ['PixArtSigmaPipeline:text_to_image', 'MODIFF_SAVED_PIXART_SIGMA_PROMPT_EVIDENCE', 'image'],
+  ['DreamLitePipeline:text_to_image', 'MODIFF_DREAMLITE_BASE_PRIVATE_EVIDENCE', 'image'],
+  ['JoyImageEditPipeline:text_to_image', 'MODIFF_JOY_HERBARIUM_PROMPT_EVIDENCE', 'image'],
+  ['LongCatImagePipeline:text_to_image', 'MODIFF_LONGCAT_FLORIST_PROMPT_EVIDENCE', 'image'],
+  [
+    'LTXI2VLongMultiPromptPipeline:image_to_video',
+    'MODIFF_LTX_SCHEDULED_TRAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'LTXI2VLongMultiPromptPipeline:image_to_video',
+    'MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'LTX2ConditionPipeline:video_to_video',
+    'MODIFF_LTX2_STREAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'LTX2ConditionPipeline:video_to_video',
+    'MODIFF_LTX2_TRAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+]) {
+  const saved = process.env[variable];
+  test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
+    const evidencePath = resolve(saved);
+    const args = { clientRoot, backendRoot, workflowId, evidencePath };
+    const original = await readCanonicalWorkflowEvidence(args);
+    assert.equal(original.receipt.proofKind, proofKind);
+    assert.equal(original.receipt.canonicalDefaultsExecuted, false);
+    assert.equal(original.receipt.decodedOutput.kind, kind);
+    assert.ok(Object.values(original.receipt.qualificationClaims).every((claim) => claim === false));
+    if (workflowId === 'LongCatImagePipeline:text_to_image') {
+      assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
+      assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, ['max_sequence_length']);
+    }
+    if (workflowId === 'LTXI2VLongMultiPromptPipeline:image_to_video') {
+      assert.equal(original.receipt.decodedOutput.frames, 129);
+      assert.ok(original.receipt.observationLimits.configuredUnobservedControls.includes('prompt_segments_json'));
+    }
+    if (workflowId === 'HuggingFaceImageTextToTextModel:image_to_text') {
+      const [{ file }] = original.evidence.outputs;
+      const transportBytes = readCanonicalEvidenceFile(dirname(evidencePath), file).bytes;
+      const structuredBytes = Buffer.from(JSON.parse(transportBytes)[0]);
+      const args = {
+        receipt: original.receipt,
+        transportBytes,
+        structuredBytes,
+        outputSha256: digest(structuredBytes),
+      };
+      assert.equal(verifyRetainedStructuredText(args).sourceOutputHash, original.receipt.outputHash);
+      assert.throws(
+        () => verifyRetainedStructuredText({ ...args, receipt: { ...original.receipt, inputBinding: undefined } }),
+        /missing its original source evidence/u,
+      );
+    }
+    const temp = mkdtempSync(join(tmpdir(), 'modiff-prompt-variant-'));
+    try {
+      const refs = original.retainedFiles;
+      for (const ref of refs) {
+        assert.match(ref.path, /^[a-z0-9.-]+$/iu);
+        const archiveLimit =
+          workflowId === 'WanTI2VPipeline:text_to_video' && ref.path === original.evidence.outputs[0].file.path
+            ? 64 * 1024 * 1024
+            : undefined;
+        const archived = readCanonicalEvidenceFile(dirname(evidencePath), ref, archiveLimit);
+        writeFileSync(join(temp, ref.path), archived.bytes);
+      }
+      const changedPath = join(temp, 'evidence.json');
+      const evidence = JSON.parse(original.descriptorBytes);
+      if (['MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE', 'MODIFF_LTX2_STREAM_EVIDENCE'].includes(variable)) {
+        if (variable === 'MODIFF_LTX2_STREAM_EVIDENCE') {
+          assert.equal(original.receipt.decodedOutput.frames, 81);
+          assert.equal(original.receipt.inputBinding.decodedVideo.frames, 25);
+          assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+        } else {
+          assert.equal(original.receipt.inputBinding.decodedImage.width, 768);
+          assert.equal(original.receipt.inputBinding.decodedImage.height, 512);
+        }
+        const changedPreparation = structuredClone(evidence);
+        const runPath = join(temp, evidence.runDetail.path);
+        const savedRun = readFileSync(runPath);
+        const run = JSON.parse(savedRun);
+        run.task.runtimePreparation.cleanup.released.models = 0;
+        const changedRun = Buffer.from(JSON.stringify(run));
+        writeFileSync(runPath, changedRun);
+        Object.assign(changedPreparation.runDetail, { bytes: changedRun.length, sha256: digest(changedRun) });
+        writeFileSync(changedPath, JSON.stringify(changedPreparation));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected the previous LTX model release/u,
+        );
+        writeFileSync(runPath, savedRun);
+      }
+      if (workflowId === 'AllegroPipeline:text_to_video') {
+        assert.equal(original.receipt.observationLimits.retainedLoaderOffloadFallback, 'sequential_cpu');
+        assert.equal(original.receipt.decodedOutput.frames, 88);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+        assert.match(original.receipt.negativePromptBinding.sha256, /^[a-f0-9]{64}$/u);
+      }
+      if (workflowId === 'MochiPipeline:text_to_video') {
+        assert.equal(original.receipt.decodedOutput.frames, 31);
+        assert.equal(original.receipt.decodedOutput.fps, 30);
+        assert.equal(original.receipt.decodedOutput.width, 848);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+      }
+      if (workflowId === 'WanImageToVideoPipeline:image_to_video') {
+        assert.equal(original.receipt.sourceTemplateId, 'wan_22_i2v_seed_vault');
+        assert.equal(original.receipt.inputBinding.sha256, evidence.inputs[0].file.sha256);
+        assert.equal(original.receipt.observationLimits.samplerInputPixelsObserved, false);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.decodedOutput.fps, 16);
+      }
+      if (workflowId.startsWith('WanAnimatePipeline:')) {
+        const expected = ['face', 'pose', ...(workflowId.endsWith(':character_replace') ? ['background', 'mask'] : [])];
+        assert.deepEqual(
+          original.receipt.videoConditionBindings.map(({ role, sha256 }) => [role, sha256]),
+          expected.map((role, index) => [role, evidence.inputs[index + 1].file.sha256]),
+        );
+        assert.equal(original.receipt.observationLimits.consumedMotionFramesObserved, false);
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.decodedOutput.fps, 24);
+        const swapped = structuredClone(evidence);
+        [swapped.inputs[1], swapped.inputs[2]] = [swapped.inputs[2], swapped.inputs[1]];
+        writeFileSync(changedPath, JSON.stringify(swapped));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /motion input roles differ/u,
+        );
+      }
+      if (workflowId === 'WanVACEPipeline:text_to_video') {
+        assert.equal(original.receipt.sourceTemplateId, 'wan_vace_direct_text_to_video');
+        assert.deepEqual(
+          original.receipt.modelSet.map(({ repoId }) => repoId),
+          ['Wan-AI/Wan2.1-VACE-1.3B-diffusers', 'nateraw/real-esrgan/RealESRGAN_x2plus.pth'],
+        );
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.decodedOutput.width, 1664);
+        assert.equal(original.receipt.decodedOutput.height, 960);
+        const completionPath = join(temp, evidence.graphCompleted.path);
+        const savedCompletion = readFileSync(completionPath);
+        const completion = JSON.parse(savedCompletion);
+        completion.runtimeHints.controlledArtifacts = [];
+        const bytes = Buffer.from(JSON.stringify(completion));
+        const substituted = {
+          ...evidence,
+          graphCompleted: { ...evidence.graphCompleted, bytes: bytes.length, sha256: digest(bytes) },
+        };
+        writeFileSync(completionPath, bytes);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /unreviewed runtime authority/u,
+        );
+        writeFileSync(completionPath, savedCompletion);
+      }
+      if (workflowId === 'AnimateLCMPipeline:text_to_video') {
+        assert.equal(original.receipt.modelSet[1].repoId, 'wangfuyun/AnimateLCM');
+        assert.equal(original.receipt.decodedOutput.frames, 16);
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalRun = readFileSync(runPath);
+        const run = JSON.parse(originalRun);
+        if (run.task.runtimePreparation.previousModelFamily === 'StableDiffusionXLControlNetPAGImg2ImgPipeline') {
+          const originalPreparation = run.task.runtimePreparation;
+          for (const [changes, failure] of [
+            [{ availableRamBytes: 4 * 1024 ** 3 }, /lacks measured pressure/u],
+            [{ reasons: originalPreparation.reasons.slice(0, 1) }, /Unreviewed direct image cache cleanup/u],
+            [{ previousModelFamily: 'UnreviewedPipeline' }, /Unreviewed previous Expert model family/u],
+          ]) {
+            run.task.runtimePreparation = { ...originalPreparation, ...changes };
+            const bytes = Buffer.from(JSON.stringify(run));
+            const substituted = {
+              ...evidence,
+              runDetail: { ...evidence.runDetail, bytes: bytes.length, sha256: digest(bytes) },
+            };
+            writeFileSync(runPath, bytes);
+            writeFileSync(changedPath, JSON.stringify(substituted));
+            await assert.rejects(() => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }), failure);
+          }
+          writeFileSync(runPath, originalRun);
+        }
+      }
+      const sanaOpeningImage = workflowId === 'SanaImageToVideoPipeline:image_to_video';
+      if (sanaOpeningImage) {
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+        assert.equal(original.receipt.observationLimits.openingImageLoadFieldsObserved, true);
+        assert.equal(original.receipt.observationLimits.samplerInputPixelsObserved, false);
+      }
+      if (workflowId.startsWith('AnimateDiff')) {
+        const guide = original.receipt.guideBinding;
+        assert.equal(original.receipt.modelSet.length, guide ? 3 : 2);
+        assert.equal(original.receipt.observationLimits.motionAdapterBoundByGraph, true);
+        const [first, second, ...rest] = evidence.modelObservations;
+        const incomplete = { ...evidence, modelObservations: [first, first, ...rest] };
+        assert.notEqual(first.sha256, second.sha256);
+        writeFileSync(changedPath, JSON.stringify(incomplete));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected a single installed identity/u,
+        );
+        if (guide) {
+          assert.equal(original.receipt.observationLimits.normalizedGuideFramesObserved, false);
+          assert.equal(original.receipt.observationLimits.controlAdapterAppliedObserved, false);
+          assert.equal(guide.decodedVideo.frames, 16);
+          if (evidence.inputs.length === 2) {
+            assert.notEqual(guide.sha256, original.receipt.inputBinding.sha256);
+            const swapped = { ...evidence, inputs: [...evidence.inputs].reverse() };
+            writeFileSync(changedPath, JSON.stringify(swapped));
+            await assert.rejects(
+              () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+              /outside the bound prompt and seed/u,
+            );
+          } else {
+            assert.deepEqual(original.receipt.inputBinding, guide);
+          }
+        } else if (workflowId === 'AnimateDiffPAGPipeline:text_to_video') {
+          assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, [
+            'pag_scale',
+            'pag_adaptive_scale',
+          ]);
+        } else if (workflowId === 'AnimateDiffVideoToVideoPipeline:video_to_video') {
+          assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+          assert.equal(original.receipt.inputBinding.decodedVideo.frames, 16);
+        }
+      }
+      if (workflowId === 'WanTI2VPipeline:text_to_video') {
+        assert.equal(original.receipt.modelSet.length, 2);
+        assert.equal(original.receipt.decodedOutput.audio.sourceSampleRate, 48000);
+        assert.equal(original.receipt.decodedOutput.audio.channels, 2);
+        assert.equal(original.receipt.observationLimits.audiovisualSynchronizationReviewed, false);
+        const [videoIdentity] = evidence.modelObservations;
+        writeFileSync(changedPath, JSON.stringify({ ...evidence, modelObservations: [videoIdentity, videoIdentity] }));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected a single installed identity/u,
+        );
+      }
+      const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
+      const cogVideo = workflowId === 'CogVideoXPipeline:text_to_video';
+      const audioLdm = workflowId === 'AudioLDM2Pipeline:text_to_audio';
+      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video' || cogVideo || audioLdm) {
+        assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
+        if (route?.typedOnly) {
+          assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, route.typedOnly);
+        }
+        const packagePath = join(temp, evidence.outputPackage.path);
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalPackage = readFileSync(packagePath);
+        const originalRun = readFileSync(runPath);
+        const changed = JSON.parse(originalPackage);
+        const inputs = changed.latestOutput.resolvedExecutionInputs;
+        const sampler = inputs.nodes.find((node) => node.action === 'Generate');
+        let expectedFailure;
+        if (route?.retainedObservationSource) {
+          assert.equal(sampler.fieldAccounting, undefined);
+          sampler.fields.num_inference_steps.value += 1;
+          expectedFailure = /Retained adapter control differs: num_inference_steps/u;
+        } else if (cogVideo) {
+          const { fields } = inputs.nodes.find((node) => node.action === 'DiffusersExecutionRecipe');
+          assert.equal(fields.vae_tiling.value, true);
+          fields.vae_tiling.value = false;
+          expectedFailure = /Actual consumed fields differ for DiffusersExecutionRecipe/u;
+        } else if (audioLdm) {
+          assert.equal(sampler.fields.num_inference_steps.value, 200);
+          sampler.fields.num_inference_steps.value = 8;
+          expectedFailure = /Actual consumed fields differ for Generate/u;
+        } else {
+          assert.equal(sampler.fields.secondary_guidance_scale.value, 3.5);
+          sampler.fields.secondary_guidance_scale.value = 0;
+          expectedFailure = /Actual consumed fields differ for Generate/u;
+        }
+        const run = JSON.parse(originalRun);
+        run.outputs[0].resolvedExecutionInputs = inputs;
+        const substituted = structuredClone(evidence);
+        for (const [field, path, data] of [
+          ['outputPackage', packagePath, changed],
+          ['runDetail', runPath, run],
+        ]) {
+          const bytes = Buffer.from(JSON.stringify(data));
+          substituted[field] = { ...substituted[field], bytes: bytes.length, sha256: digest(bytes) };
+          writeFileSync(path, bytes);
+        }
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          expectedFailure,
+        );
+        writeFileSync(packagePath, originalPackage);
+        writeFileSync(runPath, originalRun);
+      }
+      if (['SanaPipeline:text_to_image', 'ChromaPipeline:text_to_image'].includes(workflowId)) {
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalRun = readFileSync(runPath);
+        const run = JSON.parse(originalRun);
+        const originalPreparation = structuredClone(run.task.runtimePreparation);
+        run.task.runtimePreparation.previousModelFamily = 'UnreviewedPipeline';
+        const replacement = Buffer.from(JSON.stringify(run));
+        const substituted = structuredClone(evidence);
+        substituted.runDetail = { ...evidence.runDetail, bytes: replacement.length, sha256: digest(replacement) };
+        writeFileSync(runPath, replacement);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Unreviewed previous Expert model family/u,
+        );
+        if (workflowId === 'ChromaPipeline:text_to_image') {
+          run.task.runtimePreparation = {
+            ...originalPreparation,
+            reasons: ['model family changed from ChromaPipeline to ChromaPipeline'],
+          };
+          const changed = Buffer.from(JSON.stringify(run));
+          substituted.runDetail = { ...evidence.runDetail, bytes: changed.length, sha256: digest(changed) };
+          writeFileSync(runPath, changed);
+          writeFileSync(changedPath, JSON.stringify(substituted));
+          await assert.rejects(
+            () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+            /Unreviewed direct image cache cleanup/u,
+          );
+        }
+        writeFileSync(runPath, originalRun);
+      }
+      if (proofKind === 'real_backend_input_bound_model_variant') {
+        const [input] = evidence.inputs;
+        const path = join(temp, input.file.path);
+        const originalBytes = readFileSync(path);
+        const replacement = Buffer.concat([originalBytes, Buffer.from([0])]);
+        const substituted = structuredClone(evidence);
+        substituted.inputs[0].file = { ...input.file, bytes: replacement.length, sha256: digest(replacement) };
+        writeFileSync(path, replacement);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          variable === 'MODIFF_LTX2_STREAM_EVIDENCE'
+            ? /outside the bound prompt and seed/u
+            : variable === 'MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE'
+              ? /current authored prompt recipe differs from the original baseline/u
+              : original.receipt.observationLimits.openingImageLoadFieldsObserved
+                ? /Opening image differs from the retained Load fields/u
+                : input.sourceValue.startsWith('@data/videos/')
+                  ? /Archived video upload differs/u
+                  : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+                    ? /Source bytes differ from the native image load|Archived authoring requires the exact original capture/u
+                    : /Source bytes differ from the native image load/u,
+        );
+        writeFileSync(path, originalBytes);
+      }
+      const completionPath = join(temp, evidence.graphCompleted.path);
+      const completion = JSON.parse(readFileSync(completionPath));
+      completion.task_id = 'another-execution';
+      const changed = Buffer.from(JSON.stringify(completion));
+      writeFileSync(completionPath, changed);
+      evidence.graphCompleted.bytes = changed.length;
+      evidence.graphCompleted.sha256 = digest(changed);
+      writeFileSync(changedPath, JSON.stringify(evidence));
+      await assert.rejects(
+        () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+        /another-execution|Archived authoring requires the exact original capture/u,
+      );
+      assert.ok(readFileSync(evidencePath).equals(original.descriptorBytes));
+    } finally {
+      if (existsSync(temp) && dirname(temp) === resolve(tmpdir())) rmSync(temp, { recursive: true, force: true });
+    }
+  });
+}
+
+test('Reviewed image prompt receipts keep the exact portable artifact and graph', async () => {
+  const graphs = join(backendRoot, 'data/graphs');
+  const manifest = JSON.parse(readFileSync(join(backendRoot, 'data/workflow-library-manifest.json'), 'utf8'));
+  const workflowIds = [
+    'LuminaPipeline:text_to_image',
+    'GlmImagePipeline:text_to_image',
+    'NucleusMoEImagePipeline:text_to_image',
+    'ErnieImagePipeline:text_to_image',
+    'OvisImagePipeline:text_to_image',
+    'CogView3PlusPipeline:text_to_image',
+    'CogView4Pipeline:text_to_image',
+    'StableDiffusionXLTurboPipeline:text_to_image',
+    'SanaPAGPipeline:text_to_image',
+    'AuraFlowPipeline:text_to_image',
+    'LatentConsistencyModelPipeline:text_to_image',
+    'SanaPipeline:text_to_image',
+    'ChromaPipeline:text_to_image',
+    'Lumina2Pipeline:text_to_image',
+    'HunyuanDiTPipeline:text_to_image',
+    'HunyuanDiTPAGPipeline:text_to_image',
+    'OmniGenPipeline:text_to_image',
+    'SanaSprintPipeline:text_to_image',
+    'StableDiffusionXLPAGPipeline:text_to_image',
+  ];
+  const fixtures = workflowIds.map((id) =>
+    JSON.parse(readFileSync(join(graphs, manifest.workflows.find((entry) => entry.id === id).graphPath), 'utf8')),
+  );
+  const originals = await exportCanonicalWorkflowGraphs(clientRoot, fixtures);
+  for (const [index, workflowId] of workflowIds.entries()) {
+    const record = directImagePromptRoutes.find((route) => route.workflowId === workflowId);
+    const original = originals[index];
+    const identity = canonicalGraphIdentity(original);
+    const profile = {
+      ...record,
+      bindSeed: true,
+      chain: [
+        ['quantization', 'modules.DiffusersRuntime', 'PipelineQuantizationConfigV2', ''],
+        ['recipe', 'modules.DiffusersRuntime', 'DiffusersExecutionRecipe', ''],
+        ['loader', 'modules.DiffusersImage', 'LoadPipeline', ''],
+        ['generator', 'modules.DiffusersImage', 'Generate', ''],
+        ['preview', 'modules.Image', 'Preview', ''],
+      ],
+    };
+    const created = structuredClone(original);
+    const generation = Object.values(created.nodes).find((node) => node.action === 'Generate').params;
+    generation.prompt.value = 'A botanical print on ivory paper';
+    generation.seed.value = record.generation.seed;
+    const output = { ...structuredClone(created), runtimeHints: {} };
+    const witness = bindPromptVariant(profile, original, created, output, identity.hash);
+    assert.equal(witness.prompt, generation.prompt.value);
+    assert.equal(witness.loader.node.params.model_id.value.value, record.modelRepo);
+    assert.equal(witness.loader.node.params.revision.value, record.modelRevision);
+    assert.equal(witness.generator.node.params.max_sequence_length.value, record.generation.max_sequence_length);
+
+    const changed = structuredClone(output);
+    Object.values(changed.nodes).find((node) => node.action === 'Generate').params.width.value += 32;
+    assert.throws(
+      () => bindPromptVariant(profile, original, created, changed, identity.hash),
+      /outside the bound prompt and seed/u,
+    );
+  }
+});

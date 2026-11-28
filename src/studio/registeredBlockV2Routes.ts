@@ -6,6 +6,7 @@ import { REGISTERED_BLOCK_V2_FANOUT_ROUTES } from './registeredBlockV2FanOutRout
 import { REGISTERED_BLOCK_V2_AUDIO_ROUTES } from './registeredBlockV2AudioRoutes';
 import { REGISTERED_BLOCK_V2_IMAGE_ROUTES } from './registeredBlockV2ImageRoutes';
 import { REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES } from './registeredBlockV2OrdinaryFluxRoutes';
+import { REGISTERED_BLOCK_V2_SOURCE_ROUTES } from './registeredBlockV2SourceRoutes';
 
 export type RegisteredBlockV2BoundaryInputBinding = Readonly<{
   portId: string;
@@ -103,7 +104,7 @@ export type RegisteredBlockV2Route = Readonly<{
   }>;
 }>;
 
-const DIFFUSERS_REVISION = 'fbf49e7f35857f76bc57b177e26f12b03687c668';
+const DIFFUSERS_REVISION = '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941';
 const MODEL_TYPE_DYNAMIC_FIELD_ACTIONS = [
   { role: 'models', field: 'model_type', event: 'onChange', valueSource: 'pipelineClass' },
 ] as const;
@@ -167,18 +168,19 @@ function transformersRoute(fields: TransformersRouteFields): RegisteredBlockV2Ro
  * pipeline-class inference.
  */
 export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Object.freeze([
+  ...REGISTERED_BLOCK_V2_SOURCE_ROUTES,
   ...REGISTERED_BLOCK_V2_IMAGE_ROUTES,
   ...REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES,
   ...REGISTERED_BLOCK_V2_AUDIO_ROUTES,
   ...REGISTERED_BLOCK_V2_FANOUT_ROUTES.map((route) => diffusersRoute(route)),
   diffusersRoute({
     definitionId: 'diffusers.modular:AnimaModularPipeline:text2image',
-    definitionContentHash: 'sha256:8b912ade28892fd040c0813514eb431efba732b23816204038daa346df5ebc16',
+    definitionContentHash: 'sha256:d865ea6a6bde320211812251352d966ff70ae120db49cd670798d4a505f6abdf',
     pipelineClass: 'AnimaModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:AnimaModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-284b1f93',
-    compiledDefinitionCanonicalSha256: 'sha256:5ab9d0f6ea8b1c857d737be86fccb5c742d326c285f8895470d1768c5012f95f',
+    compiledDefinitionContentHash: 'block-definition-v2-853db047',
+    compiledDefinitionCanonicalSha256: 'sha256:1dc91c25a078dbf03b337d2293e68d55caac47840dc398727111304312b8c0b3',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:AnimaModularPipeline:text2image:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -194,13 +196,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3DistilledModularPipeline:image2video',
-    definitionContentHash: 'sha256:7857742482c24d43b2d77323df353fa1b12278f5b837b49d545484ffdbb95658',
+    definitionContentHash: 'sha256:306907f479a028df37eb3b7d9efde45e9cbe9eec6f7c67b137655752bd37c929',
     pipelineClass: 'Cosmos3DistilledModularPipeline',
     workflowId: 'image2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:image2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-6f35cb17',
-    compiledDefinitionCanonicalSha256: 'sha256:46cd6f89bab6b5835fcfd5a0a03d4c04bce7b8d6ff2b983ee7b7d5f1925db03f',
+    compiledDefinitionContentHash: 'block-definition-v2-4798547f',
+    compiledDefinitionCanonicalSha256: 'sha256:b59ae721dccc6732dc8cd45ca6f760cfe56ca7e9bf9638f45e879e3ac06aa918',
     studioMode: 'image_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3DistilledModularPipeline:image2video:workflow:official_top_level_blocks',
@@ -243,13 +245,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3DistilledModularPipeline:text2image',
-    definitionContentHash: 'sha256:4409aa4211d08f3ef9b077e625c7a4d7a1b9c5db9613280ec052b843df65f86e',
+    definitionContentHash: 'sha256:b0ea08643ac383e36b5c300e8f68fc32104c85ed3d1a0f42defb306362df995b',
     pipelineClass: 'Cosmos3DistilledModularPipeline',
     workflowId: 'text2image',
     admissionId:
       'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-1606ba66',
-    compiledDefinitionCanonicalSha256: 'sha256:de23166153b883e72424fb202e8db9d84880ee50a279b41cdde0f1e1ce756d96',
+    compiledDefinitionContentHash: 'block-definition-v2-738e7db2',
+    compiledDefinitionCanonicalSha256: 'sha256:c5a320f63b1e0b269faa78b45bea375e5d966e714e13e80ea42f97e65bc8067b',
     studioMode: 'text_to_image',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
@@ -284,18 +286,18 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:text2image',
-    definitionContentHash: 'sha256:a02f4ed18fb79aa0ddb0638271da60da6f30e3349d1a456a962fc669497f6896',
+    definitionContentHash: 'sha256:1aaac680e19ea246998321b99e64ecd952f555b102c4f059abc55dea2f5db4c1',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-e876e626',
-    compiledDefinitionCanonicalSha256: 'sha256:215003e7562f3034968b18646a813e983e635230e775ae5bf58ecb55cbe0fa7f',
+    compiledDefinitionContentHash: 'block-definition-v2-4490767c',
+    compiledDefinitionCanonicalSha256: 'sha256:37ec92212a9514c9507d744c0bb4fb8329a870d1208ebb025a78db7cedd96dd7',
     studioMode: 'text_to_image',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
     studioExecutionSpec: {
       id: 'cosmos3-nano:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-590066ce',
+      contentHash: 'studio-spec-v1-badb9cde',
       executionProfileId: 'cosmos3-nano:official-modular-workflow',
     },
     artifact: {
@@ -325,12 +327,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:text2video',
-    definitionContentHash: 'sha256:96567aeb09464cf1954dc9a7bb27cbb85dcb86c66c786edcf3704de87936d395',
+    definitionContentHash: 'sha256:398f74d7c3a115d04a79aa028aee4a3aef3138550c556e1d3a2409e0c3f95313',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'text2video',
     admissionId: 'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-0427e22d',
-    compiledDefinitionCanonicalSha256: 'sha256:7fa7f8ad979c893eaed72e40da0aa2d6ec4ae4810c057346a52aafd594dca795',
+    compiledDefinitionContentHash: 'block-definition-v2-089debb4',
+    compiledDefinitionCanonicalSha256: 'sha256:04abc3485fe8f1b130cf400be0ce5a32aacd8fd5f3003571d6b9f884274bf8df',
     studioMode: 'text_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2video:workflow:official_top_level_blocks',
@@ -368,13 +370,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:image2video',
-    definitionContentHash: 'sha256:f78db372dd865b906fdb0a7066de65347d1a24d8cff131e59a31bfe7aa205c6e',
+    definitionContentHash: 'sha256:ef991da354483e3c317f1f663d108e482d3a897b7a1b9b8bf8845fba3f19aee9',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'image2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:image2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-82c4f911',
-    compiledDefinitionCanonicalSha256: 'sha256:73fafe169792cf6d4622c3209921dae27c9d3ea15e735e9b8986d8179a1b42dc',
+    compiledDefinitionContentHash: 'block-definition-v2-d367c0b0',
+    compiledDefinitionCanonicalSha256: 'sha256:6822fe0fe340bf62bf3a9287769b05b3368479d9c63580ddeb95cafa3428be01',
     studioMode: 'image_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:image2video:workflow:official_top_level_blocks',
@@ -419,13 +421,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:image2video_with_sound',
-    definitionContentHash: 'sha256:a84afddaea8d2b500578d3631da63da13a5a66d4e5d56b031d064a129dade59c',
+    definitionContentHash: 'sha256:3580348426c276b0146518eec7a064b9df2f7ec325e930674951553d8b1f4446',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'image2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:image2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-9ec99676',
-    compiledDefinitionCanonicalSha256: 'sha256:32b7c1981c97a0980b2f76d796c5e207505d1f09270816e3a3cdd0bbde335e18',
+    compiledDefinitionContentHash: 'block-definition-v2-ca72d264',
+    compiledDefinitionCanonicalSha256: 'sha256:6fa9ba06fdf0fc98d055c17827798b840299b70ca806d3a4c6267abb7e558cb7',
     studioMode: 'image_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:image2video_with_sound:workflow:official_top_level_blocks',
@@ -470,13 +472,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:text2video_with_sound',
-    definitionContentHash: 'sha256:4db805bbc53fee04ec30dcdcb4c5071c3382b8e8f74ef70633f2ba207c10d791',
+    definitionContentHash: 'sha256:2cb0aa1f5b0f40517d4a3519db08cd8c1ad25632c89c8898ca57a3f17498f62a',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'text2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-122d1f28',
-    compiledDefinitionCanonicalSha256: 'sha256:03639f23d27be0c1bd3b68e55da2468fd9b99b7d3f10e92b9860dbaabfaf5736',
+    compiledDefinitionContentHash: 'block-definition-v2-a702c49c',
+    compiledDefinitionCanonicalSha256: 'sha256:36cc1218c64014948654e986b459b157712aca635aee75b033b9b2221f0101ec',
     studioMode: 'text_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2video_with_sound:workflow:official_top_level_blocks',
@@ -520,13 +522,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:video2video',
-    definitionContentHash: 'sha256:c9c1f6f35c193e0ddbe5ffa157d2c6eee1e524a9bf0db84f3c86f09d38380237',
+    definitionContentHash: 'sha256:3408b06214701b978f50ab7cbe7bc6634308e212b955bcefa30b1b89e5ecc6ba',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'video2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:video2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-a538d013',
-    compiledDefinitionCanonicalSha256: 'sha256:247c30b3c8cf8b9bcb670bebc1be69f90d4982d12ac2205ac35d16beefdaa70a',
+    compiledDefinitionContentHash: 'block-definition-v2-dbb0a9bc',
+    compiledDefinitionCanonicalSha256: 'sha256:90f5721bfbd4a32b88d708ef44b0746e67cbc5a84bf3801b8087ca3c333b18f6',
     studioMode: 'video_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:video2video:workflow:official_top_level_blocks',
@@ -571,13 +573,13 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Cosmos3OmniModularPipeline:video2video_with_sound',
-    definitionContentHash: 'sha256:1a8968646a4dd01095139376314c5ec63fd52947291de8446bc45ce55dbc9be7',
+    definitionContentHash: 'sha256:3150f66ad771c6f4cef63de8cb32731a61bff8a0af97e760917344e7cf0ac593',
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'video2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:video2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-941e9cd6',
-    compiledDefinitionCanonicalSha256: 'sha256:9f6ebf2c7bc9e14d0dc5593ec51c2dc576da4b5bdf042e8d0c465f258a6f4a77',
+    compiledDefinitionContentHash: 'block-definition-v2-9768a27e',
+    compiledDefinitionCanonicalSha256: 'sha256:6cad636177ff824bebb21201937234c204f4a2e630198096adf793a7e20af129',
     studioMode: 'video_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:video2video_with_sound:workflow:official_top_level_blocks',
@@ -622,12 +624,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Flux2KleinBaseModularPipeline:text2image',
-    definitionContentHash: 'sha256:44b5e43fb6ad03cb93ebee5eb47551fea96dd5a65872ed54ade95cac944f5ab3',
+    definitionContentHash: 'sha256:dd5a29e4b4f7ea4856475b1142aa9fdbf9213221a748f138bb4b67281c920268',
     pipelineClass: 'Flux2KleinBaseModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinBaseModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-0b0487a2',
-    compiledDefinitionCanonicalSha256: 'sha256:d9e408fb234d60a8166a94faae48c2a8b3e88df5523f0bf10e900946a984a6c6',
+    compiledDefinitionContentHash: 'block-definition-v2-5945880c',
+    compiledDefinitionCanonicalSha256: 'sha256:6f01da9ee6a1f737497acd5810c46d27fa7c96774696f40f699fe2a5394c674c',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:Flux2KleinBaseModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -643,12 +645,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:Flux2KleinModularPipeline:text2image',
-    definitionContentHash: 'sha256:dab62f686d9686599abb001c56bc54cd9fe6d4c9f0a7f1324f97c0ebaefd4f32',
+    definitionContentHash: 'sha256:f94e32bd36671675997f175d0df5621773f21628671a029de6e3639315fc3a48',
     pipelineClass: 'Flux2KleinModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-c886d3bd',
-    compiledDefinitionCanonicalSha256: 'sha256:e9baf8403e04eb348c128ab09c704ba922b6050945a6d9e020ec2b47f939bd5f',
+    compiledDefinitionContentHash: 'block-definition-v2-e229bd51',
+    compiledDefinitionCanonicalSha256: 'sha256:1de24c69cc2039a4b03d1b46c53159cc1674f1b406e93b741744e608ac12d761',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:Flux2KleinModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -664,17 +666,17 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:FluxKontextModularPipeline:text2image',
-    definitionContentHash: 'sha256:62849ec066216880296fb58948653a716f0a4a83849e54858378eb0e74cd4b88',
+    definitionContentHash: 'sha256:f8a526814a4706282a30a977b07e44dafc7310147417409d2107d8264c37b1be',
     pipelineClass: 'FluxKontextModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:FluxKontextModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-a35f7fd5',
-    compiledDefinitionCanonicalSha256: 'sha256:db65a154f942d0038e4ffe69de770abcfa2a3461beea753f180fe58216fee975',
+    compiledDefinitionContentHash: 'block-definition-v2-ff110ae0',
+    compiledDefinitionCanonicalSha256: 'sha256:b15f3bf3d65fdcc08580a9a02e44afc750cc1b3e84b5eb61040d6d575b8e787b',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:FluxKontextModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
       id: 'flux-kontext:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-f66959c0',
+      contentHash: 'studio-spec-v1-923966f5',
       executionProfileId: 'flux-kontext:modular',
     },
     artifact: {
@@ -685,17 +687,17 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:FluxModularPipeline:text2image',
-    definitionContentHash: 'sha256:cfec41815a507f63620e7b80cb6a18700485ac2520a7472826b1389418bbd7ed',
+    definitionContentHash: 'sha256:66248e988b06d822fcd7cad5598a7b902cd4af984f3ba96afb9d1c574544f078',
     pipelineClass: 'FluxModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:FluxModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-394bf2b4',
-    compiledDefinitionCanonicalSha256: 'sha256:e6b63c81cc52b11dd51061fd4b476ffe468434c9fe32b185328b459c1295581c',
+    compiledDefinitionContentHash: 'block-definition-v2-af240eef',
+    compiledDefinitionCanonicalSha256: 'sha256:e99e79b34a54fb57c6295105562d47c1a9be7f56dd9d8303e49c8cca9ed0a645',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:FluxModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
       id: 'flux-dev:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-9dd14796',
+      contentHash: 'studio-spec-v1-f595d0f7',
       executionProfileId: 'flux-dev:modular',
     },
     artifact: {
@@ -706,12 +708,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:MiniMaxMusic3ModularPipeline:default',
-    definitionContentHash: 'sha256:cb700ac7faacb63708965d7a4d40c4d6467fde678ec702aea7c30467059cd3ad',
+    definitionContentHash: 'sha256:aa13b727116a74d0d1cbec311ba979c79729027c57b5a46128b6b9c0eb7808f3',
     pipelineClass: 'MiniMaxMusic3ModularPipeline',
     workflowId: 'default',
     admissionId: 'diffusers.cluster-admission:MiniMaxMusic3ModularPipeline:default:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-f1af8629',
-    compiledDefinitionCanonicalSha256: 'sha256:adfcd515b6ef10ded0a08c9ddb9192ff1d1ed62726ce9799afdfaa586ed6da30',
+    compiledDefinitionContentHash: 'block-definition-v2-f8e83798',
+    compiledDefinitionCanonicalSha256: 'sha256:54ca590a5428d3aa546e9cd7860a63bb57585c72b2822b3b25db13522e38ecd5',
     studioMode: 'text_to_audio',
     adapterContractId:
       'diffusers.modular-adapter:MiniMaxMusic3ModularPipeline:default:workflow:official_top_level_blocks',
@@ -731,12 +733,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:MiniMaxH3ModularPipeline:t2va',
-    definitionContentHash: 'sha256:cdc0e8114d54ebde4efe880d1a72ca068f1b23ab07a668dd00ef54bf2d350cda',
+    definitionContentHash: 'sha256:bfca25e8659694ee49bc883a7a731b700e503949a7c1251bc9b1d486b7a98463',
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 't2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:t2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-45a9136f',
-    compiledDefinitionCanonicalSha256: 'sha256:092cfe42a28a983f5284b427ba4510c5d0b6d89781c63ccfbe3df8bbcbb85bb5',
+    compiledDefinitionContentHash: 'block-definition-v2-ebadb11c',
+    compiledDefinitionCanonicalSha256: 'sha256:7a0d2f9627934df45a2047b68b1db17e718b52b0456bf314eb429ca9d07cc980',
     studioMode: 'text_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:t2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -766,12 +768,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:MiniMaxH3ModularPipeline:fl2va',
-    definitionContentHash: 'sha256:5ca22c53b6c705356415b4273981ea6151bd844f61930340391fd8b85c39e8cc',
+    definitionContentHash: 'sha256:a8fce0c909d41798fd66a7eef46a13802b8d6680e5517da2d8db9b25e963e68d',
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 'fl2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:fl2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-c1ae6fb5',
-    compiledDefinitionCanonicalSha256: 'sha256:a00c9f0c5afd8b196e43723880a8d7d61ef911291fca4bc24b32fcb467dc2e42',
+    compiledDefinitionContentHash: 'block-definition-v2-832be953',
+    compiledDefinitionCanonicalSha256: 'sha256:fbeccf1abe6426846ad431b3b62f063a57713899e93155dd6412f5b0fb15c123',
     studioMode: 'first_last_frame_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:fl2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -803,12 +805,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:MiniMaxH3ModularPipeline:ref2va',
-    definitionContentHash: 'sha256:a1d7ba1a9d62de394742f34ea0f8ad5bb47b3dce958d905e0c46a61a2c053d4b',
+    definitionContentHash: 'sha256:e3a5a7098e67dd13490158ed35b673e8f6ef7bfc15cd317e6dbacce7eb950f8f',
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 'ref2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:ref2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-b5357247',
-    compiledDefinitionCanonicalSha256: 'sha256:a1d07b12f000d65c78ded811cffea8592189a287e8cf578098e0535e6d6a433d',
+    compiledDefinitionContentHash: 'block-definition-v2-501857b1',
+    compiledDefinitionCanonicalSha256: 'sha256:0b8f3c5050db6deb5785e6c1214b4d1f88dcb2dac8411407adad3310e89d0d11',
     studioMode: 'reference_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:ref2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -839,12 +841,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:QwenImageModularPipeline:text2image',
-    definitionContentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+    definitionContentHash: 'sha256:9425b62f99dbcdce2b152052acbe093c2a45eb9ef4b0424041de644cacf79a29',
     pipelineClass: 'QwenImageModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-6b8aec11',
-    compiledDefinitionCanonicalSha256: 'sha256:69f834ff7e2ecfe1dc908b4b00422eb70addd38d4542e688ec08616ceb9f9fc8',
+    compiledDefinitionContentHash: 'block-definition-v2-c02d311d',
+    compiledDefinitionCanonicalSha256: 'sha256:b762f83412fe501889a32477f2f1f66d182ce73c7969f07d67cf9781e5efe755',
     studioMode: 'modular_text_to_image',
     adapterContractId: 'diffusers.modular-adapter:QwenImageModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -890,12 +892,12 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:text2image',
-    definitionContentHash: 'sha256:6d8397fbb72b31e250e5107dea826505e4202cb1747895ed5ef628d8822e8390',
+    definitionContentHash: 'sha256:883a84f9ee24ac053fa00707daccf144fcbe6c83a5451de2e8c22524e93bc8ea',
     pipelineClass: 'StableDiffusionXLModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-b3e1fd2f',
-    compiledDefinitionCanonicalSha256: 'sha256:ca34a09936fb146c958509d450521f23b81d8340c658af65b20d9077a9773a17',
+    compiledDefinitionContentHash: 'block-definition-v2-e316b6e2',
+    compiledDefinitionCanonicalSha256: 'sha256:055c7bd272bced1cc04da268f483dee68f1bdae1eeda9054aa384f9145fc3c46',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -911,17 +913,17 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   diffusersRoute({
     definitionId: 'diffusers.modular:ZImageModularPipeline:text2image',
-    definitionContentHash: 'sha256:999c63312a43b65b5b58d3db3bffc1be6219bf85d52bb367cd850aa3df6ef711',
+    definitionContentHash: 'sha256:d9a597cd848e21713970daf1c6d52314a2157d1e6a4359ecc2a34e5bf1f9a5eb',
     pipelineClass: 'ZImageModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:ZImageModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-313615c7',
-    compiledDefinitionCanonicalSha256: 'sha256:ed8e8167d52e42d7225529b54d967f217332b9a479881613acb516c44f756736',
+    compiledDefinitionContentHash: 'block-definition-v2-26ba444e',
+    compiledDefinitionCanonicalSha256: 'sha256:accb1a0a62c4fae3b49d5ab112c32e6921f6cb899b06bda44274ba9647546ea6',
     studioMode: 'modular_text_to_image',
     adapterContractId: 'diffusers.modular-adapter:ZImageModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
       id: 'z-image:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-59451306',
+      contentHash: 'studio-spec-v1-fe4320cf',
       executionProfileId: 'z-image:modular',
     },
     artifact: {
@@ -932,19 +934,19 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:image_to_text',
-    definitionContentHash: 'sha256:0ebbe9e39e10f4a9cc8a73516e30a12525f4583ac86e6a8c608f6e7dcbe8eb49',
+    definitionContentHash: 'sha256:52724da00ad661dec53c9b84ef3dfad0c5c59c4b3e2d7ec85c6baf14194e82c6',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'image_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:image_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-0afedc2e',
-    compiledDefinitionCanonicalSha256: 'sha256:ad4632f5f78ba0c1daf9c7f7135ffdb8d37ee6b8b1b7147f84ee395f468b3b51',
+    compiledDefinitionContentHash: 'block-definition-v2-f525c935',
+    compiledDefinitionCanonicalSha256: 'sha256:19f667a0029be79265aaadcd7a7d8ff2e4723bf6fef4e4134495585af145965a',
     studioMode: 'image_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:image_to_text',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:image-to-text:v1',
       contentHash: 'studio-spec-v1-234664aa',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:image-to-text:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
@@ -952,48 +954,68 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transformersAnyToAnyGenerate', fieldId: 'result' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersAnyToAnyGenerate',
+          fieldId: 'result',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:text_generation',
-    definitionContentHash: 'sha256:6451d8b0daacc5353b0b294d8d51d1f2d1c9e4215c047d0d28bc87f1591ced0c',
+    definitionContentHash: 'sha256:4466173226db0e1ca825e0903ad81b3889f1b06280b3936f61f2345cdf2aabb0',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'text_generation',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:text_generation',
-    compiledDefinitionContentHash: 'block-definition-v2-e1b6efdd',
-    compiledDefinitionCanonicalSha256: 'sha256:7c1f79f4ddf0999d91740bb2fc3eec814ac71be39817aaf2a2bd235239290591',
+    compiledDefinitionContentHash: 'block-definition-v2-520b2947',
+    compiledDefinitionCanonicalSha256: 'sha256:4c81615528327942dd0961e1c26aa789ab14f7ef66ad60ebca657bf5b5a385ea',
     studioMode: 'text_generation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:text_generation',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:text-generation:v1',
       contentHash: 'studio-spec-v1-e769a28b',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:text-generation:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
       revision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     },
-    boundary: { outputs: [{ portId: 'result', role: 'transformersAnyToAnyGenerate', fieldId: 'result' }] },
+    boundary: {
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersAnyToAnyGenerate',
+          fieldId: 'result',
+        },
+      ],
+    },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:text_to_image',
-    definitionContentHash: 'sha256:0bb39f76a9d6c6b489d907dc670ea3099c314b3c36988c10e93c3f0de644d253',
+    definitionContentHash: 'sha256:d5ca9e565a06a6fdead466c480d6eaa1183b0e3aed2e3d2f5ce8c4c9453f7566',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'text_to_image',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-ff70bec5',
-    compiledDefinitionCanonicalSha256: 'sha256:62f98ac93547e764029737f5eb2d6079d08d118db99a9ee7f4ad6fddf0579f29',
+    compiledDefinitionContentHash: 'block-definition-v2-5f187c6e',
+    compiledDefinitionCanonicalSha256: 'sha256:800e93a1e53aea15d797a9b204e471f8e2103e3b71bf7aa93c91ba530f93d657',
     studioMode: 'text_to_image',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:text_to_image',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:text-to-image:v1',
       contentHash: 'studio-spec-v1-b484288e',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:text-to-image:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
@@ -1013,19 +1035,19 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
-    definitionContentHash: 'sha256:dccbc1cfef44ccc331d3db8983a2c93fc2d59469017808ba7ccf03df3e8de8ce',
+    definitionContentHash: 'sha256:7e8d62f390f900af7a6a4550a197615bd5e57d50c9a0add57ab9131ea4f0ddce',
     libraryRevision: '22aad52d435eb6dbaf354bdad9b0da84ce7d6156',
     pipelineClass: 'HuggingFaceCTCSpeechRecognitionModel',
     workflowId: 'speech_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-0538acfd',
-    compiledDefinitionCanonicalSha256: 'sha256:93e0da40072e8dc625e17572072eb85ac10dbf2b4a658357e351098b1ce3220a',
+    compiledDefinitionContentHash: 'block-definition-v2-08accc6d',
+    compiledDefinitionCanonicalSha256: 'sha256:6bebaf807e15ca3965ffeb6a8a0ceaeb89769dec1cc434cc4a01f283a73de68c',
     studioMode: 'speech_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
     studioExecutionSpec: {
-      id: 'wav2vec2-base-960h:speech-to-text:v1',
       contentHash: 'studio-spec-v1-32eb7d06',
       executionProfileId: 'wav2vec2-base-960h:ctc-direct',
+      id: 'wav2vec2-base-960h:speech-to-text:v1',
     },
     artifact: {
       repo: 'facebook/wav2vec2-base-960h',
@@ -1033,26 +1055,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceImageTextToTextModel:image_to_text',
-    definitionContentHash: 'sha256:f74e416634ea113f92450a83fcd523da128a05ed4e7e410ca10b3366a8e29e5f',
+    definitionContentHash: 'sha256:8f38e0387f7bd51e6a48f827e9437809963fcf603f510de42502ac07098fc55b',
     libraryRevision: '7e3e67edbbed1bf9888184d9df282b700a323964',
     pipelineClass: 'HuggingFaceImageTextToTextModel',
     workflowId: 'image_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceImageTextToTextModel:image_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-911b1c05',
-    compiledDefinitionCanonicalSha256: 'sha256:1d2d81a9f5de42cba994a09593c4f7c6530bdc6910a470162d1dc28054b46edd',
+    compiledDefinitionContentHash: 'block-definition-v2-9613dbd6',
+    compiledDefinitionCanonicalSha256: 'sha256:73c3d7ed12e8e499f9289a03708428bfdaa7e62728705c60ab780c47b9656fcf',
     studioMode: 'image_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceImageTextToTextModel:image_to_text',
     studioExecutionSpec: {
-      id: 'smolvlm-256m-instruct:image-to-text:v1',
       contentHash: 'studio-spec-v1-92e4c167',
       executionProfileId: 'smolvlm-256m-instruct:direct',
+      id: 'smolvlm-256m-instruct:image-to-text:v1',
     },
     artifact: {
       repo: 'HuggingFaceTB/SmolVLM-256M-Instruct',
@@ -1060,26 +1094,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transformersImageTextGenerate', fieldId: 'result' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersImageTextGenerate',
+          fieldId: 'result',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_to_text',
-    definitionContentHash: 'sha256:f79474c9e3aad63a287de2bf4b9cfe7297675fa578ebdcca7799a5fba31e594e',
+    definitionContentHash: 'sha256:abd9de4f0495851770fb69db92665d8c2b990362b5a420aeca8c4b4f2b7d27eb',
     libraryRevision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
     pipelineClass: 'HuggingFaceSpeechRecognitionModel',
     workflowId: 'speech_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-9572427b',
-    compiledDefinitionCanonicalSha256: 'sha256:afc2e974a19b5082ce0dc1529d734a32439f61cc8795a56ad59db39285ac379f',
+    compiledDefinitionContentHash: 'block-definition-v2-bf35c8de',
+    compiledDefinitionCanonicalSha256: 'sha256:86a97d2d862aeb0e8a7d86e9e8f17bd1fd651de61c4db20649cd0006db96222e',
     studioMode: 'speech_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceSpeechRecognitionModel:speech_to_text',
     studioExecutionSpec: {
-      id: 'whisper-tiny:speech-to-text:v1',
       contentHash: 'studio-spec-v1-d9e22ded',
       executionProfileId: 'whisper-tiny:direct',
+      id: 'whisper-tiny:speech-to-text:v1',
     },
     artifact: {
       repo: 'openai/whisper-tiny',
@@ -1087,26 +1133,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_translation',
-    definitionContentHash: 'sha256:75d167281041d1167dbf58218baf996551fd76553b123f21269f7fee0b9c2908',
+    definitionContentHash: 'sha256:c0d43e70581851a03fc9c55f8dfd1e32758e552e23c84ee6e5e91a26fd1b0479',
     libraryRevision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
     pipelineClass: 'HuggingFaceSpeechRecognitionModel',
     workflowId: 'speech_translation',
     admissionId: 'transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_translation',
-    compiledDefinitionContentHash: 'block-definition-v2-d24f88d0',
-    compiledDefinitionCanonicalSha256: 'sha256:a29af182025a23d62f6bb7f619783d771d52775870dfcdd8eeb2176ab778bfd4',
+    compiledDefinitionContentHash: 'block-definition-v2-cab448b0',
+    compiledDefinitionCanonicalSha256: 'sha256:0146db5f5843fba25d472db2618e623e40f993e1a86280715ebb169bfe3859c4',
     studioMode: 'speech_translation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceSpeechRecognitionModel:speech_translation',
     studioExecutionSpec: {
-      id: 'whisper-tiny:speech-translation:v1',
       contentHash: 'studio-spec-v1-1fe7022c',
       executionProfileId: 'whisper-tiny:direct',
+      id: 'whisper-tiny:speech-translation:v1',
     },
     artifact: {
       repo: 'openai/whisper-tiny',
@@ -1114,32 +1172,52 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceTextGenerationModel:text_generation',
-    definitionContentHash: 'sha256:32f78d82f1912997b1eaaf43a749627d7ccd07b8805bd66e8abaf21b27c6385a',
+    definitionContentHash: 'sha256:7df9c6510eb0a7d779a662a9907f318a1a08956d6a094681060e9a23ebb4aff1',
     libraryRevision: '12fd25f77366fa6b3b4b768ec3050bf629380bac',
     pipelineClass: 'HuggingFaceTextGenerationModel',
     workflowId: 'text_generation',
     admissionId: 'transformers.cluster-admission:HuggingFaceTextGenerationModel:text_generation',
-    compiledDefinitionContentHash: 'block-definition-v2-d433f9be',
-    compiledDefinitionCanonicalSha256: 'sha256:898427024ec85e94bcc6c0dc89e43a6c11285a8f2d975ca25f35b49982f74888',
+    compiledDefinitionContentHash: 'block-definition-v2-32a2aa6c',
+    compiledDefinitionCanonicalSha256: 'sha256:de068ad9d59e5d2613abb84e4a035333dffb25bff457130fcda86dc452d96ec2',
     studioMode: 'text_generation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceTextGenerationModel:text_generation',
     studioExecutionSpec: {
-      id: 'smollm2-135m-instruct:text-generation:v1',
       contentHash: 'studio-spec-v1-d9902470',
       executionProfileId: 'smollm2-135m-instruct:direct',
+      id: 'smollm2-135m-instruct:text-generation:v1',
     },
     artifact: {
       repo: 'HuggingFaceTB/SmolLM2-135M-Instruct',
       revision: '12fd25f77366fa6b3b4b768ec3050bf629380bac',
     },
-    boundary: { outputs: [{ portId: 'result', role: 'transformersTextGenerate', fieldId: 'result' }] },
+    boundary: {
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersTextGenerate',
+          fieldId: 'result',
+        },
+      ],
+    },
   }),
 ]);
 

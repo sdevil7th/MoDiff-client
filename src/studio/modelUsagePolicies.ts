@@ -7,6 +7,10 @@ import {
   ANIMATELCM_MOTION_REVISION,
   COSMOS3_GUARDRAIL_REPO,
   COSMOS3_GUARDRAIL_REVISION,
+  COSMOS3_SUPER_T2I_REPO,
+  COSMOS3_SUPER_T2I_REVISION,
+  FLUX2_DEV_REPO,
+  FLUX2_DEV_REVISION,
   FLUX_DEV_FP8_REPO,
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
@@ -70,6 +74,9 @@ export type ResolvedModelUsagePolicy = ModelUsagePolicy & {
 const UNDECLARED_MOTION_RIGHTS_NOTICE =
   'This snapshot does not declare a license for its motion weights. Independently establish authorization before use; MoDiff grants no rights.';
 
+const QWEN_IMAGE_21_TURBO_REPO = 'Qwen/Qwen-Image-2.1-Turbo';
+const QWEN_IMAGE_21_TURBO_REVISION = 'fc13ba1986fcb905854dc8de2f52eee395f49b5b';
+
 const fluxDevPolicy = (
   repository: string,
   reviewedRevision: string,
@@ -104,7 +111,11 @@ const HUNYUAN_DIT_POLICY: ModelUsagePolicy = {
   reviewedAt: '2026-08-13',
 };
 
-function hunyuanVideo15Policy(repository: string, reviewedRevision: string): ModelUsagePolicy {
+function hunyuanVideo15Policy(
+  repository: string,
+  reviewedRevision: string,
+  reviewedAt = '2026-09-02',
+): ModelUsagePolicy {
   return {
     id: `hunyuanvideo-1.5-community-license:${repository}`,
     repository,
@@ -115,8 +126,8 @@ function hunyuanVideo15Policy(repository: string, reviewedRevision: string): Mod
     termsUrl: `https://huggingface.co/${HUNYUAN_VIDEO_15_LICENSE_REPO}/blob/${HUNYUAN_VIDEO_15_LICENSE_REVISION}/LICENSE`,
     access: 'public',
     reviewedRevision,
-    policyVersion: '2026-09-02',
-    reviewedAt: '2026-09-02',
+    policyVersion: reviewedAt,
+    reviewedAt,
   };
 }
 
@@ -126,6 +137,46 @@ function hunyuanVideo15Policy(repository: string, reviewedRevision: string): Mod
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [QWEN_IMAGE_21_TURBO_REPO]: {
+    id: 'qwen-research-license:qwen-image-2.1-turbo',
+    repository: QWEN_IMAGE_21_TURBO_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The Qwen Research License is limited to non-commercial research and evaluation. Commercial use requires a separate license.',
+    termsUrl: `https://huggingface.co/${QWEN_IMAGE_21_TURBO_REPO}/blob/${QWEN_IMAGE_21_TURBO_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision: QWEN_IMAGE_21_TURBO_REVISION,
+    policyVersion: '2026-11-21',
+    reviewedAt: '2026-11-21',
+  },
+  [FLUX2_DEV_REPO]: {
+    id: 'flux-non-commercial-license-v2.1:flux2-dev',
+    repository: FLUX2_DEV_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'FLUX Non-Commercial License v2.1 limits model use to non-commercial, non-production purposes. Output use follows separate restrictions. Content filtering or manual review, applicable AI-disclosure duties, and other terms apply; commercial model use requires separate authorization.',
+    termsUrl: `https://huggingface.co/${FLUX2_DEV_REPO}/blob/${FLUX2_DEV_REVISION}/LICENSE.md`,
+    modelCardUrl: `https://huggingface.co/${FLUX2_DEV_REPO}/tree/${FLUX2_DEV_REVISION}`,
+    access: 'huggingface_gated',
+    reviewedRevision: FLUX2_DEV_REVISION,
+    policyVersion: '2026-10-09',
+    reviewedAt: '2026-10-09',
+  },
+  [COSMOS3_SUPER_T2I_REPO]: {
+    id: 'openmdw-1.1:cosmos3-super-text2image',
+    repository: COSMOS3_SUPER_T2I_REPO,
+    useScope: 'commercial_allowed',
+    acknowledgementRequired: true,
+    shortSummary:
+      'OpenMDW-1.1 permits commercial and non-commercial use. Distribution must retain the license and applicable origin notices; independent rights clearance and other terms apply. The license imposes no output-use restrictions. Mandatory safety dependencies have separate terms.',
+    termsUrl: 'https://openmdw.ai/license/1-1/',
+    access: 'public',
+    reviewedRevision: COSMOS3_SUPER_T2I_REVISION,
+    policyVersion: '2026-10-09',
+    reviewedAt: '2026-10-09',
+  },
   [ANIMA_REPO]: {
     id: 'circlestone-labs-non-commercial-license-v1:anima-base-v1',
     repository: ANIMA_REPO,
@@ -143,6 +194,14 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
   [HUNYUAN_DIT_CONTROLNET_CANNY_REPO]: HUNYUAN_DIT_POLICY,
   [HUNYUAN_VIDEO_15_T2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_T2V_REPO, HUNYUAN_VIDEO_15_T2V_REVISION),
   [HUNYUAN_VIDEO_15_I2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_I2V_REPO, HUNYUAN_VIDEO_15_I2V_REVISION),
+  ...Object.fromEntries(
+    (
+      [
+        ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v', 'f4dbc4a1efa4ac8ea56680cdf79d9f455105e814'],
+        ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v', 'dcf088ef4e420dd54bc25930ee810bb6613dfcb5'],
+      ] as const
+    ).map(([repository, revision]) => [repository, hunyuanVideo15Policy(repository, revision, '2026-11-17')]),
+  ),
   [COSMOS3_GUARDRAIL_REPO]: {
     id: 'nvidia-open-model-license:cosmos-guardrail1',
     repository: COSMOS3_GUARDRAIL_REPO,
@@ -234,6 +293,19 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     policyVersion: '2026-09-02',
     reviewedAt: '2026-09-02',
   },
+  'Pika-Labs/Pika-H3-Flex': {
+    id: 'minimax-h3-community-license-agreement',
+    repository: 'Pika-Labs/Pika-H3-Flex',
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'This derivative uses the MiniMax-H3 Community License. Review its territory, attribution, acceptable-use and commercial-authorization requirements before install or Run.',
+    termsUrl: 'https://huggingface.co/Pika-Labs/Pika-H3-Flex/blob/3ff166447d5edb1406107ab8370c42000ce173e4/LICENSE',
+    access: 'public',
+    reviewedRevision: '3ff166447d5edb1406107ab8370c42000ce173e4',
+    policyVersion: '2026-11-02',
+    reviewedAt: '2026-11-02',
+  },
   [LTX2_REPO]: {
     id: 'ltx-2-community-license-agreement',
     repository: LTX2_REPO,
@@ -246,6 +318,20 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     reviewedRevision: LTX2_REVISION,
     policyVersion: '2026-08-27',
     reviewedAt: '2026-08-27',
+  },
+  'Lightricks/LTX-2.5-Diffusers': {
+    id: 'ltx-2x-community-license-agreement',
+    repository: 'Lightricks/LTX-2.5-Diffusers',
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The LTX-2.x Community License includes entity-wide revenue eligibility, use restrictions, distribution terms and machine-generated-content notices. Review the model terms separately from its code license.',
+    termsUrl: 'https://github.com/Lightricks/LTX-2/blob/c1b4675863c07c59c92e502446cccdaedbe5889c/LICENSE-2_x',
+    modelCardUrl: 'https://huggingface.co/Lightricks/LTX-2.5-Diffusers',
+    access: 'huggingface_gated',
+    reviewedRevision: '4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3',
+    policyVersion: '2026-11-17',
+    reviewedAt: '2026-11-17',
   },
   [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
@@ -338,7 +424,7 @@ function workflowArtifacts(template: StudioTemplate) {
 export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUsagePolicy[] {
   const profile = getProfileForArtifactMode(STUDIO_MODEL_PROFILES[template.modelType], template.mode);
   const dependencies: Array<{ repository: string; revision?: string }> = [
-    { repository: profile.defaultRepo },
+    { repository: template.modelArtifact?.value ?? profile.defaultRepo, revision: template.modelArtifact?.revision },
     ...getModelRequirementsForMode(profile, template.mode).map((requirement) => ({
       repository: requirement.repo,
       revision: requirement.revision,

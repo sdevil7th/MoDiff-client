@@ -94,6 +94,8 @@ export type StudioModelType =
   | 'Cosmos3DistilledModularPipeline'
   | 'Cosmos3OmniModularPipeline'
   | 'MiniMaxH3ModularPipeline'
+  | 'MiniMaxH3ImageModularPipeline'
+  | 'PikaH3FlexModularPipeline'
   | 'WanAnimate2ModularPipeline'
   | 'WanAnimate2DistilledModularPipeline'
   | 'DDPMPipeline'
@@ -213,7 +215,9 @@ export type StudioModelType =
   | 'BuiltinImageOperation'
   | 'BuiltinVideoOperation'
   | 'SpandrelVideoUpscale'
-  | 'SpandrelImageUpscale';
+  | 'SpandrelImageUpscale'
+  | 'Flux3ModularPipeline'
+  | 'Flux3DistilledModularPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -248,6 +252,127 @@ export type StudioPresetId =
   | 'flux_control';
 
 export type StudioTemplateId =
+  | 'alpine_lake_in_oils'
+  | 'ddim_cifar10_preview'
+  | 'ddpm_cifar32_technical_preview'
+  | 'consistency_64_technical_preview'
+  | 'shap_e_traffic_cone_turntable'
+  | 'pixart_sigma_terracotta_herbs'
+  | 'pixart_sigma_pag_pink_mascot'
+  | 'sdxl_clear_cobalt_backdrop'
+  | 'sdxl_turbo_orange_caps'
+  | 'whisper_small_an_open_door'
+  | 'smolvlm_red_triangle'
+  | 'kandinsky3_ginkgo_on_slate'
+  | 'chroma_terracotta_and_blue'
+  | 'audioldm2_wind_through_high_pines'
+  | 'stable_audio_glass_roof_rain'
+  | 'stable_video_lighthouse_headland'
+  | 'longcat_last_tram_at_dusk'
+  | 'qwen_layered_sunset_and_peaks'
+  | 'wan_a14b_cloudbreak_over_the_ridges'
+  | 'wan_flf_blue_hour_at_the_tram_shelter'
+  | 'cogvideox_mossy_mountain_stream'
+  | 'cogvideox_red_tram_model_railway'
+  | 'sana_tidal_pool_on_black_basalt'
+  | 'joyimage_herbarium_rainy_porthole'
+  | 'longcat_florist_end_of_lane'
+  | 'kandinsky3_smoked_glass_on_limestone'
+  | 'longcat_clear_glass_at_the_bookshop'
+  | 'qwen_2511_pale_amber_on_limestone'
+  | 'qwen_cobalt_on_charcoal_slate'
+  | 'joy_plus_lavender_on_limestone'
+  | 'omnigen_cobalt_against_soft_apricot'
+  | 'flux_klein_alpine_lake_panorama'
+  | 'zimage_rocky_glacial_shores'
+  | 'qwen_bookshop_gouache'
+  | 'kontext_wide_water_alpine_ridge'
+  | 'chroma_alpine_block_print'
+  | 'joyimage_base_cobalt_paper_band'
+  | 'sdxl_blue_glass_on_linen'
+  | 'qwen_2512_cobalt_backdrop_repair'
+  | 'flux1_dev_limestone_studio_scratch_repair'
+  | 'zimage_seamless_cobalt_backdrop'
+  | 'sdxl_pag_cobalt_wall'
+  | 'flux_klein_open_glacial_lake'
+  | 'sd15_control_cobalt_handmade_paper'
+  | 'sd15_control_cobalt_studio_wall_repair'
+  | 'sd15_pag_control_wall_repair'
+  | 'sdxl_pag_snow_cabin'
+  | 'flux_canny_clean_backdrop'
+  | 'flux_canny_black_ink_cube'
+  | 'flux_depth_marine_bow_repair'
+  | 'flux_depth_marine_teal_bow_edit'
+  | 'sdxl_control_golden_boathouse'
+  | 'qwen_2511_terracotta_material_transfer'
+  | 'joy_plus_terracotta_on_limestone'
+  | 'omnigen_red_enamel_folded_linen'
+  | 'mochi_surf_over_dark_pebbles'
+  | 'animatediff_ivory_balloon_blue_mountains'
+  | 'animatediff_red_tram_through_snow'
+  | 'sana_i2v_blue_hour_above_rice_terraces'
+  | 'sana_video_water_terraces_before_sunrise'
+  | 'animatediff_red_tram_in_watercolor'
+  | 'allegro_basalt_shore_at_dawn'
+  | 'animatediff_candlelight_behind_amber_glass'
+  | 'wan_vace_amber_rings_after_rain'
+  | 'wan_a14b_wind_across_pond'
+  | 'wan_ti2v_subway_musician'
+  | 'spandrel_tram_shelter_video_2x'
+  | 'lumina2_larch_on_glacial_pond'
+  | 'hunyuan_dit_coastal_lighthouse'
+  | 'omnigen_tulips_after_rain'
+  | 'hunyuan_pag_burgundy_knight'
+  | 'chroma_restored_cobalt_backdrop'
+  | 'sdxl_pix2pix_pale_amber_glass'
+  | 'sd15_pag_mountain_lake_watercolor'
+  | 'sd15_pag_cobalt_studio_repair'
+  | 'zimage_golden_amber_glass'
+  | 'sdxl_control_inpaint_warm_plaster'
+  | 'sd15_canny_guided_green_glass'
+  | 'hunyuan_dit_green_glass_study'
+  | 'qwen_control_winter_cabin_blue_hour'
+  | 'sd15_pag_canny_guided_glass'
+  | 'sdxl_controlnet_glass_study_on_slate'
+  | 'sdxl_canny_adapter_glass_study'
+  | 'bookshop_at_blue_hour'
+  | 'flowers_after_rain'
+  | 'forest_ferns'
+  | 'ochre_paper_pavilion'
+  | 'quiet_current'
+  | 'persimmon_glaze'
+  | 'porcelain_on_slate_linen'
+  | 'salt_marsh_from_above'
+  | 'cobalt_jug_and_lemons'
+  | 'copper_hour_dunes'
+  | 'glasshouse_rain'
+  | 'pomegranate_on_blue_linen'
+  | 'canal_lantern_in_warm_light'
+  | 'the_glasshouse_seed_tray'
+  | 'quiet_kiln_at_daybreak'
+  | 'restoring_the_studio_backdrop'
+  | 'janus_reykjavik_travel_note'
+  | 'janus_red_triangle_caption'
+  | 'janus_red_enamel_teapot'
+  | 'lumina_opal_pendant_in_limestone'
+  | 'marigold_depth_synthetic_ramp'
+  | 'smollm2_rain_gauge'
+  | 'spandrel_x2_synthetic_gradient'
+  | 'whisper_tiny_blue_cup_transcription'
+  | 'wav2vec2_station_announcement'
+  | 'lcm_dawn_alpine_lake'
+  | 'sana_sprint_monochrome_tiger'
+  | 'minimax_h3_image_old_town_cat'
+  | 'flux3_klein_fp8r512_text_to_image'
+  | 'flux3_klein_fp8r512_single_reference_edit'
+  | 'flux3_klein_fp8r512_multi_reference_edit'
+  | 'flux3_klein_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_fp8r512_lora_style'
+  | 'flux3_klein_base_fp8r512_text_to_image'
+  | 'flux3_klein_base_fp8r512_single_reference_edit'
+  | 'flux3_klein_base_fp8r512_multi_reference_edit'
+  | 'flux3_klein_base_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_base_fp8r512_lora_style'
   | 'z_image_quick_concept'
   | 'z_image_product_mockup'
   | 'z_image_poster'
@@ -288,6 +413,23 @@ export type StudioTemplateId =
   | 'wan_vace_outpaint_reframe'
   | 'wan_vace_reference_motion'
   | 'wan_vace_grayscale_control'
+  | 'wan_animate_glasshouse_keeper'
+  | 'animatediff_pag_snowmelt_over_river_stones'
+  | 'ltx2_surf_below_the_breakwater'
+  | 'ltx2_kiln_at_first_light'
+  | 'ltx2_glasshouse_drip'
+  | 'wan_animate_signal_through_the_rain'
+  | 'latte_water_folding_over_slate'
+  | 'chroma_copper_medallion_outpaint'
+  | 'ltx2_enamel_teapot_window_light'
+  | 'ltx2_moss_and_basalt'
+  | 'sdxl_pag_lighthouse_in_graphite'
+  | 'flux_dev_forest_green_teapot'
+  | 'animatelcm_sunlit_surf'
+  | 'flux_kontext_bookshop_clear_glass'
+  | 'sdxl_pag_two_tier_cobalt_glass'
+  | 'wan_vace_amber_glass_stabilized'
+  | 'ltx_long_wind_and_tide_at_the_headland'
   | 'ace_step_text_to_audio'
   | 'minimax_music3_chamber_pop'
   | 'ace_step_audio_variation'
@@ -315,6 +457,8 @@ export type StudioTemplateId =
   | 'flux_redux_edit'
   | 'flux_redux_multi_reference'
   | 'flux2_klein_text_to_image'
+  | 'flux2_dev_text_to_image'
+  | 'cosmos3_super_text_to_image'
   | 'flux2_klein_edit'
   | 'flux2_klein_multi_reference'
   | 'wan_vace_video_to_video'
@@ -366,6 +510,8 @@ export type RunReadinessIssueAction =
   | 'cleanup_gpu'
   | 'open_model_manager'
   | 'detach_graph'
+  | 'edit_studio_field'
+  | 'open_resources'
   | 'inspect_node';
 
 export type RunReadinessIssue = {
@@ -376,6 +522,8 @@ export type RunReadinessIssue = {
   nodeId?: string;
   /** Visible field/socket to highlight when a diagnostic has an exact target. */
   fieldId?: string;
+  /** Backend-declared alternatives for the selected execution profile, not install consent. */
+  runtimeProfileIds?: string[];
   repoId?: string;
   /** Exact Hugging Face Hub snapshot request; never a direct file URL. */
   installOptions?: {
@@ -421,6 +569,9 @@ export type GraphInspectionSummary = {
     value: string;
     paramKey: string;
   }>;
+  /** Display-only identity of a single literal selector in the executable graph. */
+  declaredTask?: string;
+  declaredModel?: { pipeline: string; repo: string; profileId: string };
   blockingIssues: RunReadinessIssue[];
 };
 
@@ -822,6 +973,8 @@ export type StudioFormState = {
   confirmedCommunityArtifact?: string;
   dtype: 'float32' | 'float16' | 'bfloat16';
   quantizationMode: StudioQuantizationMode;
+  /** Immutable storage format; omission is historical native, null is a blocked saved value. */
+  weightFormat?: import('./weightFormat').StudioWeightFormat | null;
   device: string;
   autoOffload: boolean;
   offloadMode: StudioOffloadMode;
@@ -839,6 +992,8 @@ export type StudioFormState = {
   referenceImages: string[];
   referenceVideos: string[];
   maskImage: string;
+  /** Optional authored crop padding for an image task that declares the field. */
+  paddingMaskCrop?: number | null;
   controlImage: string;
   controlMode: number;
   ipAdapterImage: string;
@@ -846,6 +1001,9 @@ export type StudioFormState = {
   sourceVideo: string;
   maskVideo: string;
   controlVideo: string;
+  poseVideo?: string;
+  faceVideo?: string;
+  backgroundVideo?: string;
   sourceAudio: string;
   referenceAudio: string;
   speechLanguage: string;
@@ -883,6 +1041,28 @@ export type StudioInpaintContractStatus = {
   missingInputs?: string[];
 };
 
+/** Selected-profile graph authoring permission; not runtime or Auto qualification. */
+export type StudioImageAdapterAuthoringPolicy = {
+  schemaVersion: 1;
+  mediaKind: 'image';
+  adapterNodeKey: 'modules.ModularDiffusers.Lora' | 'modules.DiffusersImage.LoadAdapter';
+  tasks: string[];
+  maxOwnedAdapters: number;
+  repositoryRevisions: Array<{ repo: string; revision: string }>;
+  /** Exact declared effective controls for Add/Move; Remove remains structural recovery. */
+  requiredControls?: Record<string, string | boolean | null>;
+};
+
+export type StudioAudioAdapterAuthoringPolicy = Omit<
+  StudioImageAdapterAuthoringPolicy,
+  'mediaKind' | 'adapterNodeKey' | 'maxOwnedAdapters'
+> & {
+  mediaKind: 'audio';
+  adapterNodeKey: 'modules.DiffusersAudio.LoadAdapter';
+  maxOwnedAdapters: 1;
+};
+export type StudioAdapterAuthoringPolicy = StudioImageAdapterAuthoringPolicy | StudioAudioAdapterAuthoringPolicy;
+
 export type StudioExecutionProfile = {
   id: string;
   model_type: StudioModelType;
@@ -895,6 +1075,9 @@ export type StudioExecutionProfile = {
   default_repo: string;
   fallback_repo?: string | null;
   compatible_repos?: string[];
+  /** Current backend-reviewed immutable artifact pairs for selected adapter authoring. */
+  repository_revisions?: Array<{ repo: string; revision: string }>;
+  adapterAuthoring?: StudioAdapterAuthoringPolicy;
   quantizable_components: string[];
   default_quantized_components: string[];
   supported_offload_modes: StudioOffloadMode[];
@@ -911,6 +1094,18 @@ export type StudioExecutionProfile = {
     delivery: 'base' | 'optional_overlay';
   }>;
   optional_runtime_profiles?: string[];
+  /** Source-declared sealed Diffusers overlay; visibility does not grant execution. */
+  required_diffusers_provider?: string;
+  /** Explicit per-task editing offers; workflow metadata parsing validates these. */
+  authoringRecipes?: readonly {
+    executionProfileId: string;
+    pipelineClass: string;
+    task: string;
+    authoringRecipeId: string;
+    rawAuthoringRecipeId?: string;
+    rawAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+    layoutAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+  }[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
   expert_quantization_policy?: StudioExpertQuantizationPolicy;
@@ -936,6 +1131,8 @@ export type StudioExecutionSpec = {
   actions: [];
   /** Declared non-media sink roles retained for execution/audit side effects. */
   auxiliaryTerminalRoles?: StudioGraphRole[];
+  /** Hash-covered dependency, identical to the selected execution profile. */
+  requiredDiffusersProvider?: string;
   contentHash: string;
 };
 
@@ -1005,6 +1202,7 @@ export type StudioModelProfile = {
     | 'HunyuanVideo 1.5'
     | 'Cosmos 3'
     | 'MiniMax H3'
+    | 'MiniMax Image'
     | 'Z-Image'
     | 'Qwen Image'
     | 'Wan Video'
@@ -1074,6 +1272,10 @@ export type StudioModelProfile = {
   artifactInstallRequired?: boolean;
   alternateArtifact?: string;
   defaultDtype: StudioFormState['dtype'];
+  /** Backend-owned default for new drafts; never an execution-time override. */
+  defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
+  /** The reviewed loader enables VAE tiling regardless of its input recipe. */
+  requiresVaeTiling?: boolean;
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };
   recommendedSteps: number;
   recommendedGuidance: number;
@@ -1234,7 +1436,14 @@ export type StudioTemplateIntentGroup =
   | 'planning';
 
 export type StudioTemplateWorkflowBlock =
-  'lora' | 'upscaler' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
+  | 'lora'
+  | 'upscaler'
+  | 'masked_composite'
+  | 'video_masked_composite'
+  | 'video_sequence'
+  | 'quality_video_sequence'
+  | 'soundtrack'
+  | 'lyric_video';
 
 export type StudioTemplateModelArtifact = {
   source: 'hub' | 'local';
@@ -1269,6 +1478,25 @@ export type StudioTemplateLoraSettings = {
 };
 
 export type StudioTemplateWorkflowBlockSettings = {
+  /** Fresh graph only: bounded JSON arrays wired to declared encoding inputs. */
+  encodingInputs?: { role: StudioGraphRole; values: Record<string, number[]> };
+  /** Fresh graph only: initial settings for a generator that declares prompt windows. */
+  videoPromptWindows?: {
+    promptsJson: string;
+    segmentFrameLength: number;
+    temporalOverlap: number;
+    overlapConditionStrength: number;
+  };
+  videoMaskedComposite?: { maskGrowPixels: number; feather: number };
+  maskedComposite?: {
+    backgroundReferenceIndex: number;
+    foregroundSize: { width: number; height: number };
+    verticalPad: { width: number; height: number };
+    horizontalPad: { width: number; height: number };
+    crop: { x: number; y: number; width: number; height: number };
+    maskChannel: 'luminance' | 'alpha' | 'red' | 'green' | 'blue';
+    invertMask: boolean;
+  };
   lora?: StudioTemplateLoraSettings;
   upscaler?: {
     model: StudioTemplateModelArtifact;
@@ -1277,6 +1505,7 @@ export type StudioTemplateWorkflowBlockSettings = {
   videoSequence?: {
     promptsJson: string;
     transitionSeconds: number;
+    trimFrames?: number;
   };
   qualityVideoSequence?: {
     shotsJson: string;
@@ -1305,6 +1534,8 @@ export type StudioTemplateWorkflowBlockSettings = {
     audioFit: StudioAudioFitSettings;
   };
   lyricVideo?: {
+    recipeVersion?: 'nine-scenes:v2';
+    visualExecutionSelection?: StudioTemplateExecutionSelection;
     visualModel: StudioTemplateModelArtifact;
     promptsJson: string;
     lrc: string;
@@ -1397,6 +1628,9 @@ export type StudioTemplateInputFormField =
   | 'sourceVideo'
   | 'maskVideo'
   | 'controlVideo'
+  | 'poseVideo'
+  | 'faceVideo'
+  | 'backgroundVideo'
   | 'sourceAudio'
   | 'referenceAudio';
 
@@ -1460,6 +1694,7 @@ export type StudioTemplateLockedSettings = Pick<
   | 'guidanceScale'
   | 'resourceMode'
   | 'dtype'
+  | 'weightFormat'
   | 'quantizationMode'
   | 'autoOffload'
   | 'offloadMode'
@@ -1500,6 +1735,8 @@ export type StudioTemplateLockedSettings = Pick<
 export type TemplateMotionReviewProfile = 'global_camera' | 'localized_subject';
 
 export type TemplateExpectedOutput = {
+  /** Complete source timing, SHA-bound to the published before/source input. */
+  sourceTiming?: { schemaVersion: 1; sourceMediaHash: string; frames: number; fps: number };
   width?: number;
   height?: number;
   frames?: number;
@@ -1525,11 +1762,21 @@ export type StudioTemplateExample = {
   mediaType: TemplateMediaType;
   status: TemplateExactnessStatus;
   lockedSeed: number;
-  lockedSettings?: Partial<StudioTemplateLockedSettings>;
+  // Retained catalog records may preserve PAG form values alongside their
+  // verified executable settings. Their recipes use the model's PAG defaults.
+  lockedSettings?: Partial<
+    StudioTemplateLockedSettings &
+      Pick<StudioFormState, 'device' | 'speechLanguage' | 'pagScale' | 'pagAdaptiveScale' | 'attentionBackend'>
+  > & {
+    // The source-bound retained recipes record the shared input resolution default.
+    matchInputResolution?: true;
+  };
   /** Contract for each primary runtime output emitted by the graph. */
   expectedOutput?: TemplateExpectedOutput;
   /** Optional derived gallery-media override, such as a review contact sheet. */
   galleryExpectedOutput?: TemplateExpectedOutput;
+  /** The specific native video accepted for a retained technical preview. */
+  retainedVideoPreview?: import('./retainedVideoPreview').RetainedVideoPreview;
   modelRevision: string;
   runtimeEstimate: string;
   outputPath?: string;
@@ -1568,11 +1815,33 @@ export type StudioTemplatePredictability = {
   requiredModels?: StudioModelRequirement[];
 };
 
+export type StudioTemplateExecutionSelection = {
+  schemaVersion: 1;
+  pipelineClass: string;
+  task: string;
+  executionProfileId: string;
+  /** Existing backend recipe supplies semantic field/utility bindings only. */
+  bindingSpec: { modelType: StudioModelType; mode: StudioMode };
+  implementation: 'native_stages' | 'pipeline_stages' | 'whole_pipeline';
+  /** Fresh authoring only: an empty initial text input retains its resolved
+   * backend default. Authored text and subsequent edits always take priority. */
+  backendDefaultInputs?: Array<'prompt' | 'negativePrompt'>;
+  /** Explicit initial recipe policy; Auto and Gallery qualification stay separate. */
+  memoryPolicy?: 'custom_experimental';
+  /** Exact backend declaration for fresh graph bindings and initial controls. */
+  authoringRecipeId?: string;
+  /** Original whole-pipeline default identity for a single native descriptor. */
+  loraPolicy?: { defaultAdapterName: string };
+  note?: string;
+};
+
 export type StudioTemplate = {
   id: StudioTemplateId;
   label: string;
   mode: StudioMode;
   modelType: StudioModelType;
+  /** Exact recipe artifact name when one backend class serves several model variants. */
+  modelDisplayName?: string;
   intentGroup?: StudioTemplateIntentGroup;
   category?: StudioTemplateCategory;
   tags?: string[];
@@ -1585,6 +1854,10 @@ export type StudioTemplate = {
   requiredBackendCapabilities?: string[];
   workflowBlocks?: StudioTemplateWorkflowBlock[];
   workflowBlockSettings?: StudioTemplateWorkflowBlockSettings;
+  /** Exact fresh-workflow choice; never applied to an existing saved graph. */
+  executionSelection?: StudioTemplateExecutionSelection;
+  /** Declared immutable artifact for this fresh recipe's backend model owner. */
+  modelArtifact?: StudioTemplateModelArtifact;
   videoDelivery?: 'native' | 'spatial_upscale';
   /**
    * `user_supplied` marks a runnable bring-your-own-model recipe whose card
@@ -1606,7 +1879,7 @@ export type StudioTemplate = {
    * prompt instead of expanding it with generic production language that can
    * dilute the adapter's documented conditioning.
    */
-  promptQualityPolicy?: 'modality_complete' | 'adapter_reference';
+  promptQualityPolicy?: 'modality_complete' | 'adapter_reference' | 'raw_layout_reference';
   prompt: string;
   negativePrompt?: string;
   presetId?: StudioPresetId;
@@ -1730,7 +2003,12 @@ export type StudioOutputProvenance = {
   };
 };
 
+export type LegacyStudioOutputField =
+  'mode' | 'modelType' | 'seed' | 'width' | 'height' | 'steps' | 'guidanceScale' | 'numFrames' | 'fps';
+
 export type StudioOutput = {
+  /** Presence in receipt-free historical metadata; never backend execution evidence. */
+  legacyRecordedFields?: LegacyStudioOutputField[];
   resolvedExecutionInputs?: import('./resolvedExecutionInputs').ResolvedExecutionInputs;
   id: string;
   clientRunId?: string;

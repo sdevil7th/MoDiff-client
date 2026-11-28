@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   TEMPLATE_ASSET_BUILD_IDENTITY_PATH,
+  validateTemplateAssetReleaseCheckoutSource,
   verifyRemoteTemplateAssetBuild,
   verifyTemplateAssetReleaseCheckout,
 } from './template-asset-release-contract.mjs';
@@ -206,17 +207,49 @@ test('remote build inspection rejects missing and bundled Gallery payloads', (co
   assert.throws(() => verifyRemoteTemplateAssetBuild(distRoot, remoteSource), /contains a local Gallery payload/);
 });
 
-test('release checkout verification reads the checked source, manifest, and fresh build together', (context) => {
+test('checked-in Gallery metadata withholds the restricted workflow previews', () => {
+  assert.equal(validateTemplateAssetReleaseCheckoutSource().mode, 'huggingface');
+});
+
+test('release checkout rejects public private-output aliases and template previews without operator evidence', (context) => {
   const root = mkdtempSync(join(tmpdir(), 'modiff-template-checkout-'));
   context.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'src', 'studio'), { recursive: true });
   mkdirSync(join(root, 'config'));
+  mkdirSync(join(root, 'public', 'template-gallery'), { recursive: true });
   mkdirSync(join(root, 'dist'));
   writeFileSync(join(root, 'src', 'studio', 'templateAssetSource.json'), JSON.stringify(remoteSource));
-  writeFileSync(join(root, 'config', 'template-assets.v1.json'), JSON.stringify(readyManifest));
+  const restrictedHash = 'd'.repeat(64);
+  const reviews = [{ sourceTemplateId: 'private-recipe', outputSha256: restrictedHash }];
+  writeFileSync(
+    join(root, 'config', 'private-workflow-qualification.v1.json'),
+    JSON.stringify({ schemaVersion: 1, reviews }),
+  );
+  const galleryPath = join(root, 'public', 'template-gallery', 'manifest.json');
+  writeFileSync(galleryPath, JSON.stringify({ examples: [] }));
+  const manifestPath = join(root, 'config', 'template-assets.v1.json');
+  writeFileSync(manifestPath, JSON.stringify({ ...readyManifest, assets: [] }));
   writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
   mkdirSync(join(root, 'dist', 'assets'));
   writeFileSync(join(root, 'dist', TEMPLATE_ASSET_BUILD_IDENTITY_PATH), serializeTemplateAssetSource(remoteSource));
 
+  assert.equal(verifyTemplateAssetReleaseCheckout(root).assetSetId, assetSetId);
+  const alias = 'template-gallery/unrelated-title.mp4';
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({ ...readyManifest, assets: [{ path: alias, sha256: `sha256:bytes:${restrictedHash}` }] }),
+  );
+  assert.throws(() => verifyTemplateAssetReleaseCheckout(root), /private workflow output/i);
+
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({ ...readyManifest, assets: [{ path: alias, sha256: `sha256:bytes:${'e'.repeat(64)}` }] }),
+  );
+  writeFileSync(galleryPath, JSON.stringify({ examples: [{ templateId: 'private-recipe', posterPath: `/${alias}` }] }));
+  assert.throws(() => verifyTemplateAssetReleaseCheckout(root), /private workflow preview/i);
+
+  const subsetSource = { ...remoteSource, completeAssetSetId: assetSetId, unavailableAssets: [alias] };
+  writeFileSync(join(root, 'src', 'studio', 'templateAssetSource.json'), JSON.stringify(subsetSource));
+  writeFileSync(join(root, 'dist', TEMPLATE_ASSET_BUILD_IDENTITY_PATH), serializeTemplateAssetSource(subsetSource));
   assert.equal(verifyTemplateAssetReleaseCheckout(root).assetSetId, assetSetId);
 });

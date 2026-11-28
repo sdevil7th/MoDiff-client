@@ -12,6 +12,7 @@ import {
 import { useNodesStore, type NodeData } from '../stores/useNodeStore';
 import { pythonFileImport } from '../studio/customExtensions';
 import { OPERATION_DRAG_PREFIX, takeOperationDrag } from './operationDrag';
+import { STAGE_DRAG_PREFIX, stageFromDrag } from '../studio/visualNodeCatalog';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -24,8 +25,7 @@ import {
 } from '../studio/userBlocks';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { formatRequestError, requestJson, RequestError } from '../utils/requestJson';
-import { isRecord } from '../studio/outputContracts';
-import { parseWorkflowPackage } from '../studio/workflowPackage';
+import { readWorkflowJson, workflowExampleDisplayName } from './readWorkflowJson';
 import { expandedHuggingFaceClusterAtPosition } from '../studio/huggingFaceClusterGraph';
 import { customizeHuggingFaceClusterInstance } from '../studio/huggingFaceClusterCustomization';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
@@ -77,13 +77,6 @@ type UseWorkflowDropOptions = {
 
 function showGraphImportError(message: string) {
   enqueueSnackbar(message, { variant: 'error', autoHideDuration: message.length * 80 });
-}
-
-function savedWorkflowSnapshot(value: unknown) {
-  if (!isRecord(value) || !Array.isArray(value.nodes) || !Array.isArray(value.edges) || !isRecord(value.studioForm)) {
-    return null;
-  }
-  return value as unknown as WorkflowTabSnapshot;
 }
 
 export function useWorkflowDrop({
@@ -177,30 +170,14 @@ export function useWorkflowDrop({
           }
           return;
         }
-        if (!file || file.type !== 'application/json') {
-          return;
+        if (!file || (file.type !== 'application/json' && !/\.json$/i.test(file.name))) return;
+        try {
+          const { title, snapshot } = await readWorkflowJson(file, edgeType, useStudioStore.getState().form);
+          createWorkflowTab(title, snapshot, 'import', file.name);
+          enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not read the workflow JSON.'));
         }
-
-        const reader = new FileReader();
-        reader.onload = (readerEvent) => {
-          try {
-            const value = JSON.parse(readerEvent.target?.result as string) as unknown;
-            const workflowPackage = parseWorkflowPackage(value);
-            const snapshot = savedWorkflowSnapshot(value) ?? workflowPackage?.snapshot;
-            const title = workflowPackage?.title || file.name.replace(/\.json$/i, '') || 'Imported workflow';
-            createWorkflowTab(
-              title,
-              snapshot ??
-                workflowSnapshotFromGraph(value as WorkflowGraphDrop, edgeType, useStudioStore.getState().form),
-              'import',
-              file.name,
-            );
-            enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
-          } catch (error) {
-            showGraphImportError(formatRequestError(error, 'Could not read the workflow JSON.'));
-          }
-        };
-        reader.readAsText(file);
         return;
       }
 
@@ -231,7 +208,7 @@ export function useWorkflowDrop({
         }
 
         createWorkflowTab(
-          data.split(/[\\/]/).pop() || 'Imported graph',
+          workflowExampleDisplayName(data) || 'Imported graph',
           workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form),
           'import',
           data,
@@ -414,7 +391,15 @@ export function useWorkflowDrop({
           pendingOperations.current.delete(request);
         }
       } else {
-        newNode = createNodeFromRegistry(data, nodesRegistry, position);
+        if (data.startsWith(STAGE_DRAG_PREFIX)) {
+          const definition = stageFromDrag(data, useNodesStore.getState().visualNodeCatalog, nodesRegistry);
+          if (!definition) {
+            showGraphImportError('This stage action is unavailable. Select it again in the library.');
+            return;
+          }
+          const key = `${definition.module}.${definition.action}`;
+          newNode = createNodeFromRegistry(key, { [key]: definition }, position);
+        } else newNode = createNodeFromRegistry(data, nodesRegistry, position);
       }
       if (!newNode) {
         showGraphImportError(`Node ${data} not found. Reload the page to refresh the node list.`);

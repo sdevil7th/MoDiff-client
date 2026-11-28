@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
   Download,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { ModiffDialog, StudioButton, StudioSearchInput } from '../ui';
+import { useSettingsStore } from '../stores/useSettingsStore';
 
 type CommandItem = {
   id: string;
@@ -62,8 +63,11 @@ export function StudioCommandPalette({
   onRestoreLatest,
   onRerunLatest,
 }: StudioCommandPaletteProps) {
-  const [open, setOpen] = useState(false);
+  const open = useSettingsStore((state) => state.commandPaletteOpen);
+  const setOpen = useSettingsStore((state) => state.setCommandPaletteOpen);
   const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const listId = useId();
 
   const commands = useMemo<CommandItem[]>(
     () => [
@@ -92,6 +96,7 @@ export function StudioCommandPalette({
         label: 'Interrupt run',
         detail: 'Ask the backend to stop the active or queued execution.',
         icon: <Octagon size={15} />,
+        disabled: !isWorking,
         run: onInterrupt,
       },
       ...(hasManagedForm
@@ -188,32 +193,32 @@ export function StudioCommandPalette({
     if (!normalized) return commands;
     return commands.filter((command) => `${command.label} ${command.detail}`.toLowerCase().includes(normalized));
   }, [commands, query]);
+  const available = filteredCommands.filter((item) => !item.disabled);
+  const active = available.find((item) => item.id === highlight) ?? available[0];
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const modifier = event.ctrlKey || event.metaKey;
-      if (modifier && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setOpen(true);
-      }
-      if (modifier && event.key === 'Enter' && !isWorking && !runBlocked) {
+      if (!open && modifier && event.key === 'Enter' && !isWorking && !runBlocked) {
         event.preventDefault();
         onRun();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isWorking, onRun, runBlocked]);
+  }, [isWorking, onRun, runBlocked, open]);
 
   const runCommand = (command: CommandItem) => {
     if (command.disabled) return;
     command.run();
     setOpen(false);
     setQuery('');
+    setHighlight(null);
   };
   const closePalette = () => {
     setOpen(false);
     setQuery('');
+    setHighlight(null);
   };
 
   return (
@@ -231,22 +236,53 @@ export function StudioCommandPalette({
         <StudioSearchInput
           autoFocus
           aria-label="Search commands"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onClear={() => setQuery('')}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setHighlight(null);
+          }}
+          onClear={() => {
+            setQuery('');
+            setHighlight(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || !active) return;
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!event.repeat) runCommand(active);
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              const next =
+                available[
+                  (available.indexOf(active) + (event.key === 'ArrowDown' ? 1 : -1) + available.length) %
+                    available.length
+                ];
+              if (!next) return;
+              setHighlight(next.id);
+              document.getElementById(`${listId}-${next.id}`)?.scrollIntoView({ block: 'nearest' });
+            }
+          }}
           placeholder="Search commands"
           className="mb-2"
         />
-        <div className="grid gap-1">
+        <div className="grid gap-1" id={listId} role="listbox" aria-label="Commands">
           {filteredCommands.map((command) => (
             <StudioButton
               key={command.id}
+              role="option"
+              id={`${listId}-${command.id}`}
+              aria-selected={active?.id === command.id}
               tone="ghost"
               align="left"
               fullWidth
               disabled={command.disabled}
               onClick={() => runCommand(command)}
-              className="h-auto border border-transparent px-2 py-2 hover:border-hf-yellow hover:bg-modiff-bg"
+              className="h-auto border border-transparent px-2 py-2 aria-selected:border-hf-yellow aria-selected:bg-modiff-bg hover:border-hf-yellow hover:bg-modiff-bg"
             >
               <span className="grid size-7 shrink-0 place-items-center text-hf-yellow">{command.icon}</span>
               <span className="min-w-0">

@@ -1,3 +1,5 @@
+import { resolveTemplateModelSelection, templateHasAudioPrimary } from './templateModelSelection';
+import { hasTemplateOperationRecipe } from './templateOperationSelections';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -7,6 +9,7 @@ import {
   captureWorkflowOperationContext,
   currentAutoResourcePlanTarget,
   isWorkflowOperationCancelled,
+  workflowOperationContextIsCurrent,
   useStudioStore,
   type WorkflowOperationContext,
 } from '../stores/useStudioStore';
@@ -20,8 +23,11 @@ import {
   selectedAutoCandidate,
 } from './autoResource';
 import { getTemplateLockedSettings } from './templateExactness';
+import { isPlanningOnlyTemplate } from './templateCreationPolicy';
+import { normalizeStudioRuntimeDevice } from './runReadiness';
+import { exactStudioExecutionSpecForForm } from './executionSpecs';
 import { materializeTemplateDefaultInputs } from './templateInputs';
-import { waitForGraphNodeMeasurements } from '../workflow/graphLayout';
+import { FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS, waitForGraphNodeMeasurements } from '../workflow/graphLayout';
 import {
   addLoraWorkflowBlock,
   addLyricVideoWorkflowBlock,
@@ -37,6 +43,28 @@ export type TemplateWorkflowResult = {
   graphError?: string;
   warnings: string[];
 };
+
+export function applyTemplateVideoPromptWindows(template: StudioTemplate) {
+  const settings = template.workflowBlockSettings?.videoPromptWindows;
+  if (!settings) return;
+  const samplerId = useStudioStore.getState().graphBinding?.nodes.wanGenerate;
+  const flow = useFlowStore.getState();
+  const sampler = flow.nodes.find((node) => node.id === samplerId);
+  const values = [
+    ['prompt_segments_json', settings.promptsJson],
+    ['segment_frame_length', settings.segmentFrameLength],
+    ['temporal_overlap', settings.temporalOverlap],
+    ['temporal_overlap_condition_strength', settings.overlapConditionStrength],
+  ] as const;
+  if (
+    !sampler ||
+    sampler.data.module !== 'modules.DiffusersVideo' ||
+    sampler.data.action !== 'Generate' ||
+    values.some(([field]) => !sampler.data.params[field])
+  )
+    throw new Error('Video prompt windows require a compatible Generate stage.');
+  for (const [field, value] of values) flow.setParam(sampler.id, field, value);
+}
 
 async function applyWorkflowBlock(
   block: StudioTemplateWorkflowBlock,
@@ -112,7 +140,193 @@ function blankCurrentCanvas() {
   });
 }
 
+/** Observe an existing runtime read; template creation never starts discovery. */
+export async function waitForTemplateRuntimeDiscovery(context: WorkflowOperationContext, timeoutMs = 120_000) {
+  assertWorkflowOperationContext(context);
+  if (useNodesStore.getState().discoveryRequests.runtime.status !== 'loading') return;
+  await new Promise<void>((resolve, reject) => {
+    let observing = false;
+    let settled = false;
+    let unsubscribeNodes = () => {};
+    let unsubscribeStudio = () => {};
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribeNodes();
+      unsubscribeStudio();
+      if (error) reject(error);
+      else resolve();
+    };
+    const inspect = () => {
+      if (!observing || settled) return;
+      try {
+        assertWorkflowOperationContext(context);
+        const state = useNodesStore.getState();
+        const discovery = state.discoveryRequests.runtime;
+        if (discovery.status === 'loading') return;
+        if (discovery.status !== 'success' || !state.runtimeStatus)
+          throw new Error(discovery.error || 'Runtime discovery is not ready. Retry opening the template.');
+        finish();
+      } catch (error) {
+        finish(error);
+      }
+    };
+    unsubscribeNodes = useNodesStore.subscribe(inspect);
+    unsubscribeStudio = useStudioStore.subscribe(inspect);
+    const timeout = setTimeout(
+      () => finish(new Error('Runtime discovery timed out. Retry opening the template.')),
+      timeoutMs,
+    );
+    observing = true;
+    inspect();
+  });
+}
+
+/** Apply the existing device fallback while this transaction still owns the form. */
+export function normalizeTemplateRuntimeDevice(context: WorkflowOperationContext) {
+  normalizeStudioRuntimeDevice(context);
+}
+
+/** Shared by interactive creation and the template generation harness. */
+export async function createTemplateOperationWorkflow(
+  template: StudioTemplate,
+  form: StudioFormState,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  assertWorkflowOperationContext(context);
+  const selection = template.executionSelection;
+  if (
+    !selection ||
+    !hasTemplateOperationRecipe(template) ||
+    (template.example?.mediaType !== 'video' && template.outputKinds?.includes('video'))
+  )
+    throw new Error('Select a media template with a declared execution recipe.');
+  // Preserve the pre-loading graph so edits during lazy module loading remain
+  // protected by the ordinary transaction's exact signature check.
+  const previousGraph = structuredClone(useFlowStore.getState().toObject());
+  const [
+    { createTemplateOperationGraph },
+    { requestOperationStarter },
+    { commitOperationGraph, operationGraphSignature },
+    { templateSecondaryStageRegistry, templateSecondaryVideoStages },
+  ] = await Promise.all([
+    import('./templateOperationWorkflow'),
+    import('../workflow/operationStarterRequest'),
+    import('../workflow/operationGraphTransaction'),
+    import('./templateSecondaryStages'),
+  ]);
+  assertWorkflowOperationContext(context);
+  const signature = operationGraphSignature(previousGraph);
+  const nodesStore = useNodesStore.getState();
+  const spec = exactStudioExecutionSpecForForm(
+    nodesStore.studioModelCapabilities,
+    nodesStore.studioExecutionSpecInvalid,
+    selection.bindingSpec,
+  );
+  const capability = nodesStore.studioModelCapabilities.find(
+    (item) => item.modelType === selection.bindingSpec.modelType,
+  );
+  if (!spec || !capability)
+    throw new Error('The selected template execution specification is unavailable. Refresh model capabilities.');
+  const selected = templateHasAudioPrimary(template)
+    ? resolveTemplateModelSelection(template, nodesStore.studioModelCapabilities)
+    : null;
+  if (templateHasAudioPrimary(template) && !selected)
+    throw new Error('The selected audio template needs one reviewed immutable model revision. Refresh capabilities.');
+  const starter = await requestOperationStarter(
+    selection.pipelineClass,
+    selection.task,
+    nodesStore.operationContracts,
+    undefined,
+    selection.executionProfileId,
+    selection.authoringRecipeId,
+    selected?.repository,
+  );
+  assertWorkflowOperationContext(context);
+  const registryKeys = [
+    ...(starter.authoring ?? spec).roles.map(([, key]) => key),
+    ...(template.workflowBlocks?.includes('lora')
+      ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter']
+      : []),
+    ...(template.workflowBlocks?.includes('upscaler') ? ['modules.Spandrel.Upscaler'] : []),
+    ...(template.workflowBlocks?.includes('video_masked_composite') ? ['modules.Video.MaskedComposite'] : []),
+    ...(selection.task === 'video_outpaint' ? ['modules.VideoConditioning.OutpaintCanvas'] : []),
+    ...(template.workflowBlocks?.some((block) => ['video_sequence', 'quality_video_sequence'].includes(block))
+      ? [
+          'modules.VideoConditioning.Storyboard',
+          'modules.VideoConditioning.ShotPrompt',
+          'modules.VideoConditioning.ShotInputs',
+          'modules.Primitive.ToList',
+          'modules.Video.ExportAsset',
+          'modules.Video.Concatenate',
+          'modules.Video.ConcatenateAssets',
+        ]
+      : []),
+    ...(template.workflowBlocks?.includes('lyric_video')
+      ? [
+          'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
+          'modules.DiffusersRuntime.DiffusersExecutionRecipe',
+          'modules.DiffusersVideo.LoadPipeline',
+          'modules.DiffusersVideo.EncodeInputs',
+          'modules.DiffusersVideo.Denoise',
+          'modules.DiffusersVideo.DecodeLatents',
+          'modules.Spandrel.Upscaler',
+          'modules.Video.LyricOverlay',
+          'modules.Audio.FitDuration',
+          'modules.Video.ExportWithAudio',
+          'modules.Video.Trim',
+          'modules.Video.Concatenate',
+          'modules.Video.ExportAsset',
+          'modules.Primitive.ToList',
+          'modules.VideoConditioning.Storyboard',
+          'modules.VideoConditioning.ShotPrompt',
+          'modules.VideoConditioning.ShotInputs',
+        ]
+      : []),
+  ];
+  if (registryKeys.some((key) => !useNodesStore.getState().nodesRegistry[key])) {
+    await useNodesStore.getState().fetchNodes();
+    assertWorkflowOperationContext(context);
+  }
+  const current = useNodesStore.getState();
+  const registry = await templateSecondaryStageRegistry(
+    template,
+    current.nodesRegistry,
+    current.studioModelCapabilities,
+    current.operationContracts,
+  );
+  assertWorkflowOperationContext(context);
+  const secondary = await templateSecondaryVideoStages(
+    template,
+    registry,
+    current.studioModelCapabilities,
+    current.operationContracts,
+  );
+  assertWorkflowOperationContext(context);
+  const graph = createTemplateOperationGraph(
+    template,
+    form,
+    starter,
+    secondary.registry,
+    spec,
+    capability,
+    useNodesStore.getState(),
+    { secondaryVideo: secondary.video },
+  );
+  assertWorkflowOperationContext(context);
+  commitOperationGraph(graph, context, signature, `Create ${template.label}`);
+  // Fresh developer graphs are owned by their ordinary nodes. A Studio
+  // receipt for another topology must never govern this new document.
+  useStudioStore.getState().clearGraphBinding();
+  useStudioStore.getState().saveActiveWorkflowTab(true);
+  advanceWorkflowOperationContext(context);
+  return { warnings: [] as string[] };
+}
+
 export async function createWorkflowFromTemplate(template: StudioTemplate): Promise<TemplateWorkflowResult> {
+  if (isPlanningOnlyTemplate(template))
+    throw new Error('Planning templates are for reference and cannot create workflows.');
   const studio = useStudioStore.getState();
   const workflowTabId = studio.createWorkflowTab(template.label, undefined, 'template', template.id);
   // A template already owns this new document; do not reopen a launcher while its graph resolves.
@@ -143,54 +357,77 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     }
     const inputDefaults = await materializeTemplateDefaultInputs(template);
     assertWorkflowOperationContext(context);
+    await waitForTemplateRuntimeDiscovery(context);
+    assertWorkflowOperationContext(context);
     useStudioStore.getState().applyTemplate(template, inputDefaults);
     advanceWorkflowOperationContext(context);
+    normalizeTemplateRuntimeDevice(context);
     useStudioStore.getState().saveActiveWorkflowTab(true);
     after = useStudioStore.getState().form;
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);
-    let result = await createOrUpdateStudioGraph(after, context);
-    assertWorkflowOperationContext(context);
-    if (after.resourceMode === 'auto') {
-      const initialPlanKey = autoPlanKeyForForm(after);
-      const plan = useStudioStore.getState().autoResourcePlans[initialPlanKey] ?? (await fetchAutoResourcePlan(after));
+    if (hasTemplateOperationRecipe(template)) {
+      const result = await createTemplateOperationWorkflow(template, after, context);
+      warnings = result.warnings;
+      graphCreated = true;
+    } else {
+      let result = await createOrUpdateStudioGraph(after, context);
       assertWorkflowOperationContext(context);
-      if (!plan.error) useStudioStore.getState().setAutoResourcePlans({ [initialPlanKey]: plan });
-      useStudioStore.getState().setAutoResourcePlan(plan);
-      if (autoPlanIsReady(plan, after)) {
-        const target = currentAutoResourcePlanTarget(plan, after, useStudioStore.getState().graphBinding);
-        if (target) {
-          useStudioStore.getState().setLastError(target);
-        } else {
-          const patch = formPatchForAutoCandidate(selectedAutoCandidate(plan, after), after);
-          useStudioStore.getState().applyAutoResourcePlan(plan, patch);
-          advanceWorkflowOperationContext(context);
-          after = useStudioStore.getState().form;
-          result = await createOrUpdateStudioGraph(after, context);
-          assertWorkflowOperationContext(context);
+      if (after.resourceMode === 'auto') {
+        const initialPlanKey = autoPlanKeyForForm(after);
+        const plan =
+          useStudioStore.getState().autoResourcePlans[initialPlanKey] ?? (await fetchAutoResourcePlan(after));
+        assertWorkflowOperationContext(context);
+        if (!plan.error) useStudioStore.getState().setAutoResourcePlans({ [initialPlanKey]: plan });
+        useStudioStore.getState().setAutoResourcePlan(plan);
+        if (autoPlanIsReady(plan, after)) {
+          const target = currentAutoResourcePlanTarget(plan, after, useStudioStore.getState().graphBinding);
+          if (target) {
+            useStudioStore.getState().setLastError(target);
+          } else {
+            const patch = formPatchForAutoCandidate(selectedAutoCandidate(plan, after), after);
+            useStudioStore.getState().applyAutoResourcePlan(plan, patch);
+            advanceWorkflowOperationContext(context);
+            after = useStudioStore.getState().form;
+            result = await createOrUpdateStudioGraph(after, context);
+            assertWorkflowOperationContext(context);
+          }
         }
       }
-    }
-    graphCreated = true;
-    warnings = result.warnings;
-    for (const block of template.workflowBlocks ?? []) {
-      try {
-        await applyWorkflowBlock(block, after, template, { graphPrepared: true, workflowContext: context });
-        assertWorkflowOperationContext(context);
-      } catch (error) {
-        if (isWorkflowOperationCancelled(error)) throw error;
-        const message = error instanceof Error ? error.message : String(error);
-        warnings.push(`${template.label} could not add the ${block} block: ${message}`);
+      graphCreated = true;
+      warnings = result.warnings;
+      applyTemplateVideoPromptWindows(template);
+      for (const block of template.workflowBlocks ?? []) {
+        try {
+          await applyWorkflowBlock(block, after, template, { graphPrepared: true, workflowContext: context });
+          assertWorkflowOperationContext(context);
+        } catch (error) {
+          if (isWorkflowOperationCancelled(error)) throw error;
+          const message = error instanceof Error ? error.message : String(error);
+          warnings.push(`${template.label} could not add the ${block} block: ${message}`);
+        }
+      }
+      const finalized = await waitForStudioGraphFinalization(15_000, context);
+      assertWorkflowOperationContext(context);
+      if (!finalized) {
+        throw new Error(`${template.label} graph preparation timed out. No incomplete graph was kept; try again.`);
       }
     }
-    const finalized = await waitForStudioGraphFinalization(15_000, context);
+    const initialHistory = useFlowStore.getState().historyPast;
+    const ownsLayout = () =>
+      workflowOperationContextIsCurrent(context) && useFlowStore.getState().historyPast === initialHistory;
+    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000, {
+      controlLoadTimeoutMs: FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS,
+      isCurrent: ownsLayout,
+    });
     assertWorkflowOperationContext(context);
-    if (!finalized) {
-      throw new Error(`${template.label} graph preparation timed out. No incomplete graph was kept; try again.`);
-    }
-    await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
-    assertWorkflowOperationContext(context);
-    await useFlowStore.getState().arrangeGraph({ history: false });
+    // The executable graph is complete. A delayed form cannot invalidate its recipe or erase an edit.
+    if (measured && ownsLayout())
+      await useFlowStore.getState().arrangeGraph({ history: false, fitNewNodeContents: true });
+    else if (ownsLayout())
+      warnings.push(
+        'The workflow opened with its original layout. Once controls have loaded, use Fit height to controls on a stage and Arrange graph if needed.',
+      );
     assertWorkflowOperationContext(context);
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);
@@ -199,6 +436,7 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     if (isWorkflowOperationCancelled(error)) throw error;
     assertWorkflowOperationContext(context);
     graphError = error instanceof Error ? error.message : String(error);
+    graphCreated = false;
     blankCurrentCanvas();
     useStudioStore.getState().setGraphBinding(null);
     useStudioStore.getState().setGraphFinalization(null);
@@ -223,3 +461,5 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
 
   return { graphCreated, graphError, warnings };
 }
+
+export const createImageTemplateOperationWorkflow = createTemplateOperationWorkflow;

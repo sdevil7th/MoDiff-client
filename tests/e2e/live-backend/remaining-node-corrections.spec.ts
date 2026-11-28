@@ -202,7 +202,8 @@ test('Guidance is an ordinary node: refreshed fields, related membership, contro
   expect(await api(page)).toEqual(before);
   await inspect.getByRole('button', { name: 'Close', exact: true }).click();
   await node.getByRole('button', { name: 'Guidance options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Separate guidance stages', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Convert to independent nodes…', exact: true }).click();
+  await page.getByRole('button', { name: 'Convert to independent nodes', exact: true }).click();
   await expect(node).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+z');
@@ -334,7 +335,7 @@ test('contextual audio attachment preserves prompt, cancels cleanly, Undo/Redo a
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
   await expect(inspector.getByLabel('Media input role', { exact: true })).toHaveCount(0);
   async function openAttachment() {
-    await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+    await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add image / audio input…', exact: true }).click();
   }
   await openAttachment();

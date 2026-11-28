@@ -8,7 +8,10 @@ test('composition inspection loads its own pinned metadata and retries a failed 
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/');
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 120_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });

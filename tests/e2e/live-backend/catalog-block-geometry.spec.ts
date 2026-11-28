@@ -174,7 +174,11 @@ test('every insertable Diffusers catalog cluster retains its complete expanded D
               '[data-testid^="node-scroll-body-"], [data-testid^="user-block-controls-"]',
             ),
           ].flatMap((body) => {
-            if (!body.querySelector('textarea,input,select,[role="combobox"],button[aria-haspopup="listbox"]'))
+            if (
+              !body.querySelector(
+                'textarea,input,select,[role="combobox"],button:is([aria-haspopup=listbox],[aria-haspopup=dialog])',
+              )
+            )
               return [];
             const rect = body.getBoundingClientRect();
             return [{ id: body.dataset.testid, height: body.clientHeight, renderedHeight: rect.height }];

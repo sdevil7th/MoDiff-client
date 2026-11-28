@@ -1,3 +1,4 @@
+import { ArrowUpRight } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -8,14 +9,20 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
-import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffSearchInput } from '../ui';
+import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffSearchInput, ModiffSelect } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { formatRequestError } from '../utils/requestJson';
 import { workflowChoices, workflowTaskLabel } from '../workflow/workflowChoices';
-import { WORKFLOW_CATEGORIES, workflowTaskCards, type WorkflowCategory } from '../workflow/workflowTaskBrowser';
+import {
+  WORKFLOW_CATEGORIES,
+  matchesWorkflowTask,
+  workflowTaskCards,
+  type WorkflowCategory,
+} from '../workflow/workflowTaskBrowser';
 import { requestTaskStarter } from '../workflow/operationStarterRequest';
 import { preferredTaskModel } from '../workflow/taskModelPreferences';
 import { createWorkflowDraft } from '../workflow/workflowDraft';
+import WorkflowFileImportButton from './WorkflowFileImportButton';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
 
 const CustomExtensionsDialog = lazy(() => import('./CustomExtensionsDialog'));
@@ -38,6 +45,7 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
   const cards = useMemo(() => workflowTaskCards(choices), [choices]);
   const [category, setCategory] = useState<WorkflowCategory | 'All'>('Image');
   const [query, setQuery] = useState('');
+  const [moreTasks, setMoreTasks] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
@@ -60,6 +68,7 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const signature = JSON.stringify(useFlowStore.getState().toObject());
+    let buildingTabId: string | null = null;
     setBusy(task);
     setError(null);
     try {
@@ -76,8 +85,16 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       )
         throw new Error('The canvas changed. Start a new workflow before choosing a task.');
       const draft = createWorkflowDraft(starter, registry);
+      if (embedded) useStudioStore.getState().createWorkflowTab(workflowTaskLabel(task));
+      buildingTabId = useStudioStore.getState().activeWorkflowTabId;
+      if (!buildingTabId) throw new Error('Workflow tab is no longer available.');
+      useStudioStore.getState().setCanvasTransition({
+        type: 'task_graph_building',
+        workflowTabId: buildingTabId,
+        keepLauncher: !embedded,
+        startedAt: Date.now(),
+      });
       if (embedded) {
-        useStudioStore.getState().createWorkflowTab(workflowTaskLabel(task));
         commitOperationGraph(
           draft.graph,
           captureWorkflowOperationContext(),
@@ -90,24 +107,51 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       useStudioStore.getState().detachManagedGraph();
       prepareWorkflowForManualInsertion();
       const id = useStudioStore.getState().activeWorkflowTabId;
-      if (id) useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
-      useStudioStore.getState().saveActiveWorkflowTab(true);
+      if (id) {
+        const { settleExampleWorkflowCanvas } = await import('../studio/exampleWorkflow');
+        if (id !== useStudioStore.getState().activeWorkflowTabId || !(await settleExampleWorkflowCanvas())) return;
+        useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
+        const now = Date.now();
+        useSettingsStore
+          .getState()
+          .setWorkflowFocusRequest({ workflowTabId: id, nodeId: null, requestId: now, requestedAt: now });
+      }
       if (unbound) enqueueSnackbar(message, { variant: 'info', autoHideDuration: 8000 });
     } catch (e) {
       if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not create this workflow.'));
     } finally {
+      const studio = useStudioStore.getState();
+      if (
+        buildingTabId &&
+        studio.canvasTransition?.type === 'task_graph_building' &&
+        studio.canvasTransition.workflowTabId === buildingTabId &&
+        studio.activeWorkflowTabId === buildingTabId
+      ) {
+        studio.setCanvasTransition(null);
+        studio.saveActiveWorkflowTab(true);
+      }
       if (pending.current === controller) {
         pending.current = null;
         setBusy('');
       }
     }
   }
-  const visible = cards.filter(
+  const searching = query.trim().length > 0;
+  const categories = ['All', ...WORKFLOW_CATEGORIES] as const;
+  function chooseCategory(name: (typeof categories)[number]) {
+    setCategory(name);
+    setQuery('');
+    setMoreTasks(false);
+  }
+  const matches = cards.filter(
     (c) =>
-      (category === 'All' || c.category === category) &&
+      (searching || category === 'All' || c.category === category) &&
       (!downloaded || c.downloaded) &&
-      `${c.label} ${c.task} ${c.description}`.toLowerCase().includes(query.trim().toLowerCase()),
+      matchesWorkflowTask(c, query),
   );
+  const hasMoreTasks =
+    !searching && matches.some((card) => card.specialist) && matches.some((card) => !card.specialist);
+  const visible = hasMoreTasks && !moreTasks ? matches.filter((card) => !card.specialist) : matches;
   if (customSource)
     return (
       <Suspense fallback={null}>
@@ -116,10 +160,11 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
     );
   const content = (
     <div className="space-y-4">
-      <p className="text-sm text-modiff-subtle-text">
-        Choose a task to create its connected nodes. Change the model and parameters on the canvas. Models load only
-        when you run.
-      </p>
+      {!embedded && (
+        <p className="text-sm text-modiff-subtle-text">
+          Choose a task to create its connected nodes. Models load when you run.
+        </p>
+      )}
       {!embedded ? (
         <div className="flex flex-wrap gap-2">
           <ModiffButton
@@ -141,8 +186,9 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
             }}
             disabled={Boolean(busy)}
           >
-            Open workflow
+            Open saved workflow
           </ModiffButton>
+          <WorkflowFileImportButton onImported={dismiss} />
           <ModiffButton
             onClick={() => {
               dismiss();
@@ -156,45 +202,94 @@ export default function DeveloperWorkflowLauncher({ embedded = false }: { embedd
       ) : null}
       <ModiffSearchInput
         aria-label="Search workflow tasks"
-        placeholder="Search workflows and actions"
+        placeholder={embedded ? 'Search tasks' : 'Search workflows and actions'}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onClear={() => setQuery('')}
       />
-      <div className="flex flex-wrap gap-2" aria-label="Workflow categories">
-        {(['All', ...WORKFLOW_CATEGORIES] as const).map((name) => (
-          <ModiffButton
-            key={name}
-            tone={category === name ? 'primary' : 'secondary'}
-            aria-pressed={category === name}
-            onClick={() => setCategory(name)}
-          >
-            {name}
-          </ModiffButton>
-        ))}
-      </div>
+      {embedded ? (
+        <ModiffSelect
+          aria-label="Workflow category"
+          value={searching ? 'All' : category}
+          options={categories.map((name) => ({ value: name, label: name === 'All' ? 'All workflows' : name }))}
+          onValueChange={(value) => {
+            const next = categories.find((name) => name === value);
+            if (next) chooseCategory(next);
+          }}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-1" aria-label="Workflow categories">
+          {categories.map((name) => (
+            <ModiffButton
+              key={name}
+              tone="ghost"
+              size="compact"
+              className="min-h-7 px-2 aria-pressed:bg-hf-yellow/10 aria-pressed:text-hf-yellow"
+              aria-pressed={searching ? name === 'All' : category === name}
+              onClick={() => chooseCategory(name)}
+            >
+              {name}
+            </ModiffButton>
+          ))}
+        </div>
+      )}
+      {searching && (
+        <p className="text-sm text-modiff-subtle-text" role="status">
+          {WORKFLOW_CATEGORIES.map((name) => ({ name, count: matches.filter((item) => item.category === name).length }))
+            .filter(({ count }) => count > 0)
+            .map(({ name, count }) => `${name} (${count})`)
+            .join(' · ')}
+        </p>
+      )}
       <ModiffCheckbox checked={downloaded} onCheckedChange={setDownloaded} label="With downloaded models" />
       {error ? <p role="alert">{error}</p> : null}
       {busy ? <p role="status">Creating {workflowTaskLabel(busy).toLowerCase()} workflow…</p> : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.map((card) => (
-          <ModiffButton
-            key={card.task}
-            tone="secondary"
-            align="left"
-            className="h-auto min-h-24 p-4"
-            disabled={Boolean(busy)}
-            onClick={() => void create(card.task)}
-            data-testid={`workflow-task-${card.task}`}
-          >
-            <span className="block">
-              <span className="block font-semibold">{card.label}</span>
-              <span className="mt-1 block text-sm font-normal text-modiff-subtle-text">{card.description}</span>
-            </span>
-          </ModiffButton>
-        ))}
-      </div>
-      {!visible.length ? (
+      {WORKFLOW_CATEGORIES.map((group) => {
+        const items = visible.filter((card) => card.category === group);
+        if (!items.length) return null;
+        return (
+          <section key={group} aria-label={group + ' workflows'}>
+            {(searching || category === 'All') && (
+              <h3 className="mb-1.5 text-xs font-semibold text-modiff-subtle-text">{group}</h3>
+            )}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-1.5">
+              {items.map((card) => (
+                <ModiffButton
+                  key={card.task}
+                  tone="secondary"
+                  align="left"
+                  className="group h-auto min-h-10 gap-2.5 px-3 py-2.5"
+                  disabled={Boolean(busy)}
+                  onClick={() => void create(card.task)}
+                  data-testid={`workflow-task-${card.task}`}
+                >
+                  <span className="block min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">{card.label}</span>
+                    {card.description && (
+                      <span className="mt-0.5 block text-xs font-normal text-modiff-subtle-text">
+                        {card.description}
+                      </span>
+                    )}
+                  </span>
+                  <ArrowUpRight
+                    size={14}
+                    aria-hidden
+                    className="shrink-0 text-modiff-subtle-text group-hover:text-hf-yellow"
+                  />
+                </ModiffButton>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      {hasMoreTasks && (
+        <ModiffButton aria-expanded={moreTasks} onClick={() => setMoreTasks(!moreTasks)}>
+          {moreTasks
+            ? 'Hide additional tasks'
+            : `More image tasks and guidance (${matches.filter((card) => card.specialist).length})`}
+        </ModiffButton>
+      )}
+      {!matches.length ? (
         <p role="status">
           {capabilitiesStatus.status === 'loading'
             ? 'Loading workflows…'

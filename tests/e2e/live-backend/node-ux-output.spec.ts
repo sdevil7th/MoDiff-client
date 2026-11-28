@@ -43,7 +43,7 @@ async function attach(page: Page, owner: string, label: string) {
   await page.locator(`.react-flow__node[data-id="${owner}"] header`).first().click();
   await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
   const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
-  await inspector.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Connections and grouping', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Add image / audio input…', exact: true }).click();
   const attachment = page.getByRole('dialog', { name: 'Add image / audio input', exact: true });
   await attachment.getByLabel('Media input role', { exact: true }).click();
@@ -146,6 +146,7 @@ for (const route of ['native-image', 'standard-mask'] as const) {
         mimeType: 'text/x-python',
         buffer: Buffer.from('MODIFF_RUNTIME_ROLE = "data"\n' + code),
       });
+      await modal.getByRole('button', { name: 'Add node', exact: true }).click();
       await expect(modal.getByRole('status')).toContainText('Added and enabled');
       await modal.getByRole('button', { name: 'Close', exact: true }).click();
       customKey = `custom.${name}.LightPaletteDirector`;
@@ -262,6 +263,7 @@ test('custom audio source transformation delivers a shorter faded clip', async (
     mimeType: 'text/x-python',
     buffer: await readFile('../MoDiff/examples/custom_nodes/AudioEnvelope.py'),
   });
+  await modal.getByRole('button', { name: 'Add node', exact: true }).click();
   await expect(modal.getByRole('status')).toContainText('Added and enabled');
   await modal.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(async (file) => {

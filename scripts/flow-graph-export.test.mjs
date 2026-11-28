@@ -60,6 +60,33 @@ function exportSeed(value, setParam = () => {}) {
   return graph.nodes.generate.params.seed;
 }
 
+test('optional stage inputs preserve old execution defaults and every explicit wire or nondefault', () => {
+  const source = { ...seedNode(5), id: 'supplier' };
+  source.data.params = { result: { display: 'output', type: 'string' } };
+  const stage = seedNode(6);
+  const settings = { hidden: true, default: 'word', value: 'word', fieldOptions: { omitInactiveDefault: true } };
+  stage.data.params = { timing: settings, source: { display: 'input', fieldOptions: { omitInactiveDefault: true } } };
+  const run = (edges = []) =>
+    exportModule.buildApiGraphExport({
+      nodes: [source, stage],
+      edges,
+      sid: 'test',
+      setParam() {},
+      randomizeSeeds: false,
+    }).nodes.generate.params;
+  assert.deepEqual(run(), {});
+  settings.value = 'none';
+  assert.equal(run().timing.value, 'none');
+  settings.value = 'word';
+  settings.hidden = false;
+  assert.equal(run().timing.value, 'word');
+  assert.equal(
+    run([{ id: 'wire', source: 'supplier', sourceHandle: 'result', target: 'generate', targetHandle: 'source' }]).source
+      .sourceId,
+    'supplier',
+  );
+});
+
 function loopMember(id) {
   return {
     id,
@@ -160,6 +187,62 @@ test('locked random-field seeds export without the random display marker', () =>
 
   assert.equal(seed.value, 1234);
   assert.equal('display' in seed, false);
+});
+
+test('Run exports untouched random-field defaults and preserves explicit zero seeds', () => {
+  const updates = [];
+  const cases = [
+    { default: 0 },
+    { default: { value: 0, isRandom: false } },
+    { value: 0, default: { value: 91, isRandom: true } },
+    { value: { value: 0, isRandom: false }, default: 91 },
+  ];
+  for (const stored of cases) {
+    const node = seedNode(undefined);
+    node.data.params.seed = { type: 'int', display: 'random', ...stored };
+    const original = structuredClone(node);
+    for (const randomizeSeeds of [false, true]) {
+      const result = exportModule.buildApiGraphExport({
+        nodes: [node],
+        edges: [],
+        sid: 'untouched-seed',
+        randomizeSeeds,
+        setParam: (...args) => updates.push(args),
+      });
+      assert.equal(result.nodes.generate.params.seed.value, 0);
+      assert.equal('display' in result.nodes.generate.params.seed, false);
+    }
+    assert.deepEqual(node, original);
+  }
+  assert.deepEqual(updates, []);
+});
+
+test('untouched random defaults retain one shared managed seed on Run', () => {
+  const originalRandom = Math.random;
+  let calls = 0;
+  Math.random = () => (calls++ === 0 ? 0.25 : 0.75);
+  try {
+    const nodes = ['encode', 'denoise'].map((id) => {
+      const node = seedNode(undefined);
+      node.id = id;
+      node.data.studioOwned = true;
+      node.data.params.seed.default = { value: 0, isRandom: true };
+      return node;
+    });
+    const updates = [];
+    const result = exportModule.buildApiGraphExport({
+      nodes,
+      edges: [],
+      sid: 'default-shared-seed',
+      setParam: (...args) => updates.push(args),
+    });
+    assert.equal(result.nodes.encode.params.seed.value, 1_073_741_824);
+    assert.equal(result.nodes.denoise.params.seed.value, 1_073_741_824);
+    assert.equal(calls, 1);
+    assert.equal(updates.length, 2);
+  } finally {
+    Math.random = originalRandom;
+  }
 });
 
 test('random-on-export seeds retain random behavior and metadata', () => {

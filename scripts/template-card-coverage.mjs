@@ -97,14 +97,17 @@ const posterHashOwners = new Map();
 const rows = runtime.templates.map((template) => {
   const entry = manifestByTemplate.get(template.id);
   const publishedOutput = resolvePublic(entry?.afterPath ?? entry?.outputPath);
-  const publishedThumbnail = resolvePublic(entry?.thumbnailPath ?? entry?.posterPath);
   const needsBefore = ['compareSlider', 'hoverDissolve'].includes(template.thumbnailVariant);
   const publishedBefore = resolvePublic(entry?.beforePath);
   const currentEntry = entry ? runtime.findManifestEntry(template, { ...manifest, examples: [entry] }) : undefined;
+  const nativePreview = runtime.isRetainedVideoPreview(template, currentEntry);
+  const motionPath = nativePreview ? currentEntry.outputPath : currentEntry?.cardPreviewPath;
+  const publishedPosterPath = nativePreview ? entry?.posterPath : (entry?.thumbnailPath ?? entry?.posterPath);
+  const publishedThumbnail = resolvePublic(publishedPosterPath);
   const motionPreview =
     template.example?.mediaType !== 'video' && template.outputKinds?.[0] !== 'video'
       ? true
-      : Boolean(currentEntry?.cardPreviewPath && resolvePublic(currentEntry.cardPreviewPath));
+      : Boolean(motionPath && resolvePublic(motionPath));
   const entryMatchesTemplate = Boolean(
     currentEntry &&
     currentEntry.promptSettingsHash === runtime.promptSettingsHash(template) &&
@@ -161,10 +164,10 @@ const rows = runtime.templates.map((template) => {
     previewPath:
       completePublishedPreview && entry
         ? template.example?.mediaType === 'video' || template.outputKinds?.[0] === 'video'
-          ? entry.cardPreviewPath
+          ? motionPath
           : (entry.thumbnailPath ?? entry.posterPath ?? entry.afterPath ?? entry.outputPath)
         : publishedPoster && entry
-          ? (entry.thumbnailPath ?? entry.posterPath)
+          ? publishedPosterPath
           : (posterPath ?? null),
     errors,
   };

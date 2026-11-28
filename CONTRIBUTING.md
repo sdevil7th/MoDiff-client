@@ -23,9 +23,9 @@ Good first contributions include reproducible bug fixes, accessibility improveme
 1. Fork the public repository, then clone your fork.
 2. Add the canonical repository as an `upstream` remote so you can keep the branch current.
 3. Create a short-lived branch from the latest `upstream/main`.
-4. Use the development installer for integrated work, or `npm ci` for UI-only
-   work against an already-running compatible backend, and reproduce the issue
-   before changing code.
+4. Set up the compatible backend with native uv commands and this client with
+   `npm ci --include=dev`, then reproduce the issue before changing code. UI-only work can use
+   an already-running compatible backend.
 5. Make the smallest coherent change, including tests and docs.
 6. Run the required checks and review the complete diff.
 7. Rebase or merge the current `upstream/main` according to the repository's accepted workflow; resolve conflicts without discarding unrelated work.
@@ -39,27 +39,61 @@ cd MoDiff-client
 git remote add upstream https://github.com/<project-owner>/MoDiff-client.git
 git fetch upstream
 git switch -c fix/concise-description upstream/main
-npm ci
+npm ci --include=dev
 ```
 
 Use clear commit messages that describe the outcome. Maintainers may squash a pull request when merging, so keep the branch reviewable rather than manufacturing a particular final history.
 
 ## Development Environment
 
+For the interim Windows candidate, use the current `fix-ui-ux-issues` branch in
+both repositories. Follow the [quick start](README.md#developer-setup-with-uv-and-npm)
+for setup commands. The candidate's changes have yet to reach `main`.
+
 Required client versions:
 
 - Node.js `24.12.0` (`.nvmrc`)
 - npm `11.6.2` (`packageManager` and `engines` in `package.json`)
 
-For setup without repository launchers, use the backend's
-[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
-and run `npm ci`, then `npm run dev`, in this client checkout. See the
-[Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm) for the
-two-terminal flow. The same uv commands work on Linux.
+Use native uv and npm commands with the sibling backend and client checkouts.
+In the backend terminal, run:
 
-For integrated development with sibling repositories, install the reviewed
-backend profile, backend test requirements, and exact client lockfile through
-the development installer:
+```text
+uv sync --locked --extra cpu
+uv run --locked --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --locked --extra cpu python main.py
+```
+
+For NVIDIA, use `--extra cuda` in each command; for Intel, use `--extra xpu`.
+On Apple Silicon, omit the extra. Keep the same extra on sync and run. Use a
+separate checkout to try another accelerator; native sync reconciles `.venv`.
+AMD vendor-wheel environments use the backend's specialist
+[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/accelerator-installation.md).
+
+In the client terminal, run:
+
+```text
+npm ci --include=dev
+npm run dev
+```
+
+Open the URL printed by Vite and leave the backend running. Transformers and
+PEFT are installed during backend setup; normal image and LoRA workflows need
+no separate package activation. These commands work on Linux and Windows
+PowerShell. The backend's
+[developer guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md)
+and the [Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm)
+cover explicit `uv pip` setup, upgrades, repair, and platform details.
+
+For UI-only work against an already-running backend, the same `npm ci --include=dev` and
+`npm run dev` commands are sufficient. To use another backend port:
+
+```bash
+VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8088 npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+The repository launchers are optional convenience tools for integrated setup
+or specialist reviewed profiles:
 
 ```powershell
 .\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
@@ -70,14 +104,7 @@ chmod +x install-dev.sh run-dev.sh stop-dev.sh
 ./install-dev.sh --accelerator auto
 ```
 
-For UI-only work against an already-installed backend, install only the client
-dependencies exactly from the lockfile:
-
-```bash
-npm ci
-```
-
-Run the client against a compatible sibling backend:
+Start the optional integrated launcher after setup:
 
 ```powershell
 .\run-dev.ps1
@@ -86,12 +113,6 @@ Run the client against a compatible sibling backend:
 ```bash
 chmod +x run-dev.sh stop-dev.sh
 ./run-dev.sh
-```
-
-For UI-only work, run Vite against an already-running backend:
-
-```bash
-VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8088 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 The [README](README.md) and [troubleshooting guide](docs/troubleshooting.md) cover backend paths, ports, preflight, and platform details.
@@ -129,7 +150,7 @@ Read [the architecture guide](docs/modiff-client-architecture.md) before changin
 
 The compatible backend may integrate model libraries officially maintained and published by Hugging Face. The browser does not run those libraries or a hosted inference provider. It consumes task-generic execution specifications from the backend and must not select Python classes or duplicate model-specific parameter logic. Hub hosting alone does not establish that a package or repository implementation is an official Hugging Face library.
 
-Transformers-backed execution is optional and consented. Template browsing/opening, registry discovery, and Auto planning may display a missing-runtime requirement but must not initiate installation. The user must explicitly request installation of a reviewed backend optional-runtime profile; Run remains blocked until the backend reports a compatible verified installation.
+Transformers and PEFT are required backend dependencies installed during ordinary setup. A verified base runtime must be runnable without a separate install or activation step. Template browsing, registry discovery, and Auto planning must not install packages. Additional optional runtimes still require an explicit backend installation action and verification before Run.
 
 For a large component, extract domain behavior into hooks/modules before adding another responsibility. `StudioPanel`, `Workflow`, flow mutations, websocket handling, graph export, and Studio contracts already use that pattern.
 
@@ -269,6 +290,13 @@ When adding or changing a template:
 5. Add/update template and quality tests.
 6. Update Gallery coverage and evidence only when the publication contract is met.
 
+For a template registered from an approved saved run, preserve the recorded
+conditioning and locked settings. Test its evidence bindings against the
+retained graph, original output and exact approved files. The authored prompt
+lint still applies to new recipes. Keep display metadata separate from the
+execution settings when refreshing a retained catalog entry, and verify the
+current Gallery association after changing its catalog revision.
+
 When adding a model or mode, follow the checklist in [Auto mode design](docs/auto-mode-design.md). Do not mark a profile Auto-ready from schema or mocked UI evidence alone.
 
 Public Gallery changes must keep manifest paths, media types, reviews, and redacted provenance consistent. Run:
@@ -280,6 +308,347 @@ npm run gallery:coverage
 
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
+The standalone, model-backed canonical execution recorder is separate from public
+templates. It validates original native execution records for the reviewed
+DDIM, DDPM, Consistency, and PixArt Sigma PAG routes. Use the exact workflow
+ID from the retained descriptor:
+
+```bash
+MODIFF_CANONICAL_WORKFLOW_EVIDENCE=/absolute/path/evidence.json node scripts/template-qualification.mjs --workflow ModelPipeline:text_to_image
+```
+
+The descriptor uses `schemaVersion: 1`, format
+`modiff.canonical-workflow-evidence.v1`, and the exact `workflowId`. Its
+`creatorPackage`, `outputPackage`, `runDetail`, `nodes`, `backendSourceBefore`,
+`backendSourceAfter`, and `modelObservations` entries reference original observed
+files using `{path, bytes, sha256}`. Paths must be relative, canonical, contained,
+and free of symlinks. Source observations contain their actual `identity`; model
+observations retain the ordinary model-list response. `outputs` contains ordered
+`{backendPath, mediaType, file}` entries for the unchanged durable media. Retain
+the original browser downloads and raw task body; do not reconstruct their
+fields from a catalog or replace defaults, paths, prompts, or model pins.
+
+For these hinted accounting routes, also retain `graphCompleted` as a
+`{path, bytes, sha256}` reference to the **original** `graph_completed` WebSocket
+JSON frame (at most 16 MiB). Public run-detail GET responses deliberately omit
+`runtimeHints`; do not add invented hints to them. The shared factory and reader
+join the submitted hints, frame, raw task, output and consumed receipt by
+task/session/client-run/input-hash/workflow/canvas epoch, attempt zero, complete
+runtime/source identity and measurement. The frame has no attempt index or
+completion timestamp; those remain bound to the original raw task.
+
+The `modiff.canonical-workflow-evidence.v1` format supports input-free execution
+only (`inputs: []`). Every
+submitted literal must have matching native consumed-input evidence; omissions,
+overrides, unsupported scalar connections, unresolved model components, retries,
+and fallback attempts remain held. Input-backed workflows need a durable,
+execution-bound input-byte receipt: a post-run file copy or a current cache hash
+alone is insufficient. The existing normal exporter must be able to export the
+unchanged canonical graph without an inferred execution scope. Deterministic
+builtin media workflows remain unsupported by that model-backed path; do not
+invent a model for them. The three input-free data utilities have the separate
+deterministic path described below.
+
+The same recorder accepts `modiff.canonical-builtin-data-evidence.v1` only for
+`BuiltinDataOperation:data_conversion`, `graph_utility` and `text_select`.
+It fills only the empty text source from the versioned authoring brief, exports
+through the normal client exporter, and checks the original accepted queue graph,
+completed task, all fresh node-completion frames, both delivered/persisted text
+previews and exact exported bytes against an independent expected result. Other
+controls and the canonical source remain unchanged. Retain original before/after
+source observations plus the full source inventory matched to their native
+fingerprint and the executing process. Descriptors bind every retained file by
+relative path, size and SHA-256 through the ordinary containment validator.
+Run `template-qualification.mjs --workflow` with the same environment variable;
+it retains these records in the existing canonical registry. The release reader
+repeats the complete validation rather than trusting the registry row.
+
+These records use `real_backend_deterministic_data`, an empty model set and a
+null Auto candidate. Exact-result correctness can qualify these private utility
+recipes; it grants no public asset approval, complete consumed-field accounting,
+browser-interaction, model-resource or hardware claim. Model-backed receipts
+retain their existing requirements.
+
+The same canonical recorder also accepts
+`modiff.canonical-builtin-media-evidence.v1` for the 17 declared ordinary media
+utilities. It requires a baseline at the unchanged canonical defaults plus an
+explicit exercise from `config/builtin-media-qualification.v1.json`. Only root
+file bindings and those named exercise controls can differ from the source.
+Start the isolated backend with `MODIFF_CAPTURE_BUILTIN_MEDIA=1`; normal user
+execution leaves this bounded capture disabled. The native `mediaEvidence`
+section binds original file bytes, actual decoded images/audio, video snapshots,
+normalized controls and ordered processing/output identities. The client parser
+retains it without changing the legacy summary or treating it as model evidence.
+
+Retain original task/completion packets, accepted graphs, full before/after
+source inventories, all root bytes, durable outputs and raw image PNGs. The
+descriptor's two `runs` entries (`baseline`, `exercise`) bind each file using
+the same contained `{path, bytes, sha256}` references. The recorder repeats the
+graph/runtime/source/input/wire joins and independent image, PCM and video checks;
+codec tolerances and actual delivery dimensions/rate remain explicit. Its
+`real_backend_deterministic_media` record grants no public quality/rights,
+full consumed-field accounting, browser-interaction, model-resource or hardware
+claim. Existing approved model assets need no rerender. Unsupported capture,
+truncated evidence, converted unbound roots, incomplete collections, changed
+source/settings, retries and cached attempts remain held.
+
+The existing whole-compatible masked-image receipt reader accepts either
+`group_cpu` or `model_cpu` only when the submitted graph, native consumed values
+and actual Auto resolution agree. These produce distinct resource identities;
+neither implies hardware fit or qualifies an advertised family recipe. Keep
+the original public task and completion frame unchanged. A separately labelled
+derived receipt may join their matching task/session/run identities, runtime,
+measurements and observed preparation; it must not present added hints as part
+of the original public GET response. Input bytes still need execution-bound
+native source-hash, geometry and mode observations.
+
+The optional native `fieldAccounting` extension preserves requested literals,
+actual call controls, explicit inactive/superseded controls, and bounded recipe
+projections separately from legacy v1 fields and summaries. The client parser
+retains its completeness/truncation status without changing v1 normalization.
+For a plain text-to-image call, it retains the bounded requested controls and
+effective call arguments reported by the backend, including PAG scales and
+model-specific aliases for generic controls. This parser support preserves the
+receipt for inspection. Canonical admission still requires the separate
+reviewed accounting join and original execution evidence.
+Parsing a projection hash is not cryptographic verification. The independent
+canonical accounting join verifies metadata hashes, connected producer ports,
+disabled quantization and the unique executed loader for each reviewed five-node
+runtime graph. Preview's CPU setting does not describe model placement. The shared
+provenance factory accepts an optional canonical proof from the existing reader:
+the trusted current canonical export, actual original task/output and complete
+native accounting. It derives the plan itself and binds task, attempt, output,
+model and completion identities without adding runtime hints or rewriting proofs.
+The DDIM profile accepts the unquantized float32 resident CIFAR-10 graph with
+correlation-only hints or its existing Studio Expert producer payload. The
+DDPM and Consistency profiles accept the exact newly authored automatic
+attention routes with their respective original Windows CUDA and Linux ROCm
+captures. The original `modiff.private.ddpm-attention-variant.v1` and
+`modiff.private.consistency-attention-variant.v1` descriptors share the exact
+current-graph accounting checks. The
+reviewed PixArt Sigma PAG profile accepts its pinned model with model CPU offload
+on CUDA and correlation-only hints. It verifies the assembled visual owners and
+the observed Generate controls, including both PAG scales, the conditioning
+alias and the image contract. These profiles reject unknown execution authority,
+coercions, Auto and nonempty retry plans or history. DDIM accounts for the full saved observation form and the
+actual advisory CUDA reset decision; `fraction: 1` alone does not prove that a
+reset succeeded. Hinted and unhinted accounting also check the complete current,
+submitted and creator API envelopes: only `sid`, `nodes`, `paths`, the reviewed
+`runtimeHints`, and an optional empty `loops` array are admitted. Nonempty or
+malformed loops, service execution, deterministic/provenance routes and unknown
+top-level authority need separate accounting; the historical canonical identity
+alone does not cover them. Submitted and original completion hashes become part of the
+derived plan. The recorder retains the original frame unchanged, and the release
+projection repeats the same closed validation. Valid legacy unhinted descriptors and
+the default factory path remain unchanged. This accounting join is scoped to the
+reviewed routes. Mocked protocol checks exercise validator behavior. Native
+records establish actual execution of the retained recipe.
+
+Current exports include the optional `execution_profile_id` loader selector.
+The initial whole-pipeline DDIM accounting path accepts its empty value only
+when the native loader records it as inactive. A nonempty stage selection or a
+claim that the empty field reached the library remains rejected. Older proofs
+without this field retain their original schema and scope. Prepared submissions
+also preserve their already resolved seed; inspecting current execution scope
+must not randomize an unused export and change its saved canvas snapshot.
+
+Reviewed named compositions that differ from a model/task default belong in
+`config/canonical-template-variants.v1.json`. Regenerate one with
+`node scripts/workflow-library-generator.mjs --template=reviewed_template_id`;
+the default pair and unrelated definitions stay preserved. Template and pair
+scope flags are mutually exclusive and unknown flags fail closed. The portable
+export uses the existing Block execution compiler before assigning canonical
+IDs, including nested Shot stages. This export projection does not rewrite the
+ordinary grouped Studio canvas or grant execution/quality qualification.
+
+Treat an already registered execution-selection descriptor as versioned recipe
+metadata, including its note. Presentation-only grouping must preserve that
+declaration. The original native LTX text, opening-image and ordered-reference
+recipes keep their existing strict locks; whole-pipeline and sequence migrations
+still require their own actual native evidence. Distinct multi-shot compositions
+need named canonical variants rather than a single-shot model/task default.
+
+An explicitly reviewed experimental recipe can declare `experimentalRecipe`
+with its exact `modelType`, `mode` and `runtimeProfileId` in that same policy.
+Generation checks the backend's declared optional runtime and writes the marker
+only on the named variant. The release reader accepts only that exact variant,
+source template, model, task, runtime marker and experimental graph path. Default
+pairs and undeclared experimental records remain outside this association.
+The family stays experimental; runtime installation, Auto, hardware and feature
+qualification are unchanged. Complete native provenance, current recipe locks
+and an approved available Gallery example remain separate release requirements.
+The normal template writer fully validates these proofs; the historical
+`--allow-blocked-probe` path retains its execution-only scope.
+
+The native media resource reader also handles the closed text-to-image workflow
+chain ModelsLoader → WorkflowTextEncode → WorkflowImageDenoise →
+WorkflowDecodeImage → Preview. It joins actual task, graph, model, native fields
+and typed state wires; unbound quantization must be observed as null. It rejects
+extra owners, input-backed modes, borrowed components and changed native values.
+This resource identity does not claim full control accounting or native capture
+of an internally fixed sampler or workflow selector. Retained source recovery
+and later immutable model/registry observations must be labelled separately from
+original pre-run observations; never rewrite the raw task or media.
+
+The `modiff.private.input-bound-model-smoke.v1` descriptor is supported for the
+standalone Spandrel Real-ESRGAN x2 image and Marigold depth-preview workflows.
+The reader exports the current
+canonical graph through the normal client path and checks the supplied variant
+against its sole declared image binding. It verifies the archived source with
+the native Load receipt and the terminal Preview with the original output.
+The Spandrel check also joins the exact weight file to the executor's
+controlled-artifact record. The Marigold check joins the installed model pin
+and decoded depth preview. The numeric depth map is outside that receipt's scope.
+The resulting record identifies the populated fixture variant and records
+`canonicalDefaultsExecuted: false`, since the catalogue graph has an empty file
+selector. Other model-backed file-input routes need their own reviewed bindings
+and original execution evidence.
+
+The original `modiff.private.smollm2-prompt-variant.v1` and
+`modiff.private.shap-e-prompt-variant.v1` descriptions bind only the one empty
+authored prompt in their respective workflows. Native producer evidence and the
+original text or video are required. These receipts cover the populated prompt
+variants and record the limits of their native control accounting.
+
+The native image prompt-variant recorder also accepts the reviewed Linux ROCm
+Sana Sprint text-to-image and SDXL PAG recipes with model CPU offload. It
+verifies their immutable checkpoints and separate control contracts. Sana Sprint
+records the sequence length and treats the saved negative prompt as inactive.
+SDXL PAG verifies both PAG scales through typed accounting and treats the saved
+sequence length as inactive. These receipts bind the saved prompt, seed and
+exact output only for the matching source graph and runtime.
+
+Run evidence always uses the direct exporter for the original archived graph.
+Opening an editable workflow tab separately applies the legacy attention
+default repair to matching DDPM and Consistency presets. A workflow-local
+attention selection takes precedence. The exact older managed specification
+receipt remains attached to a restored managed graph while its current
+compatible authoring rules are used for form edits.
+
+The recorder copies original evidence under the backend's ignored
+`data/qualification/release/canonical-workflow-evidence/` directory and records
+`canonical-workflow-run-receipts.v1.json`. Release-contract generation repeats the
+same validation against current canonical source and retained bytes. A verified
+receipt is **execution evidence only**: quality, rights, hardware qualification,
+and release approval remain false. It does not make standalone workflows release
+eligible, promote local review receipts, or change ordinary template recording
+and Gallery publication policy.
+
+The release contract records `missingReleaseEvidence` for each held workflow.
+It uses one offline frontend compiler per receipt batch and still validates
+every retained graph, model record and output file separately.
+The release-candidate report exposes that list as `incompleteWorkflowEvidence`
+and reports standalone execution under `coverage.standaloneExecution`. Its
+`awaitingReleaseEligibility` count identifies verified standalone workflows that
+are still outside the eligible total. Model workflows need a matching
+release-eligible source template. A captured bound variant establishes the
+execution with that prompt or file and needs a reviewed recipe to bind it for
+release. Native-resolution DDIM, DDPM, and Consistency samples are technical
+canaries under the project's model review policy.
+
+The SD1.5 Inpaint path accepts a separate native PNG descriptor with original
+source and mask uploads. The reader verifies that the two distinct Load nodes
+produced the recorded RGB source and grayscale mask and that those exact pixels
+and dimensions reached their respective Inpaint ports. Its receipt binds the
+source and mask separately to the saved Expert execution.
+
+The saved control-image reader verifies the original PNG uploads and decoded
+media, each guide, source and mask wire into the applicable sampler ports, the
+main and conditioning model revisions, and the observed sampler settings.
+An archived node registry can be replayed from the original source and runtime
+contract without inference. The receipt records when the saved run lacks
+processed guide pixels or effective PAG settings.
+
+AnimateDiff prompt and source-video receipts bind the base model and motion
+adapter revisions. For a saved edit, the original upload and typed video wire
+bind the source. The receipt records unavailable sampler observations, such
+as the effective PAG controls or normalized source frames.
+
+The retained Wan VACE puddle recipe also binds the exact Spandrel checkpoint
+to its upscale action and verifies delivery at the reviewed output size. This
+named recipe uses a pinned secondary artifact alongside the primary model.
+
+The saved OmniGen wall edit uses the original graph request and acknowledgement,
+completion event, and backend-retained output and run record. The receipt
+records the missing client API snapshot and unobserved image guidance. This
+path requires the exact native records and original image bytes.
+
+The Wan A14B opening-video replacement records its own exact opening frame,
+prompt, model, and video. The older kitchen template keeps its own review
+and release status. Saved FLUX Klein and Z-Image panoramas bind the original
+source through canvas preparation and the typed image and mask wires. Their
+records verify expanded geometry and disclose the missing derived pixels.
+
+Wan Animate receipts bind the original reference image and each original
+video to its specific role. Character replacement also checks the background
+and mask as distinct uploads. The saved receipts disclose that the frames
+consumed after preprocessing were unavailable.
+
+Saved JoyImage Plus edits retain reference files in Load order, including
+the source image before the material reference. The proof binds each upload
+and native decode to the typed Edit connection. The archived two-reference
+run carries an older Image Edit label in its form. The executable graph and
+observed sampler identify the two-reference task.
+
+Older AnimateDiff guided runs retain the exact original guide clip and its
+path through normalization and edge preparation. A guided edit also binds
+its independently uploaded source video. The original recorder identifies
+the installed ControlNet checkpoint and the executed task. The processed
+frames and applied-weight evidence remain unavailable.
+
+Retained edits use their exact source encoding. The LongCat example binds
+its native WebP upload. The Kandinsky example preserves its FP32 CPU
+recipe and measures memory from samples of the original worker during
+the task. Mochi's short video retains its explicit Auto attention choice.
+
+The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
+Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in
+`src/studio/retainedGalleryTemplates.ts`. They share
+the existing task contracts. Keep their original standalone graphs and
+receipts. For an exact approved local review, retain `approval.v1.json`,
+the original `review-scope.json` inventory, and its reviewed files beneath
+`data/qualification/release/retained-template-review` in the backend
+checkout. This directory is private and must stay outside version control.
+`npm run release:contract:generate` revalidates its files against the original
+native receipt, reviewed recipe digest and exact output. The associated catalog lock
+belongs to the reviewed recipe. The historical template lock and resource
+candidate remain absent.
+
+For the structured text recipe, the Gallery JSON must match the single full
+result in the original native text transport. Verify both encoded hashes
+and the decoded Gallery hash. Release eligibility joins the active template
+to its original standalone workflow, then verifies the registered proof and
+media against the active rights-approved Gallery set. The association supplies
+no Auto or hardware approval.
+
+Publication removes the corresponding original entries from the hidden-candidate
+authoring ledger. Retain each exact original row as
+`authoring-spec.original.json` beside the approved canonical evidence descriptor.
+The historical reader checks both byte identities before using the archived
+row. The current authoring and Gallery metadata keep their own identities.
+
+The optional native `appliedAdapters` receipt records the owning ModelsLoader's
+observed ordered adapter names, numeric scales, immutable artifact identities,
+opaque descriptor hashes and explicit scheduler override digest. It carries a
+fresh application identity after activation/removal; valid owner reuse retains
+that identity with a `reused` observation. Missing or unavailable evidence is not
+an empty adapter set. The history parser only checks the bounded schema. The
+shared provenance factory verifies and locks present observations against the
+original task/attempt, output snapshot and executed ancestor owner.
+`validateAppliedAdapterProof(provenance, {required: true})` additionally requires
+complete evidence matched to the ordered native Lora chain and model pins for
+explicit adapter-order acceptance. Its initial strict scope
+is pinned Hub adapters with explicit names and no scheduler override. Submitted
+LoRA scale controls may be numeric or bounded decimal text accepted by the
+backend's finite float conversion, including decimal exponents. Only that scale
+comparison uses numeric normalization; original graph/export bytes and hashes
+remain unchanged. Empty or padded strings, non-decimal syntax, non-finite or
+out-of-range values, and coercible booleans/objects are rejected. Native observed
+scales must still be numbers, and mismatched applied scales remain failures. Ordinary
+template recording does not acquire this new requirement: historical absent-field
+proofs retain their original submitted-graph proof level. This extension grants
+no style, quality, hardware, rights or publication approval.
+
 ## Custom extension changes
 
 Keep Add custom node, the strict response parser and backend hash-bound imports in sync. Intentional Add/Load/Reload is consent; discovery and graph import are not. Test import failure, changed source, missing dependencies, typed search and registry refresh. Use the normal graph executor. See the backend `docs/custom-nodes.md`.
@@ -288,18 +657,57 @@ Keep Add custom node, the strict response parser and backend hash-bound imports 
 
 Run the complete local CI-equivalent gate before requesting review:
 
+The schema fixtures need the ordinary backend interpreter from the setup above.
+Set both interpreter variables explicitly; do not point them at a managed
+optional-runtime overlay. The fixtures do not download model weights.
+
+On Linux/macOS:
+
 ```bash
+export MODIFF_BACKEND_PYTHON="$PWD/../MoDiff/.venv/bin/python"
+export MODIFF_PYTHON="$MODIFF_BACKEND_PYTHON"
+npx playwright install chromium
+npm run check
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:MODIFF_BACKEND_PYTHON = (Resolve-Path ..\MoDiff\.venv\Scripts\python.exe).Path
+$env:MODIFF_PYTHON = $env:MODIFF_BACKEND_PYTHON
+npx playwright install chromium
 npm run check
 ```
 
 This runs formatting, lint, type checking, style audit, unit/contract tests, production build, and bundle budget.
+The request/proxy regression tests also launch Chromium. On a fresh Linux host,
+install its system dependencies with `npx playwright install-deps chromium`
+using an account with administrator access before running the gate.
 
-The Linux CI quality job checks out this client and an immutable, compatible
-`sdevil7th/MoDiff` backend revision as sibling directories. It installs the
-backend's reviewed CPU profile and test dependencies before running the same
-gate. Update the backend commit in `.github/workflows/ci.yml` when a coordinated
-contract change requires it. This setup does not download model weights or
-qualify accelerator execution; platform smoke jobs remain client-only.
+The Linux CI quality and browser jobs check out this client and an immutable,
+compatible `sdevil7th/MoDiff` backend revision as sibling directories. Both install
+the backend with `uv sync --extra cpu --locked`, install test dependencies, and
+run preflight and the tiny native image/LoRA smoke. The quality job runs the
+client gate; the browser job builds the production client and runs the complete
+browser gate within its own job budget.
+This setup does not download model weights or qualify accelerator execution;
+platform smoke jobs remain client-only.
+
+The full browser job has a finite 120-minute outer budget for setup, the complete
+serial suite and its existing retry policy. Two hosted runs reached the former
+90-minute limit near the final scenarios. Individual test and expectation
+timeouts, retries, coverage and the single worker are unchanged. This CI budget
+is separate from native model admission, memory and task-time safety limits.
+
+For a coordinated change, commit and review the backend first, then replace the
+backend `ref` in both jobs in `.github/workflows/ci.yml` with that actual compatible
+40-character commit SHA and run the paired gates. Keep both refs immutable and
+equal, and update README's `CI backend contract` declaration with them. Keep the
+reviewed application-source table independent from that CI selection. The
+selected backend must contain its reviewed native setup contract and
+`uv.lock`; the workflow
+checks these before setup. Do not substitute a mutable branch or an invented
+future SHA for the paired commit.
 
 The registered Block catalog audit uses a fixed Linux runtime target and mocked
 device/package probes to reproduce the reviewed catalog on any host. Backend
@@ -408,3 +816,12 @@ AI-assisted contributions are welcome, but the contributor remains responsible f
 ## Code Of Conduct
 
 Participation in this project is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Be constructive, assume good intent, and focus review on the work and its impact.
+
+## Visual node discovery
+
+The backend publishes the versioned visual node catalog with the full node registry. Give each new user action a destination in the existing stage catalog and describe its action in language a user can search. Test the published mode against its real schema, both pickers, a typed wire and a saved graph. Preserve author titles, connection roles, model ownership and executable identities. Run the paired catalog tests from the backend and client repositories.
+
+```text
+python -m pytest -q tests/test_visual_node_catalog.py
+node --test scripts/visual-node-catalog.test.mjs
+```

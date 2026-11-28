@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T20:34:02.779007+00:00",
+  "runtimeFingerprint": "sha256:stable-runtime-v1:d6393f9274337dffc2f9e7989dcfadebff77da4f76e3a7d777c0be0451656304",
+  "examples": [
+    {
+      "templateId": "z_image_quick_concept",
+      "verificationStatus": "exact",
+      "promptSettingsHash": "ps_deb9c712",
+      "templateLockHash": "tpl_a1a0cb57",
+      "modelRevision": "Tongyi-MAI/Z-Image-Turbo@f332072aa78be7aecdf3ee76d5c247082da564a6",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:44da7de4a4af37673082dfd0b7cafd88f0228bd0d5ff2760f67b99c29bb388ce",
+      "graphHash": "sha256:canonical-graph-v1:0fd70f0977c03c85657e66d04143031b93d191698c526c8e4e83f564f0d3d3ac",
+      "proofLockHash": "sha256:live-proof-lock-v1:10a17f0271aaa7109f8e8a9ec485a939304ab1b9ce6e05d3740bf4cc13459e7f",
+      "backendSourceFingerprint": "sha256:backend-source-v1:366e2f1fb430e915abf4fd55c00c055e9f513704a7eca05a488ebef50142107c",
+      "backendContractFingerprint": "sha256:backend-contract-v1:f46faf0d8975fcbf347736666468971c318e26b328f0f992d676380ec7091e5f",
+      "modelCommit": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+      "modelSetHash": "sha256:model-set-v1:09839f362bbf3be38c280c4c3417b2735823b124d76c6f797f356e1ba3c8b1f8",
+      "inputArtifactsHash": "sha256:input-artifacts-v1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "templateRevisionHash": "sha256:template-revision-v1:d6ddd71801839663c5491b18d41449435f12b48f339e72dfc0cdab8a15b6055b",
+      "provenancePath": "/template-gallery/reviews/z_image_quick_concept.duplicate-provenance.json",
+      "provenanceHash": "sha256:canonical-json:b31372ccaafbe892cfba14f5dc7cba122036f1ac5a2dd7597285c2bbc042d917",
+      "outputPath": "/template-gallery/z_image_quick_concept.webp",
+      "thumbnailPath": "/template-gallery/z_image_quick_concept.webp",
+      "mediaHash": "sha256:decoded-rgba:0106ab75f5dc501fd472d000c50654ab7213124b23305a2e7fddc5f05cca7f81",
+      "mediaType": "image",
+      "verificationTimestamp": "2026-07-18T13:15:01.728Z",
+      "qualityReviewPath": "/template-gallery/reviews/z_image_quick_concept.quality-review.json",
+      "qualityReviewHash": "sha256:canonical-json:b5f98b7de814395ebd92e207602e448b17031ee809e30554733a9bd06b220e9b",
+      "qualityReviewStatus": "approved_exact",
+      "reviewer": "Codex full-resolution object, material, lighting, and composition review",
+      "reviewedAt": "2026-07-18T13:15:00.000Z",
+      "width": 1024,
+      "height": 1024
+    }
+  ]
+}

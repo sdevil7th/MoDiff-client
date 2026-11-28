@@ -1,8 +1,19 @@
 import { ModiffFieldShell, ModiffSelect } from '../ui';
 import { useNodeDiscovery } from '../stores/useNodeDiscoveryStore';
 
-export default function OperationDiscoveryFields({ inPopover = false }: { inPopover?: boolean }) {
-  const { pipeline, task, entry, support, select } = useNodeDiscovery();
+export default function OperationDiscoveryFields({
+  inPopover = false,
+  inferred,
+}: {
+  inPopover?: boolean;
+  inferred?: { pipeline: string; task: string };
+}) {
+  const discovery = useNodeDiscovery();
+  const { support, select } = discovery;
+  const scope = discovery.selection ? undefined : inferred;
+  const pipeline = scope?.pipeline ?? discovery.pipeline;
+  const task = scope?.task ?? discovery.task;
+  const entry = scope ? support.find((item) => item.pipelineClass === pipeline) : discovery.entry;
   if (!support.length) return null;
   return (
     <div className="space-y-2 px-2 pb-2">

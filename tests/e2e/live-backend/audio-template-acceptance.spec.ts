@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-const templateId = process.env.MODIFF_AUDIO_TEMPLATE ?? 'minimax_music3_chamber_pop';
+const templateId = process.env.MODIFF_AUDIO_TEMPLATE ?? 'ace_step_text_to_audio';
 const allowed = new Set([
   'minimax_music3_chamber_pop',
   'ace_step_text_to_audio',
@@ -85,7 +85,11 @@ test('authored audio template preserves settings through the requested native li
     socket.on('framereceived', ({ payload }) => {
       try {
         const message = JSON.parse(String(payload)) as { type?: string };
-        if (['graph_completed', 'graph_error', 'set_field_params', 'set_field_value'].includes(message.type ?? ''))
+        if (
+          ['graph_completed', 'graph_error', 'set_field_params', 'set_field_value', 'executed'].includes(
+            message.type ?? '',
+          )
+        )
           completions.push(message);
       } catch {
         /* Ignore non-JSON frames. */
@@ -96,13 +100,9 @@ test('authored audio template preserves settings through the requested native li
   const save = () => writeFile(`${output}/receipt.json`, JSON.stringify(evidence, null, 2));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 180_000 });
-  const advanced = page.getByRole('button', { name: /Advanced workflow/u });
-  await expect(advanced).toBeVisible();
-  await advanced.click();
-  await expect(advanced).toHaveCount(0);
-  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
-  if ((await auto.getAttribute('aria-checked')) === 'true')
-    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) await launcher.getByTestId('launcher-mode-advanced_workflow').click();
+  await expect(launcher).toHaveCount(0);
   await page.getByTestId('topbar-templates').click();
   await page.getByTestId('template-browser-search').fill(
     templateId.startsWith('minimax')
@@ -183,23 +183,54 @@ test('authored audio template preserves settings through the requested native li
   const cancelRecovery = process.env.MODIFF_AUDIO_CANCEL_RECOVERY === '1';
   for (let repeat = cancelRecovery ? -1 : 0; repeat < runCount; repeat += 1) {
     if (repeat > 0) {
-      // A second Run normally reuses cached node outputs. Evict compute-node
-      // caches through the real toolbar so this proves independent inference.
+      // Recompute results through the ordinary toolbar while retaining the loaded owner.
       await page.getByTestId('arrange-graph').click();
-      const ids = await page.evaluate(async () =>
-        (await import('/src/stores/useFlowStore.ts')).useFlowStore
-          .getState()
-          .nodes.filter((node) => node.data.isCached && !['ModelsLoader', 'LoadPipeline'].includes(node.data.action))
-          .map((node) => node.id),
-      );
-      expect(ids.length).toBeGreaterThan(0);
-      for (const id of ids) {
+      const selected = await page.evaluate(async () => {
+        const [{ useFlowStore }, { runtimeProgressTarget }] = await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/studio/userBlocks.ts'),
+        ]);
+        const flow = useFlowStore.getState();
+        const graph = flow.exportGraph('audio-template-acceptance');
+        const ownerIds = Object.entries(graph.nodes)
+          .filter(([, node]) => ['ModelsLoader', 'LoadPipeline'].includes(node.action))
+          .map(([id]) => id);
+        if (ownerIds.length !== 1) throw new Error('The authored audio graph must have one exact loaded owner.');
+        const ownerRoots = new Set(ownerIds.map((id) => runtimeProgressTarget(flow.nodes, id)));
+        if ([...ownerRoots].some((id) => !flow.nodes.some((node) => node.id === id)))
+          throw new Error('The loaded audio owner has no current canvas projection.');
+        return {
+          ownerIds,
+          ids: flow.nodes.filter((node) => node.data.isCached && !ownerRoots.has(node.id)).map((node) => node.id),
+          leafIds: Object.keys(graph.nodes),
+        };
+      });
+      expect(selected.ids.length).toBeGreaterThan(0);
+      const recomputations: unknown[] = [];
+      const beforeRecompute = (await snapshot(page)).exported;
+      for (const id of selected.ids) {
         await page.locator(`.react-flow__node[data-id="${id}"] header`).first().click();
         await page.getByTestId('selection-toolbar-more').click();
-        await page.getByRole('menuitem', { name: 'Clear cache', exact: true }).click();
+        const recomputed = page.waitForResponse((response) => {
+          if (new URL(response.url()).pathname !== '/cache' || response.request().method() !== 'DELETE') return false;
+          const body = response.request().postDataJSON();
+          return body.scope === 'outputs' && JSON.stringify(body.nodes) === JSON.stringify([id]);
+        });
+        await page.getByRole('menuitem', { name: 'Recompute on next Run', exact: true }).click();
+        const response = await recomputed;
+        expect(response.ok()).toBe(true);
+        const result = await response.json();
+        recomputations.push({ nodeId: id, result });
+        expect(result).toMatchObject({ error: false, scope: 'outputs' });
+        expect(Array.isArray(result.nodes)).toBe(true);
+        expect(result.nodes.length).toBeGreaterThan(0);
+        expect(result.nodes.every((node: string) => selected.leafIds.includes(node))).toBe(true);
+        expect(result.nodes.some((node: string) => selected.ownerIds.includes(node))).toBe(false);
       }
-      evidence.clearedComputeNodes = ids;
+      const afterRecompute = (await snapshot(page)).exported;
+      evidence.recomputedComputeNodes = { ...selected, recomputations, beforeRecompute, afterRecompute };
       await save();
+      expect(afterRecompute).toEqual(beforeRecompute);
     }
     const submitted = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/graph' && response.request().method() === 'POST',
@@ -251,6 +282,37 @@ test('authored audio template preserves settings through the requested native li
     record.run = run;
     await save();
     expect((record.terminal as { status: string }).status).toBe('completed');
+    if (repeat > 0) {
+      const owners = Object.entries(before.exported.nodes).filter(([, node]) =>
+        ['ModelsLoader', 'LoadPipeline'].includes(node.action),
+      );
+      const samplers = Object.entries(before.exported.nodes).filter(([, node]) =>
+        ['Generate', 'Denoise'].includes(node.action),
+      );
+      expect(owners).toHaveLength(1);
+      expect(samplers.length).toBeGreaterThan(0);
+      for (const [id, node] of [...owners, ...samplers]) {
+        const owner = owners.some(([ownerId]) => ownerId === id);
+        await expect
+          .poll(() =>
+            completions.filter((value) => {
+              const event = value as { type?: string; node?: string; name?: string; task_id?: string };
+              return (
+                event.type === 'executed' &&
+                event.task_id === taskId &&
+                event.node === id &&
+                event.name === `${node.module}.${node.action}`
+              );
+            }),
+          )
+          .toEqual([expect.objectContaining({ status: owner ? 'cached' : 'succeeded', hasChanged: !owner })]);
+      }
+      record.loadedOwnerCacheAndFreshInference = completions.filter((value) => {
+        const event = value as { type?: string; task_id?: string };
+        return event.type === 'executed' && event.task_id === taskId;
+      });
+      await save();
+    }
     const media = run.outputs
       .flatMap((item: { backendProvenance?: { mediaItems?: unknown[] } }) => item.backendProvenance?.mediaItems ?? [])
       .filter(

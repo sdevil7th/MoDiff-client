@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,6 +48,7 @@ let studioStore;
 let topBarAutoPolicy;
 let originalFetch;
 let storage;
+let sessionValues;
 let compiledCatalogRequests;
 
 test('full FLUX.2 has an exact Expert Model Manager profile without Auto promotion', () => {
@@ -77,10 +79,17 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     dispatchEvent: () => true,
     location: { origin: 'http://127.0.0.1:5191' },
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
   };
   server = await createServer({
     root: ROOT,
@@ -318,6 +327,10 @@ function fixture() {
   const definitionId = 'diffusers.modular:QwenImageModularPipeline:text2image';
   const admissionId = 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image';
   const adapterId = 'diffusers.modular-adapter:QwenImageModularPipeline:text2image:mode:text_to_image';
+  const route = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
+    (candidate) => candidate.definitionId === definitionId && candidate.admissionId === admissionId,
+  );
+  assert.ok(route, 'The synthetic interaction fixture needs an exact current registered route.');
   const receipt = {
     id: 'qwen-image-2512:modular-text-to-image:v1',
     contentHash: 'studio-spec-v1-f4c15e0d',
@@ -376,7 +389,7 @@ function fixture() {
     definitionKind: 'modular_pipeline_workflow',
     ownership: 'library',
     mutable: false,
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: route.libraryRevision,
     pipelineClass: 'QwenImageModularPipeline',
     blocksClass: 'QwenImageAutoBlocks',
     pipelineKind: 'auto',
@@ -421,7 +434,7 @@ function fixture() {
         url: 'https://huggingface.co/Qwen/Qwen-Image-2512/blob/' + '25468b98e3276ca6700de15c6628e51b7de54a26/README.md',
       },
     },
-    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+    contentHash: route.definitionContentHash,
   };
   const executionSpec = {
     schemaVersion: 1,
@@ -477,9 +490,18 @@ function fluxFixture() {
     repo: 'black-forest-labs/FLUX.1-dev',
     revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
   };
+  // This synthetic interaction fixture follows the published identity. Its
+  // synthetic compiled bytes are checked separately by pinFixtureRoute;
+  // these lifecycle tests do not qualify the real backend graph.
+  const route = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
+    (candidate) => candidate.definitionId === definitionId && candidate.admissionId === admissionId,
+  );
+  assert.ok(route);
+  assert.deepEqual(route.artifact, artifact);
   Object.assign(definition, {
     id: definitionId,
     pipelineClass: 'FluxModularPipeline',
+    libraryRevision: route.libraryRevision,
     blocksClass: 'FluxAutoBlocks',
     label: 'Flux — Text To Image',
     inputs: [{ ...definition.inputs[0], type: 'opaque' }],
@@ -498,7 +520,7 @@ function fluxFixture() {
         url: 'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       },
     },
-    contentHash: 'sha256:cfec41815a507f63620e7b80cb6a18700485ac2520a7472826b1389418bbd7ed',
+    contentHash: route.definitionContentHash,
   });
   Object.assign(admission, {
     id: admissionId,
@@ -507,11 +529,7 @@ function fluxFixture() {
     sealedBindingValues: { artifact: artifact.repo, pipelineClass: 'FluxModularPipeline' },
     modelDependencies: [{ id: 'model', kind: 'model', repo: artifact.repo, revision: artifact.revision }],
     adapterContractId: adapterId,
-    studioExecutionSpec: {
-      id: 'flux-dev:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-9dd14796',
-      executionProfileId: 'flux-dev:modular',
-    },
+    studioExecutionSpec: structuredClone(route.studioExecutionSpec),
     artifact,
   });
   definition.graphAdapterContracts[0] = { ...definition.graphAdapterContracts[0], id: adapterId };
@@ -767,7 +785,9 @@ function transientNodes() {
 }
 
 function persistedFlowText() {
-  return storage.get('modiff.flow') ?? '';
+  const checkpoint = sessionValues.get('modiff.flow');
+  assert.ok(typeof checkpoint === 'string' && checkpoint.length > 0, 'inspect an actual nonempty page checkpoint');
+  return checkpoint;
 }
 
 function autoReceipt(instance) {
@@ -795,6 +815,7 @@ function deferred() {
 
 beforeEach(() => {
   storage.clear();
+  sessionValues.clear();
   const configured = fixture();
   flowStore.useFlowStore.setState({
     nodes: [baseNode()],
@@ -894,6 +915,24 @@ test('a template skeleton cannot force Expert before its managed binding is read
   const finished = topBarAutoPolicy.resolveTopBarAutoPolicyV2(input);
   assert.equal(finished.customGraphActive, true);
   assert.equal(finished.autoUnavailable, false);
+});
+
+test('synthetic insertion fixtures follow exact current routes while the old identity stays refused', () => {
+  for (const configured of [fixture(), fluxFixture()]) {
+    assert.ok(routeModule.registeredBlockV2Route(configured.definition, configured.admission));
+  }
+  const { definition, admission } = fixture();
+  const oldIdentity = {
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+  };
+  for (const stale of [
+    oldIdentity,
+    { libraryRevision: oldIdentity.libraryRevision },
+    { contentHash: oldIdentity.contentHash },
+  ]) {
+    assert.equal(routeModule.registeredBlockV2Route({ ...definition, ...stale }, admission), null);
+  }
 });
 
 test('Qwen text-to-image fetches one audited definition and inserts only one source-neutral V2 root', async () => {
@@ -1273,6 +1312,80 @@ test('a fresh Qwen registered route rejects matching stale ambient defaults and 
     blockRuntime.blockViewModelV2(unchangedSibling.data.blockInstanceV2).controlParams.guidanceScale.value,
     4,
   );
+});
+
+test('fresh CTC catalog insertion preserves its declared word timestamps instead of generic segment defaults', async () => {
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  const definition = fixture.catalogDefinition;
+  const entry = fixture.compiledEntry;
+  libraryStore.useHuggingFaceNodeLibraryStore.setState({
+    library: fixtureLibrary([definition], []),
+    loaded: true,
+    error: null,
+  });
+  globalThis.fetch = async (url) => {
+    assert.ok(String(url).includes('/huggingface/registered-block-v2?'));
+    return new Response(JSON.stringify({ error: false, schemaVersion: 1, entry }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const ambient = modelProfiles.getFormDefaultsForRegisteredRoute('speech_to_text', definition.pipelineClass);
+  assert.equal(ambient.speechTimestamps, 'segment');
+  assert.equal(entry.values.timestamps, 'word');
+  const root = await insertion.createHuggingFaceClusterForGraph(definition, { x: 80, y: 90 }, ambient);
+  assert.equal(root.data.blockInstanceV2.values.timestamps, 'word');
+  assert.deepEqual(root.data.blockInstanceV2.definitionSnapshot, entry.definition);
+  assert.equal(blockRuntime.blockViewModelV2(root.data.blockInstanceV2).controlParams.timestamps.value, 'word');
+});
+
+test('registered speech controls project exact uploaded media and transcription settings for Auto', async () => {
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  libraryStore.useHuggingFaceNodeLibraryStore.setState({
+    library: fixtureLibrary([fixture.catalogDefinition], []),
+    loaded: true,
+    error: null,
+  });
+  globalThis.fetch = async () => Response.json({ error: false, schemaVersion: 1, entry: fixture.compiledEntry });
+  const ambient = modelProfiles.getFormDefaultsForRegisteredRoute(
+    'speech_to_text',
+    fixture.catalogDefinition.pipelineClass,
+  );
+  const root = await insertion.createHuggingFaceClusterForGraph(fixture.catalogDefinition, { x: 80, y: 90 }, ambient);
+  const instance = blockSchema.normalizeBlockInstanceV2({
+    ...root.data.blockInstanceV2,
+    values: {
+      ...root.data.blockInstanceV2.values,
+      audio: '@data/audio/authored-speech.wav',
+      timestamps: 'none',
+      chunk_length_seconds: '12',
+      stride_length_seconds: '2',
+    },
+  });
+  const projected = blockRunForm.registeredBlockRunFormV2(instance, 'auto');
+  assert.ok(projected);
+  assert.equal(projected.form.sourceAudio, instance.values.audio);
+  assert.equal(projected.form.speechTimestamps, 'none');
+  assert.equal(projected.form.speechChunkSeconds, 12);
+  assert.equal(projected.form.speechStrideSeconds, 2);
+  assert.deepEqual(
+    instance.values,
+    projected.instance.values,
+    'Projection must not rewrite the authoritative instance',
+  );
+  const defaults = blockRunForm.registeredBlockRunFormV2(root.data.blockInstanceV2, 'auto');
+  assert.equal(defaults.form.speechTimestamps, 'word', 'Fresh declared timestamps must survive planning too');
+  const uploaded = blockSchema.normalizeBlockInstanceV2({
+    ...instance,
+    values: { ...instance.values, audio: [instance.values.audio] },
+  });
+  assert.equal(blockRunForm.registeredBlockRunFormV2(uploaded, 'auto').form.sourceAudio, instance.values.audio);
+  assert.deepEqual(uploaded.values.audio, [instance.values.audio]);
+  for (const field of ['sourceAudio', 'referenceAudio', 'sourceVideo', 'maskImage']) {
+    assert.equal(blockRunForm.projectBlockControlValueV2(['@data/input.bin'], '', field), '@data/input.bin');
+    assert.equal(blockRunForm.projectBlockControlValueV2(['first', 'second'], '', field), '');
+  }
+  assert.equal(blockRunForm.projectBlockControlValueV2(['float32'], '', 'dtype'), '');
 });
 
 test('a backend-defined route without a legacy Studio profile retains compiled creator defaults', async () => {
@@ -2506,7 +2619,7 @@ test('workflow replacement during a deferred field action aborts and cleans the 
 });
 
 for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
-  test(`a delayed registered Block switch preserves its owner after ${change}`, async () => {
+  test(`a delayed registered Block switch preserves its owner after ${change}`, { timeout: 10000 }, async () => {
     const switching = await server.ssrLoadModule('/src/studio/registeredBlockRouteSwitchV1.ts');
     const configured = fixture();
     const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 80, y: 90 }, form());
@@ -2543,7 +2656,13 @@ for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
       (value) => ({ value }),
       (error) => ({ error }),
     );
-    await entered.promise;
+    await Promise.race([
+      entered.promise,
+      settled.then((result) => {
+        if (result.error) throw result.error;
+        assert.fail('The switch completed before reaching the deliberately delayed request.');
+      }),
+    ]);
     if (change === 'workflow') {
       studioStore.useStudioStore.setState({ activeWorkflowTabId: 'different-workflow', workflowCanvasEpoch: 2 });
     } else if (change === 'edit') {

@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 import {
@@ -12,6 +23,9 @@ import {
   canonicalJsonHash,
   cardPreviewContractErrors,
   decodedAudiovisualMediaHash,
+  decodedMediaHash,
+  decodedMediaHashMatches,
+  decodedVideoFrameHashCompatibility,
   galleryExpectedOutput,
   loadTemplateRuntime,
   mergeManifestEntries,
@@ -23,10 +37,673 @@ import {
   validateBeforeMedia,
   validateQualityReview,
   validateReviewedDerivative,
+  verifyGallery,
 } from './template-gallery-harness.mjs';
 import { repairDuplicateOutputItems } from './live-proof-provenance.mjs';
+import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
+import {
+  buildRetainedGalleryProvenance,
+  RETAINED_GALLERY_PROVENANCE_FORMAT,
+  validateRetainedGalleryProvenance,
+} from './retained-gallery-provenance.mjs';
 
 let runtime;
+
+test('decoded image media reports the actual frame count for a still-image release check', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-image-frames-'));
+  try {
+    const still = join(directory, 'still.webp');
+    const animated = join(directory, 'animated.webp');
+    writeFileSync(still, Buffer.from('UklGRhwAAABXRUJQVlA4TA8AAAAvA8AAAAcQ/Y/+ByKi/wEA', 'base64'));
+    writeFileSync(
+      animated,
+      Buffer.from(
+        'UklGRoQAAABXRUJQVlA4WAoAAAACAAAAAwAAAwAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAAMAAAMAAMgAAAJWUDhMDwAAAC8DwAAABxD9j/4HIqL/AQBBTk1GKAAAAAAAAAAAAAMAAAMAAMgAAABWUDhMDwAAAC8DwAAABxDR//4HIqL/AQA=',
+        'base64',
+      ),
+    );
+    const options = { measureImageFrames: true };
+    const [single, multiple, historical] = await Promise.all([
+      decodedMediaHash(still, 'image', options),
+      decodedMediaHash(animated, 'image', options),
+      decodedMediaHash(still, 'image'),
+    ]);
+    assert.deepEqual([single.frames, multiple.frames], [1, 2]);
+    assert.equal(historical.frames, undefined);
+    assert.equal(historical.hash, single.hash);
+    assert.ok(!technicalMediaErrors(single, { frames: 1 }, 'image').some((error) => error.includes('frames')));
+    assert.ok(technicalMediaErrors(multiple, { frames: 1 }, 'image').some((error) => error.includes('frames')));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('retained Gallery provenance cannot grant approval to another workflow or a replacement association', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const entry = fixture.manifest.examples.find(({ templateId }) => templateId === 'available');
+    const association = { templateId: entry.templateId, qualificationScope: 'exact_retained_recipe' };
+    const bundle = {
+      schemaVersion: 1,
+      format: RETAINED_GALLERY_PROVENANCE_FORMAT,
+      templateId: entry.templateId,
+      association,
+    };
+    assert.throws(() => buildRetainedGalleryProvenance(association), /differs from the approved observation/);
+    assert.throws(
+      () => buildRetainedGalleryProvenance({ ...association, templateId: 'smollm2_rain_gauge' }),
+      /differs from the approved observation/,
+    );
+    const encoded = JSON.stringify(bundle);
+    entry.provenanceHash = canonicalJsonHash(bundle);
+    const asset = fixture.storage.assets.find(({ path }) => path === entry.provenancePath.slice(1));
+    asset.size = Buffer.byteLength(encoded);
+    asset.sha256 = `sha256:bytes:${createHash('sha256').update(encoded).digest('hex')}`;
+    fixture.rights.records.find(({ path }) => path === asset.path).sha256 = asset.sha256;
+    const identity = (assets) =>
+      `sha256:canonical-json:${storageJsonHash({ schemaVersion: 1, assetVersion: 'fixture', assets })}`;
+    fixture.storage.assetSetId = identity(fixture.storage.assets);
+    fixture.storage.totalBytes = fixture.storage.assets.reduce((total, row) => total + row.size, 0);
+    fixture.source.completeAssetSetId = fixture.storage.assetSetId;
+    fixture.source.assetSetId = identity(
+      fixture.storage.assets.filter(({ path }) => !fixture.source.unavailableAssets.includes(path)),
+    );
+    fixture.rights.assetSetId = fixture.storage.assetSetId;
+    fixture.write(`public${entry.provenancePath}`, encoded);
+    fixture.flush();
+    fixture.options.runtime.lockedSettingsForTemplate = () => ({});
+    const result = await verifyGallery({}, 'synthetic-retained', {
+      ...fixture.options,
+      templateIds: [entry.templateId],
+    });
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.errors.includes('available retained Gallery provenance is outside the exact approved association'),
+      result.errors.join('\n'),
+    );
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test(
+  'materialized retained examples bind the archived bytes, active recipe and reviewed scope',
+  {
+    skip: !process.env.MODIFF_VERIFY_RETAINED_GALLERY,
+  },
+  async () => {
+    const client = fileURLToPath(new URL('../', import.meta.url));
+    const runtime = await loadTemplateRuntime(client);
+    const root = process.env.MODIFF_VERIFY_RETAINED_GALLERY;
+    const manifest = JSON.parse(readFileSync(join(root, 'manifest.json')));
+    for (const templateId of [
+      'marigold_depth_synthetic_ramp',
+      'smollm2_rain_gauge',
+      'spandrel_x2_synthetic_gradient',
+    ]) {
+      const entry = manifest.examples.find((candidate) => candidate.templateId === templateId);
+      assert.ok(entry, templateId);
+      const load = (assetPath) => readFileSync(join(root, assetPath.slice('/template-gallery/'.length)));
+      const template = runtime.templates.find((item) => item.id === templateId);
+      assert.ok(template, templateId);
+      const bundle = JSON.parse(load(entry.provenancePath));
+      const options = {
+        templateRevisionHash: storageJsonHash({ template, settings: runtime.lockedSettingsForTemplate(template) }),
+        outputBytes: load(entry.outputPath),
+        beforeBytes: entry.beforePath && load(entry.beforePath),
+      };
+      assert.deepEqual(validateRetainedGalleryProvenance(bundle, entry, options), []);
+      if (templateId === 'spandrel_x2_synthetic_gradient') {
+        assert.equal(entry.width, 128);
+        assert.equal(entry.height, 96);
+        assert.deepEqual(validateRetainedGalleryProvenance(bundle, { ...entry, width: 64, height: 48 }, options), [
+          'retained Gallery manifest width differs from the approved observation',
+          'retained Gallery manifest height differs from the approved observation',
+        ]);
+        const quality = JSON.parse(load(entry.qualityReviewPath));
+        assert.equal(quality.ratingMethod, 'maintainer_qualitative_acceptance');
+        assert.equal(quality.maintainerAcceptance.decision, 'accepted_with_disclosed_limitations');
+        assert.ok(Object.values(quality.scores).every((score) => score === null));
+      }
+      assert.ok(validateRetainedGalleryProvenance(bundle, { ...entry, verificationStatus: 'exact' }, options).length);
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, { ...entry, verificationTimestamp: '2026-01-01T00:00:00Z' }, options)
+          .length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, entry, { ...options, templateRevisionHash: 'changed' }).length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, entry, {
+          ...options,
+          outputBytes: Buffer.concat([options.outputBytes, Buffer.from(' ')]),
+        }).length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(
+          {
+            ...bundle,
+            association: { ...bundle.association, originalTaskId: 'must-remain-private' },
+          },
+          entry,
+          options,
+        ).length,
+      );
+      if (options.beforeBytes) {
+        assert.ok(
+          validateRetainedGalleryProvenance(bundle, entry, { ...options, beforeBytes: Buffer.alloc(1) }).length,
+        );
+      }
+    }
+  },
+);
+
+test('explicit Gallery selection keeps the default complete verification strict', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const id = fixture.manifest.examples.find((entry) => entry.templateId !== 'withheld').templateId;
+    const result = await verifyGallery({}, 'synthetic-scope', { ...fixture.options, templateIds: [id] });
+    assert.equal(result.ok, true);
+    assert.equal(result.examples, 1);
+    assert.equal(result.explicitlyScoped, true);
+    for (const templateIds of [[], [id, id], ['missing']]) {
+      await assert.rejects(
+        () => verifyGallery({}, 'synthetic-scope', { ...fixture.options, templateIds }),
+        /distinct existing examples/u,
+      );
+    }
+    const complete = await verifyGallery({}, 'synthetic-complete', fixture.options);
+    assert.equal(complete.examples, fixture.manifest.examples.length);
+    assert.equal(complete.explicitlyScoped, undefined);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test('reviewed history refuses a different source or a changed recipe ledger before decoding media', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const body = {
+      schemaVersion: 1,
+      format: 'modiff.gallery.recipe-history.v1',
+      source: { repository: 'other/gallery', revision: fixture.source.revision },
+      records: [],
+    };
+    fixture.write('config/template-recipe-history.v1.json', { ...body, recordsHash: canonicalJsonHash(body) });
+    await assert.rejects(
+      () => verifyGallery({ reviewedHistory: true }, 'synthetic-history', fixture.options),
+      /history belongs to a different Dataset/u,
+    );
+    body.source.repository = fixture.source.repoId;
+    fixture.write('config/template-recipe-history.v1.json', { ...body, recordsHash: 'changed' });
+    await assert.rejects(
+      () => verifyGallery({ reviewedHistory: true }, 'synthetic-history', fixture.options),
+      /history schema, immutable source or content hash is invalid/u,
+    );
+    assert.deepEqual(fixture.decoded, []);
+    assert.equal((await verifyGallery({}, 'default-verification', fixture.options)).ok, true);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test(
+  'saved Wan media and withheld Ghibli records pass only the explicitly reviewed historical audit',
+  { skip: !process.env.MODIFF_VERIFY_REVIEWED_HISTORY },
+  async () => {
+    const templateIds = ['flux_lora_ghibli_story', 'wan_22_ti2v_5b_seed_vault'];
+    const current = await verifyGallery({}, 'current-recipes', { templateIds });
+    assert.deepEqual(
+      current.errors,
+      templateIds.map((id) => `${id} manifest templateLockHash is stale for the current template revision`),
+    );
+    const saved = await verifyGallery({ reviewedHistory: true }, 'reviewed-recipes', { templateIds });
+    assert.deepEqual(saved.errors, []);
+    assert.equal(saved.verifiedCurrentExamples, 0);
+    assert.equal(saved.verifiedHistoricalExamples, 1);
+    assert.deepEqual(saved.historicalRecipeRecords, [
+      { templateId: templateIds[0], withheld: true },
+      { templateId: templateIds[1], withheld: false },
+    ]);
+    assert.equal(saved.withheldExamples[0].templateId, templateIds[0]);
+  },
+);
+
+test('decoded video identity tolerates only the reviewed FFmpeg software banner difference', () => {
+  const original = Buffer.from(
+    '#format: frame checksums\n#version: 2\n#hash: MD5\n#software: Lavf61.1.100\n' +
+      '#tb 0: 1/24\n#media_type 0: video\n#dimensions 0: 2x2\n' +
+      '#stream#, dts, pts, duration, size, hash\n0, 0, 0, 1, 6, 11111111111111111111111111111111\n',
+  );
+  const expected = `sha256:decoded-video-framemd5:${createHash('sha256').update(original).digest('hex')}`;
+  const current = Buffer.from(original.toString().replace('Lavf61.1.100', 'Lavf61.7.100'));
+  const compatibility = decodedVideoFrameHashCompatibility(current);
+  const decoded = { hash: compatibility.rawHash, frameHashCompatibility: compatibility };
+  assert.notEqual(decoded.hash, expected);
+  assert.equal(decodedMediaHashMatches(decoded, expected), true);
+  assert.equal(compatibility.observedMuxer, 'Lavf61.7.100');
+  assert.equal(decodedMediaHashMatches({ hash: 'decoded:image' }, 'decoded:image'), true);
+  assert.equal(
+    decodedMediaHashMatches({ hash: 'decoded:image', frameHashCompatibility: compatibility }, expected),
+    false,
+  );
+  assert.equal(decodedMediaHashMatches({ ...decoded, hash: 'wrong' }, expected), false);
+  assert.equal(decodedMediaHashMatches(decoded, undefined), false);
+  for (const changed of [
+    current.toString().replace('11111111111111111111111111111111', '21111111111111111111111111111111'),
+    current.toString().replace('0, 0, 0, 1, 6,', '0, 0, 1, 1, 6,'),
+    current.toString().replace('#dimensions 0: 2x2', '#dimensions 0: 4x4'),
+    current.toString().replace('#tb 0: 1/24', '#tb 0: 1/25'),
+    current.toString().replace('#software: Lavf61.7.100', '#software: unknown'),
+    current.toString().replace('#hash: MD5', '#hash: SHA256'),
+    current.toString().replace('#software: Lavf61.7.100', '#software: Lavf61.7.100\n#software: Lavf61.7.100'),
+  ]) {
+    const candidate = decodedVideoFrameHashCompatibility(Buffer.from(changed));
+    assert.equal(
+      decodedMediaHashMatches({ hash: candidate.rawHash, frameHashCompatibility: candidate }, expected),
+      false,
+    );
+  }
+  assert.equal(decodedMediaHashMatches({ hash: compatibility.rawHash }, expected), false);
+});
+
+// Synthetic media and receipts exercise the verifier; they claim no model output or rights approval.
+function subsetVerificationFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-gallery-subset-'));
+  const assets = [];
+  const records = [];
+  const examples = [];
+  const write = (relative, value) => {
+    const filename = join(root, relative);
+    mkdirSync(dirname(filename), { recursive: true });
+    writeFileSync(filename, typeof value === 'string' ? value : JSON.stringify(value));
+  };
+  const asset = (path, value, held = false) => {
+    const bytes = typeof value === 'string' ? value : JSON.stringify(value);
+    const sha256 = `sha256:bytes:${createHash('sha256').update(bytes).digest('hex')}`;
+    assets.push({ path, size: Buffer.byteLength(bytes), sha256, contentType: 'application/octet-stream' });
+    records.push({
+      path,
+      sha256,
+      publishDecision: held ? 'hold' : 'approved',
+      holdReason: held ? 'Synthetic permission hold' : null,
+    });
+    if (!held) write(`public/${path}`, bytes);
+  };
+  for (const id of ['available', 'withheld']) {
+    const bindings = {
+      templateId: id,
+      templateLockHash: 'tpl_fixture',
+      promptSettingsHash: 'ps_fixture',
+      modelRevision: `repo@${'a'.repeat(40)}`,
+      runtimeFingerprint: 'runtime_fixture',
+      graphHash: 'graph_fixture',
+      proofLockHash: 'proof_fixture',
+      decodedMediaHash: `decoded:${id}`,
+    };
+    const run = {
+      template: { id, promptSettingsHash: bindings.promptSettingsHash },
+      templateLockHash: bindings.templateLockHash,
+      modelRevision: bindings.modelRevision,
+      mediaHash: bindings.decodedMediaHash,
+      graphHash: bindings.graphHash,
+      proofLockHash: bindings.proofLockHash,
+      backendSourceFingerprint: 'backend_fixture',
+      backendContractFingerprint: 'contract_fixture',
+      modelCommit: 'a'.repeat(40),
+      templateRevisionHash: 'revision_fixture',
+      blockers: [],
+    };
+    const bundle = { schemaVersion: 1, format: 'modiff.gallery.reviewed-provenance.v1', templateId: id, bindings, run };
+    const review = {
+      schemaVersion: 2,
+      ...bindings,
+      reviewStatus: 'approved_reviewed',
+      reviewer: 'Synthetic test fixture',
+      reviewedAt: '2026-01-01T00:00:00Z',
+      rubric: { taskAdherence: 5, artifactControl: 5, modalityQuality: 5 },
+      scores: { promptAdherence: 5, composition: 5, technicalExecution: 5, templateUsefulness: 5 },
+      hardFailures: [],
+      objectiveChecks: { status: 'pass' },
+      modalityReview: { status: 'pass' },
+      summary: 'Synthetic verifier fixture with no actual publication approval.',
+      knownLimitations: [],
+    };
+    const outputPath = `/template-gallery/${id}.webp`;
+    const provenancePath = `/template-gallery/reviews/${id}.json`;
+    const qualityReviewPath = `/template-gallery/reviews/${id}.review.json`;
+    asset(outputPath.slice(1), `synthetic ${id} media`, id === 'withheld');
+    asset(provenancePath.slice(1), bundle);
+    asset(qualityReviewPath.slice(1), review);
+    examples.push({
+      ...bindings,
+      ...Object.fromEntries(
+        ['backendSourceFingerprint', 'backendContractFingerprint', 'modelCommit', 'templateRevisionHash'].map((key) => [
+          key,
+          run[key],
+        ]),
+      ),
+      verificationStatus: 'reviewed',
+      outputPath,
+      thumbnailPath: outputPath,
+      mediaHash: bindings.decodedMediaHash,
+      mediaType: 'image',
+      verificationTimestamp: review.reviewedAt,
+      provenancePath,
+      provenanceHash: canonicalJsonHash(bundle),
+      qualityReviewPath,
+      qualityReviewHash: canonicalJsonHash(review),
+      qualityReviewStatus: review.reviewStatus,
+      reviewer: review.reviewer,
+      reviewedAt: review.reviewedAt,
+      templateInputContractHash: 'inputs_fixture',
+    });
+  }
+  assets.sort((a, b) => (a.path < b.path ? -1 : 1));
+  records.sort((a, b) => (a.path < b.path ? -1 : 1));
+  const identity = (rows) =>
+    `sha256:canonical-json:${storageJsonHash({ schemaVersion: 1, assetVersion: 'fixture', assets: rows })}`;
+  const storage = {
+    schemaVersion: 1,
+    assetVersion: 'fixture',
+    assets,
+    assetSetId: identity(assets),
+    status: 'ready',
+    assetCount: assets.length,
+    totalBytes: assets.reduce((sum, row) => sum + row.size, 0),
+    missingAssets: [],
+  };
+  const source = {
+    schemaVersion: 1,
+    mode: 'huggingface',
+    localBasePath: '/template-gallery',
+    repoType: 'dataset',
+    repoId: 'fixture/gallery',
+    revision: 'a'.repeat(40),
+    pathPrefix: 'template-gallery',
+    assetManifestPath: '_modiff/template-assets.v1.json',
+    assetSetId: identity(assets.filter((row) => !row.path.endsWith('/withheld.webp'))),
+    completeAssetSetId: storage.assetSetId,
+    unavailableAssets: ['template-gallery/withheld.webp'],
+  };
+  const rights = { schemaVersion: 1, assetSetId: storage.assetSetId, records };
+  const manifest = { schemaVersion: 2, examples };
+  const flush = () => {
+    write('config/template-assets.v1.json', storage);
+    write('config/template-asset-rights.v1.json', rights);
+    write('src/studio/templateAssetSource.json', source);
+    write('public/template-gallery/manifest.json', manifest);
+  };
+  flush();
+  const decoded = [];
+  const options = {
+    root,
+    runtime: {
+      templates: examples.map((entry) => ({
+        id: entry.templateId,
+        example: { expectedOutput: { width: 512, height: 512 } },
+      })),
+      promptSettingsHash: () => 'ps_fixture',
+      templateLockHash: () => 'tpl_fixture',
+      templateInputContractHash: () => 'inputs_fixture',
+    },
+    decodeMedia: async (filename) => {
+      decoded.push(filename);
+      return { hash: 'decoded:available', width: 512, height: 512, nearBlackRatio: 0, lumaStdDev: 20 };
+    },
+  };
+  const dispose = () => {
+    const actual = realpathSync(root);
+    assert.equal(dirname(actual), realpathSync(tmpdir()));
+    assert.ok(basename(actual).startsWith('modiff-gallery-subset-'));
+    rmSync(actual, { recursive: true, force: true });
+  };
+  return { root, source, storage, rights, manifest, options, decoded, flush, write, dispose };
+}
+
+test('Gallery verification retains explicit remote rights holds without treating them as missing published media', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const result = await verifyGallery({}, 'test-artifact', fixture.options);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.verifiedExamples, 1);
+    assert.deepEqual(result.withheldExamples, [{ templateId: 'withheld', assets: ['template-gallery/withheld.webp'] }]);
+    assert.equal(fixture.decoded.length, 1);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test('Gallery verification keeps available media byte, decoded, provenance and review failures blocking', async (t) => {
+  for (const [label, mutate, expected] of [
+    [
+      'missing published media',
+      (fixture) => unlinkSync(join(fixture.root, 'public/template-gallery/available.webp')),
+      /available media file missing/,
+    ],
+    [
+      'changed published media',
+      (fixture) => fixture.write('public/template-gallery/available.webp', 'changed media'),
+      /Published asset byte identity mismatch/,
+    ],
+    [
+      'changed decoded output',
+      (fixture) => {
+        fixture.options.decodeMedia = async () => ({
+          hash: 'wrong',
+          width: 512,
+          height: 512,
+          nearBlackRatio: 0,
+          lumaStdDev: 20,
+        });
+      },
+      /available decoded hash mismatch/,
+    ],
+    [
+      'changed withheld entry provenance',
+      (fixture) => fixture.write('public/template-gallery/reviews/withheld.json', {}),
+      /withheld provenance hash mismatch/,
+    ],
+    [
+      'missing withheld entry review',
+      (fixture) => unlinkSync(join(fixture.root, 'public/template-gallery/reviews/withheld.review.json')),
+      /withheld quality review missing/,
+    ],
+  ]) {
+    await t.test(label, async () => {
+      const fixture = subsetVerificationFixture();
+      try {
+        mutate(fixture);
+        const result = await verifyGallery({}, 'test-artifact', fixture.options);
+        assert.equal(result.ok, false);
+        assert.equal(result.verifiedExamples, 0);
+        assert.match(result.errors.join('\n'), expected);
+      } finally {
+        fixture.dispose();
+      }
+    });
+  }
+});
+
+test('Gallery verification rejects unbound or broadened remote exclusions', async (t) => {
+  for (const [label, mutate, expected] of [
+    [
+      'mutable revision',
+      (fixture) => {
+        fixture.source.revision = 'main';
+      },
+      /immutable/,
+    ],
+    [
+      'unknown withheld path',
+      (fixture) => {
+        fixture.source.unavailableAssets = ['template-gallery/unknown.webp'];
+      },
+      /rights\/source mismatch/,
+    ],
+    [
+      'approved file falsely withheld',
+      (fixture) => {
+        fixture.source.unavailableAssets.unshift('template-gallery/available.webp');
+      },
+      /rights\/source mismatch/,
+    ],
+    [
+      'stale rights hash',
+      (fixture) => {
+        fixture.rights.records[0].sha256 = `sha256:bytes:${'0'.repeat(64)}`;
+      },
+      /rights\/source mismatch/,
+    ],
+    [
+      'duplicate rights rows',
+      (fixture) => {
+        fixture.rights.records[0] = fixture.rights.records[1];
+      },
+      /exact storage manifest/,
+    ],
+    [
+      'changed complete manifest',
+      (fixture) => {
+        fixture.storage.assets[0].size += 1;
+      },
+      /exact complete storage manifest/,
+    ],
+    [
+      'changed subset identity',
+      (fixture) => {
+        fixture.source.assetSetId = `sha256:canonical-json:${'0'.repeat(64)}`;
+      },
+      /exact nonempty approved asset subset/,
+    ],
+    [
+      'missing hold reason',
+      (fixture) => {
+        fixture.rights.records.find((row) => row.publishDecision === 'hold').holdReason = '';
+      },
+      /rights\/source mismatch/,
+    ],
+    [
+      'escape path',
+      (fixture) => {
+        fixture.source.unavailableAssets = ['template-gallery/../outside.webp'];
+      },
+      /canonical/,
+    ],
+  ]) {
+    await t.test(label, async () => {
+      const fixture = subsetVerificationFixture();
+      try {
+        mutate(fixture);
+        fixture.flush();
+        await assert.rejects(verifyGallery({}, 'test-artifact', fixture.options), expected);
+      } finally {
+        fixture.dispose();
+      }
+    });
+  }
+});
+
+test('Gallery verification does not apply remote exclusions to a local complete Gallery', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    fixture.source.mode = 'local';
+    fixture.flush();
+    const result = await verifyGallery({}, 'test-artifact', fixture.options);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /withheld media file missing/);
+    assert.deepEqual(result.withheldAssets, []);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test('Gallery verification binds every example reference to canonical published storage paths', async (t) => {
+  for (const [label, mutate, expected] of [
+    ...['outputPath', 'thumbnailPath', 'provenancePath', 'qualityReviewPath'].map((field) => [
+      `unlisted ${field}`,
+      (fixture) => {
+        const entry = fixture.manifest.examples[0];
+        const original = readFileSync(join(fixture.root, 'public', entry[field].slice(1)), 'utf8');
+        entry[field] = `/template-gallery/unlisted-${field}.json`;
+        fixture.write(`public${entry[field]}`, original);
+      },
+      /not listed in the complete storage manifest/,
+    ]),
+    [
+      'dot alias',
+      (fixture) => {
+        fixture.manifest.examples[0].outputPath = '/template-gallery/./available.webp';
+      },
+      /canonical Gallery path/,
+    ],
+    [
+      'traversal alias',
+      (fixture) => {
+        fixture.manifest.examples[0].outputPath = '/template-gallery/../template-gallery/available.webp';
+      },
+      /canonical Gallery path/,
+    ],
+    [
+      'held sidecar',
+      (fixture) => {
+        fixture.manifest.examples[0].provenancePath = '/template-gallery/withheld.webp';
+      },
+      /sidecar must be available/,
+    ],
+  ]) {
+    await t.test(label, async () => {
+      const fixture = subsetVerificationFixture();
+      try {
+        mutate(fixture);
+        fixture.flush();
+        await assert.rejects(verifyGallery({}, 'test-artifact', fixture.options), expected);
+        assert.equal(fixture.decoded.length, 0);
+      } finally {
+        fixture.dispose();
+      }
+    });
+  }
+});
+
+test('Gallery verification rejects an all-withheld Gallery and does not approve held bytes found locally', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    fixture.write('public/template-gallery/withheld.webp', 'synthetic withheld media');
+    const result = await verifyGallery({}, 'test-artifact', fixture.options);
+    assert.equal(result.ok, true);
+    assert.equal(result.verifiedExamples, 1);
+    assert.equal(result.withheldAssets[0].reason, 'Synthetic permission hold');
+    assert.equal(fixture.decoded.length, 1);
+    fixture.manifest.examples = fixture.manifest.examples.filter((entry) => entry.templateId === 'withheld');
+    fixture.flush();
+    const empty = await verifyGallery({}, 'test-artifact', fixture.options);
+    assert.equal(empty.ok, false);
+    assert.match(empty.errors.join('\n'), /no available published examples/);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test('Gallery verification refuses a linked directory escape before reading or decoding example media', async () => {
+  const fixture = subsetVerificationFixture();
+  const linkedPath = join(fixture.root, 'public/template-gallery');
+  const outsidePublic = join(fixture.root, 'outside-public');
+  let linked = false;
+  try {
+    renameSync(linkedPath, outsidePublic);
+    symlinkSync(outsidePublic, linkedPath, process.platform === 'win32' ? 'junction' : 'dir');
+    linked = true;
+    await assert.rejects(verifyGallery({}, 'test-artifact', fixture.options), /not a contained regular file/);
+    assert.equal(fixture.decoded.length, 0);
+  } finally {
+    if (linked) {
+      if (process.platform === 'win32') rmdirSync(linkedPath);
+      else unlinkSync(linkedPath);
+    }
+    fixture.dispose();
+  }
+});
 
 before(async () => {
   runtime = await loadTemplateRuntime();
@@ -415,6 +1092,29 @@ test('video delivery floor accepts native Wan resolution without weakening templ
   assert.match(lowResolution.join('\n'), /at least 768x480/);
 });
 
+test('a reviewed native 3D turntable retains its exact small render', () => {
+  const hash = 'sha256:decoded-video-framemd5:' + 'a'.repeat(64);
+  const preview = { mediaHash: hash, width: 256, height: 256, frames: 20, fps: 12 };
+  const decoded = {
+    ...preview,
+    hash,
+    durationSeconds: 20 / 12,
+    uniqueFrameRatio: 1,
+    nearBlackRatio: 0,
+    lumaStdDev: 20,
+    codecName: 'h264',
+    pixelFormat: 'yuv420p',
+  };
+  assert.deepEqual(technicalMediaErrors(decoded, {}, 'video', preview, true), []);
+  assert.match(technicalMediaErrors(decoded, {}, 'video', preview).join('\n'), /at least 768x480/);
+  assert.match(
+    technicalMediaErrors({ ...decoded, hash: hash.replace(/a+$/u, 'b'.repeat(64)) }, {}, 'video', preview, true).join(
+      '\n',
+    ),
+    /differs from the reviewed retained preview/,
+  );
+});
+
 test('public provenance redacts machine paths and source commit ids', () => {
   const redacted = redactPublicProvenance({
     runtime: {
@@ -443,9 +1143,40 @@ test('public provenance redacts machine paths and source commit ids', () => {
   });
 });
 
+test('public provenance redacts removable Linux mounts while retaining public and logical media paths', () => {
+  assert.deepEqual(
+    redactPublicProvenance({
+      cache: '/run/media/example/External SSD/MoDiff/cache',
+      source: '/media/example/Archive/source.png',
+      scratch: '/mnt/private/offload',
+      gallery: '/template-gallery/runtime-inputs/assets/example.png',
+      logical: '@data/images/source.png',
+    }),
+    {
+      cache: '<local-path>/cache',
+      source: '<local-path>/source.png',
+      scratch: '<local-path>/offload',
+      gallery: '/template-gallery/runtime-inputs/assets/example.png',
+      logical: '@data/images/source.png',
+    },
+  );
+});
+
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
-  assert.equal(runtime.templates.length, 78);
-  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 78);
+  const retained = JSON.parse(
+    readFileSync(new URL('../config/retained-gallery-approved-batch.v1.json', import.meta.url), 'utf8'),
+  );
+  const expectedCount = 98 + Object.keys(retained).length;
+  assert.equal(runtime.templates.length, expectedCount);
+  const ids = new Set(runtime.templates.map((template) => template.id));
+  assert.equal(ids.size, expectedCount);
+  for (const id of Object.keys(retained)) assert.ok(ids.has(id), id);
+  assert.ok(ids.has('whisper_tiny_blue_cup_transcription'));
+  assert.ok(ids.has('wav2vec2_station_announcement'));
+  assert.ok(ids.has('lcm_dawn_alpine_lake'));
+  assert.ok(ids.has('sana_sprint_monochrome_tiger'));
+  assert.ok(ids.has('spandrel_x2_synthetic_gradient'));
+  assert.ok(runtime.templates.some((template) => template.id === 'minimax_h3_image_old_town_cat'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_music3_chamber_pop'));
   assert.equal(
     runtime.templates.some((template) => template.id === 'wan_22_i2v_seed_vault'),
@@ -454,24 +1185,30 @@ test('gallery harness loads all Studio templates from the TypeScript runtime', (
 });
 
 test('Qwen gallery candidates use the runtime locked settings and hashes', () => {
+  const creatorBaseline = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/image-template-creator-contracts.v1.json', import.meta.url), 'utf8'),
+  );
   const expectedHashes = {
     qwen_low_vram_text_rendering: {
       width: 1024,
       height: 1024,
       promptSettingsHash: 'ps_c32e6c86',
-      templateLockHash: 'tpl_6b3c93e2',
+      templateLockHash: 'tpl_eb899725',
+      historicalTemplateLockHash: 'tpl_76f378d2',
     },
     qwen_low_vram_product_concept: {
       width: 1024,
       height: 768,
       promptSettingsHash: 'ps_2eeea545',
-      templateLockHash: 'tpl_b90c42f9',
+      templateLockHash: 'tpl_763e4b50',
+      historicalTemplateLockHash: 'tpl_b9f47949',
     },
     qwen_low_vram_poster_layout: {
       width: 768,
       height: 1024,
       promptSettingsHash: 'ps_124204d1',
-      templateLockHash: 'tpl_bc67f109',
+      templateLockHash: 'tpl_b1b11c5a',
+      historicalTemplateLockHash: 'tpl_e5832679',
     },
   };
 
@@ -480,6 +1217,37 @@ test('Qwen gallery candidates use the runtime locked settings and hashes', () =>
     assert.ok(template, `${templateId} loaded from STUDIO_TEMPLATES`);
     const candidate = buildTemplateCandidate(runtime, template);
 
+    assert.deepEqual(
+      candidate.lockedSettings,
+      creatorBaseline.templates.find((item) => item.templateId === templateId).contract.lockedSettings,
+      'the complete retained creative contract remains unchanged',
+    );
+    assert.equal(template.executionSelection.authoringRecipeId, 'retained-qwen-image-text-to-image:v1');
+    // The lock includes authoring metadata. Moving the preserved component
+    // policy into a backend recipe changes it without rebinding historical media.
+    const historicalTemplate = structuredClone(template);
+    delete historicalTemplate.executionSelection.authoringRecipeId;
+    historicalTemplate.executionSelection.componentPolicy = {
+      attentionBackend: 'auto',
+      vaeSlicing: true,
+      vaeTiling: true,
+    };
+    assert.equal(runtime.templateLockHash(historicalTemplate), hashes.historicalTemplateLockHash);
+    const historicalEntry = {
+      templateId,
+      modelRevision: template.example.modelRevision,
+      templateLockHash: hashes.historicalTemplateLockHash,
+      promptSettingsHash: hashes.promptSettingsHash,
+      mediaType: 'image',
+      graphHash: 'sha256:canonical-graph-v1:test',
+      mediaHash: 'sha256:decoded-rgba:test',
+      provenanceHash: 'sha256:canonical-json:test',
+      qualityReviewHash: 'sha256:canonical-json:test',
+      qualityReviewStatus: 'approved_exact',
+    };
+    const historicalManifest = { schemaVersion: 2, examples: [historicalEntry] };
+    assert.equal(runtime.findManifestEntry(historicalTemplate, historicalManifest), historicalEntry);
+    assert.equal(runtime.findManifestEntry(template, historicalManifest), undefined);
     assert.deepEqual(candidate.lockedSettings, runtime.lockedSettingsForTemplate(template));
     assert.equal(candidate.promptSettingsHash, runtime.promptSettingsHash(template));
     assert.equal(candidate.templateLockHash, runtime.templateLockHash(template));
@@ -780,6 +1548,41 @@ test('lyric video approval cannot bypass listening-based cue alignment review', 
   assert.match(errors.join('\n'), /at least six exact lyric overlay cues/);
 });
 
+test('a declared 45-second song with disabled lyric overlay needs no invented caption cues', () => {
+  const expected = { templateId: 'ace_step_lyric_music_video' };
+  const review = {
+    motionReview: { durationSeconds: 45 },
+    lyricSyncReview: {
+      status: 'not_applicable',
+      overlayEnabled: false,
+      emptyLrc: true,
+    },
+  };
+  const metadata = { expectedDurationSeconds: 45, lyricOverlayEnabled: false };
+  const errors = validateQualityReview(review, expected, 'approved_reviewed', undefined, metadata);
+  assert.equal(
+    errors.some((e) =>
+      /duration between 20 and 35|lyric sync|audio alignment|lyric overlay cues|preview-safe area/.test(e),
+    ),
+    false,
+  );
+  assert(
+    validateQualityReview(review, expected, 'approved_reviewed', undefined, {
+      ...metadata,
+      lyricOverlayEnabled: true,
+    }).some((e) => /lyric overlay cues/.test(e)),
+  );
+  assert(
+    validateQualityReview(
+      { ...review, motionReview: { durationSeconds: 30 } },
+      expected,
+      'approved_reviewed',
+      undefined,
+      metadata,
+    ).some((e) => /declared 45-second/.test(e)),
+  );
+});
+
 test('multi-reference product approval enforces human-scale bicycle geometry', () => {
   const expected = {
     templateId: 'qwen_multi_reference_product',
@@ -1043,6 +1846,82 @@ test('layered gallery derivatives stay bound to every captured layer and the sou
     ).join('\n'),
     /8\/255 mean-absolute-error boundary/,
   );
+});
+
+test('retained lossless layer exports reproduce every native output without replacing its identity', () => {
+  const processorPath = fileURLToPath(new URL('./template-gallery-retained-layer-sheet.py', import.meta.url));
+  const processorHash = 'sha256:bytes:' + createHash('sha256').update(readFileSync(processorPath)).digest('hex');
+  const items = Array.from({ length: 3 }, (_, index) => ({
+    width: 640,
+    height: 640,
+    encodedSha256: 'sha256:' + String(index + 1).repeat(64),
+    decodedSha256: 'sha256:layer:' + index,
+  }));
+  const provenance = {
+    template: { id: 'qwen_layered_portrait' },
+    inputs: { items: [{ contentHash: 'sha256:bytes:source' }] },
+    output: { collectionHash: 'sha256:collection:layers', items },
+  };
+  const derivative = {
+    schemaVersion: 1,
+    format: 'modiff.gallery.reviewed-derivative.v1',
+    templateId: 'qwen_layered_portrait',
+    kind: 'layered_contact_sheet',
+    layout: 'source-recomposition-three-layers-metrics-3x2',
+    sourceOutputCollectionHash: provenance.output.collectionHash,
+    sourceItemHashes: items.map((x) => x.decodedSha256),
+    sourceInputHash: 'sha256:bytes:source',
+    decodedMediaHash: 'sha256:decoded:sheet',
+    processor: {
+      path: 'scripts/template-gallery-retained-layer-sheet.py',
+      contentHash: processorHash,
+      role: 'byte-identical-retained-sheet-reproduction',
+    },
+    recomposition: { maxMeanAbsoluteError: 4.3, threshold: 8, status: 'pass' },
+    creationTimeReviewCaptionPreserved: true,
+    losslessExports: {
+      schemaVersion: 1,
+      verification: 'native-webp-quality-100-byte-reproduction',
+      items: items.map((item, index) => ({
+        index,
+        width: 640,
+        height: 640,
+        mode: 'RGBA',
+        nativeEncodedSha256: item.encodedSha256,
+        encodedSha256: 'sha256:bytes:' + String(index + 5).repeat(64),
+        rgbaPixelSha256: 'a'.repeat(64),
+      })),
+    },
+  };
+  const expected = { templateId: 'qwen_layered_portrait', decodedMediaHash: derivative.decodedMediaHash };
+  assert.deepEqual(validateReviewedDerivative(provenance, derivative, expected), []);
+  for (const mutate of [
+    (x) => {
+      x.losslessExports.items.reverse();
+    },
+    (x) => {
+      x.losslessExports.items.pop();
+    },
+    (x) => {
+      x.losslessExports.items[0].nativeEncodedSha256 = 'sha256:' + '0'.repeat(64);
+    },
+    (x) => {
+      x.losslessExports.items[0].rgbaPixelSha256 = 'invalid';
+    },
+    (x) => {
+      x.losslessExports.items[0].width = 1024;
+    },
+    (x) => {
+      x.creationTimeReviewCaptionPreserved = false;
+    },
+    (x) => {
+      x.processor.role = 'original-producer';
+    },
+  ]) {
+    const changed = structuredClone(derivative);
+    mutate(changed);
+    assert.match(validateReviewedDerivative(provenance, changed, expected).join('\n'), /lossless exports/);
+  }
 });
 
 test('reviewed audio remux derivatives bind source video, replacement audio, operation, and final AV identity', () => {

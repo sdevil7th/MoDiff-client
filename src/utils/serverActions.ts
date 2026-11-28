@@ -1,5 +1,6 @@
 import config from '../../app.config';
 import { requestJson, RequestError, type RequestOptions } from './requestJson';
+import { supervisorControlAddress } from './supervisorControl';
 
 export type ServerActionResult = Record<string, unknown> & {
   error?: boolean | string;
@@ -119,13 +120,17 @@ function serverAction<T extends ServerActionResult>(
 }
 
 export function requestExecutionStop() {
-  return serverAction(
-    '/stop',
-    'Could not stop the current execution.',
-    { method: 'POST' },
-    undefined,
-    config.supervisorAddress,
-  ).catch(() => serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }));
+  let address: string | null = null;
+  try {
+    address = supervisorControlAddress(true);
+  } catch {
+    // A rejected legacy control configuration must still permit the worker's
+    // ordinary Stop endpoint. Never request the untrusted control origin.
+  }
+  if (!address) return serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' });
+  return serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }, undefined, address).catch(
+    () => serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }),
+  );
 }
 
 export function cancelQueuedTask(taskId: string) {
@@ -140,14 +145,29 @@ export function cancelQueuedTask(taskId: string) {
   );
 }
 
+// Cache snapshots are presentation only. Releases and reconnects retire reads
+// already in flight, including reads sent while teardown was pending.
+let runtimeCacheReadGeneration = 0;
+
+export function invalidateRuntimeCacheReads() {
+  runtimeCacheReadGeneration += 1;
+}
+
+export function currentRuntimeCacheReadGeneration() {
+  return runtimeCacheReadGeneration;
+}
+
 export function deleteNodeCache(nodeIds: string[]) {
   const uniqueNodeIds = [...new Set(nodeIds.filter(Boolean))];
   if (uniqueNodeIds.length === 0) return Promise.resolve<CacheDeletionResult>({ error: false, nodes: [] });
+  invalidateRuntimeCacheReads();
   return serverAction<CacheDeletionResult>(
     '/cache',
     'Could not clear the node cache.',
     {
       method: 'DELETE',
+      // Full model/component teardown can exceed the ordinary request deadline.
+      timeoutMs: 120_000,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodes: uniqueNodeIds }),
     },
@@ -156,11 +176,14 @@ export function deleteNodeCache(nodeIds: string[]) {
         throw new Error('The cache deletion response has an invalid node list.');
       }
     },
-  );
+  ).finally(invalidateRuntimeCacheReads);
 }
 
 export function cleanupGpuMemory() {
-  return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', { method: 'POST' });
+  invalidateRuntimeCacheReads();
+  return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', {
+    method: 'POST',
+  }).finally(invalidateRuntimeCacheReads);
 }
 
 /** Invalidate results on the next Run while retaining model owners and previews. */
@@ -235,6 +258,7 @@ export function fetchHfCacheDeletionPlan(hash: string, allowRedownload = false) 
 }
 
 export function deleteHfCacheEntry(hash: string, planHash: string, allowRedownload = false) {
+  invalidateRuntimeCacheReads();
   return serverAction<HfCacheDeletionResult>(
     `/hf_cache/${encodeURIComponent(hash)}`,
     'Could not delete the Hugging Face model.',
@@ -263,7 +287,7 @@ export function deleteHfCacheEntry(hash: string, planHash: string, allowRedownlo
         throw new Error('The Hugging Face cache deletion receipt is invalid.');
       }
     },
-  );
+  ).finally(invalidateRuntimeCacheReads);
 }
 
 export function fetchHfIncompleteCleanupPlan() {

@@ -1,13 +1,64 @@
 import type { StudioMode, StudioModelType, StudioOutput } from './types';
-import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS } from './modelProfiles';
+import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS, STUDIO_MODEL_PROFILES } from './modelProfiles';
+import { isWorkflowResourceValue, type WeightLoadingMode } from '../types/api';
+import { parseBuiltinMediaEvidence, type BuiltinMediaEvidence } from './builtinMediaEvidence';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
+export type ModelWeightFormat = 'native' | 'fp8r' | 'nvfp4';
+export type TextGenerationOperation = 'standard' | 'enhance_prompt' | 'enhance_prompt_append_details';
+export type PromptEnhancementSystemMode = 't2i' | 'i2i' | 't2i_bbox' | 'i2i_bbox';
 type InputField = {
   value: InputValue;
   source: 'literal' | 'connected' | 'override';
   sourceNodeId?: string;
   sourcePortId?: string;
 };
+type AccountingOrigin = Omit<InputField, 'value'>;
+export type ExecutionFieldAccounting = {
+  schemaVersion: 1;
+  fields: Record<
+    string,
+    AccountingOrigin &
+      (
+        | {
+            disposition: 'consumed' | 'inactive' | 'superseded';
+            inputValue: InputValue;
+            value: InputValue;
+            reason?: string;
+          }
+        | { disposition: 'metadata'; reason: 'presentation-contract'; sha256: string }
+      )
+  >;
+  inputProjections: Record<string, ExecutionAccountingProjection & AccountingOrigin>;
+  outputProjections: Record<string, ExecutionAccountingProjection>;
+  unaccountedFields: string[];
+  omittedFields: Record<string, string>;
+  complete: boolean;
+};
+type ExecutionAccountingProjection = {
+  kind: 'disabled-quantization-v1' | 'execution-recipe-v1' | 'decoded-image-v1' | 'decoded-mask-v1';
+  values: Record<string, InputValue>;
+  sha256: string;
+};
+export type AppliedAdapters =
+  | {
+      schemaVersion: 1;
+      status: 'complete';
+      source: 'backend-adapter-application';
+      applicationId: string;
+      observation: 'activated' | 'reused';
+      adapters: {
+        adapterName: string;
+        scale: number;
+        descriptorSha256: string;
+        artifact:
+          | { source: 'hub'; repository: string; revision: string; weightName: string; sha256: string }
+          | { source: 'local'; weightName: string; sha256: string };
+        scheduler: null | { className: string; configSha256: string };
+      }[];
+      stateSha256: string;
+    }
+  | { schemaVersion: 1; status: 'unavailable' | 'truncated'; reason: string };
 export type ResolvedExecutionInputs = {
   schemaVersion: 1;
   source: 'backend-execution';
@@ -18,16 +69,36 @@ export type ResolvedExecutionInputs = {
     nodeId: string;
     module: string;
     action: string;
-    fields: Record<string, InputField>;
+    fields: Record<string, InputField> & {
+      weight_loading_mode?: InputField & { value: WeightLoadingMode };
+      weight_format?: InputField & { value: ModelWeightFormat };
+      operation?: InputField & { value: TextGenerationOperation };
+    };
     omittedFields: Record<string, string>;
+    fieldAccounting?: ExecutionFieldAccounting;
+    appliedAdapters?: AppliedAdapters;
+    mediaEvidence?: BuiltinMediaEvidence;
   }[];
-  summary: Record<string, InputValue>;
+  summary: Record<string, InputValue> & {
+    weightLoadingMode?: WeightLoadingMode;
+    weightFormat?: ModelWeightFormat;
+    textOperation?: TextGenerationOperation;
+    systemPromptMode?: PromptEnhancementSystemMode;
+  };
   ambiguousFields: string[];
   unavailableFields: string[];
   uncapturedNodeIds: string[];
   truncated: boolean;
   /** Backend recognition of concrete graph contracts, separate from consumed values. */
   graphTasks?: { loaderId: string; pipelineClass: string; task: string | null }[];
+  /** Version two includes observed ordinary video owners; absence is legacy. */
+  graphTasksVersion?: 2;
+  /** Version two excludes builtin adapter descriptors from the primary summary. Absence is legacy. */
+  summaryScopeVersion?: 2;
+  /** Optional accounting never changes the legacy consumed-input summary. */
+  fieldAccountingStatus?: { schemaVersion: 1; truncated: boolean };
+  appliedAdaptersStatus?: { schemaVersion: 1; truncated: boolean };
+  mediaEvidenceStatus?: { schemaVersion: 1; truncated: boolean };
 };
 
 const inputNames: Record<string, string> = {
@@ -45,6 +116,7 @@ const inputNames: Record<string, string> = {
   true_cfg_scale: 'trueCfgScale',
   max_sequence_length: 'maxSequenceLength',
   num_images_per_prompt: 'imagesPerPrompt',
+  min_generation_area: 'minimumGenerationArea',
   num_frames: 'numFrames',
   fps: 'fps',
   frame_rate: 'fps',
@@ -60,6 +132,12 @@ const inputNames: Record<string, string> = {
   pipeline_class: 'modelType',
   auto_offload: 'autoOffload',
   offload_mode: 'offloadMode',
+  weight_loading_mode: 'weightLoadingMode',
+  attention_backend: 'attentionBackend',
+  vae_slicing: 'vaeSlicing',
+  enable_vae_slicing: 'vaeSlicing',
+  vae_tiling: 'vaeTiling',
+  enable_vae_tiling: 'vaeTiling',
   output_type: 'outputType',
   quant_config: 'quantConfig',
   conditioning_scale: 'conditioningScale',
@@ -73,9 +151,120 @@ const inputNames: Record<string, string> = {
   depth_convention: 'depthConvention',
   use_kv_cache: 'attentionContextReuse',
 };
+const taskInputNames = { ...inputNames, executed_task: 'executedTask' };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
+// These exact raw names are node-local and have no cross-node summary alias.
+const audioDispatchField =
+  /^(?:task_type|repainting_(?:start|end)|(?:src_audio|reference_audio)_(?:sha256|shape|dtype|device|bytes|sample_rate|capture))$/u;
 const nodeInputNames: Record<string, Record<string, string>> = {
+  'DiffusersAudio.Generate': {
+    ...inputNames,
+    lyrics: 'lyrics',
+    vocal_language: 'vocalLanguage',
+    shift: 'shift',
+    bpm: 'bpm',
+    keyscale: 'keyscale',
+    timesignature: 'timesignature',
+  },
+  'Image.Load': {
+    ...inputNames,
+    alpha_channel: 'imageAlphaChannel',
+    source_hashes: 'imageSourceHashes',
+    source_widths: 'imageSourceWidths',
+    source_heights: 'imageSourceHeights',
+    source_modes: 'imageSourceModes',
+  },
+  'Image.Resize': {
+    ...inputNames,
+    method: 'imageResizeMethod',
+    interpolation: 'imageInterpolation',
+    multiple_of: 'imageSizeMultiple',
+  },
+  'ImageOperations.ResizeImage': { ...inputNames, fit_mode: 'imageFitMode', resampling: 'imageResampling' },
+  'ImageOperations.CropImage': { ...inputNames, x: 'imageCropLeft', y: 'imageCropTop' },
+  'ImageOperations.MaskComposite': {
+    ...inputNames,
+    mask_channel: 'imageMaskChannel',
+    invert_mask: 'imageMaskInverted',
+  },
+  'Image.Save': { ...inputNames, filename: 'imageSaveFilename', quality: 'imageSaveQuality' },
+  'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
+  'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
+  'DiffusersVideo.EncodeInputs': {
+    ...taskInputNames,
+    video_source_sha256: 'videoSourceSha256',
+    video_source_frames: 'videoSourceFrames',
+  },
+  'DiffusersVideo.Denoise': {
+    ...taskInputNames,
+    conditioning_strength: 'conditioningStrength',
+    denoise_strength: 'denoiseStrength',
+    secondary_guidance_scale: 'guidanceScale2',
+  },
+  'DiffusersVideo.DecodeLatents': taskInputNames,
+  'DiffusersVideo.Generate': {
+    ...taskInputNames,
+    secondary_guidance_scale: 'guidanceScale2',
+    expand_prompt: 'expandPrompt',
+  },
+  'DiffusersVideo.GenerateVideoAudio': {
+    ...taskInputNames,
+    expand_prompt: 'expandPrompt',
+    stg_scale: 'temporalGuidance',
+    modality_scale: 'videoModalityGuidance',
+    guidance_rescale: 'videoGuidanceRescale',
+    audio_guidance_scale: 'audioGuidanceScale',
+    audio_stg_scale: 'audioTemporalGuidance',
+    audio_modality_scale: 'audioModalityGuidance',
+    audio_guidance_rescale: 'audioGuidanceRescale',
+    temporal_guidance_blocks_json: 'temporalGuidanceLayers',
+    use_cross_timestep: 'crossTimestepGuidance',
+    condition_indices_json: 'keyframePositions',
+  },
+  ...Object.fromEntries(
+    [
+      'Generate',
+      'Edit',
+      'Inpaint',
+      'ControlGenerate',
+      'ControlEdit',
+      'ControlInpaint',
+      'LayerDecompose',
+      'UnconditionalGenerate',
+      'PredictMap',
+      'EncodeInputs',
+      'Denoise',
+      'DecodeLatents',
+    ].map((action) => [`DiffusersImage.${action}`, taskInputNames]),
+  ),
+  'HuggingFaceTransformers.PredictDepth': taskInputNames,
+  'HuggingFaceTransformers.GenerateImageVideoText': {
+    ...taskInputNames,
+    operation: 'textOperation',
+    enhancement_max_new_tokens: 'enhancementMaxNewTokens',
+    prompt_adapter_id: 'promptAdapterId',
+    system_prompt_mode: 'systemPromptMode',
+    system_prompt_sha256: 'systemPromptSha256',
+    rendered_prompt_sha256: 'renderedPromptSha256',
+    rendered_prompt_utf8_bytes: 'renderedPromptUtf8Bytes',
+    rendered_input_ids_sha256: 'renderedInputIdsSha256',
+    reference_source_sha256: 'referenceSourceSha256',
+    processed_pixel_sha256: 'processedPixelSha256',
+    processed_pixel_shape: 'processedPixelShape',
+    processed_grid_sha256: 'processedGridSha256',
+    processed_grid_shape: 'processedGridShape',
+  },
+  'ImageOperations.ProcessImage': taskInputNames,
+  'ModularDiffusers.Guider': {
+    ...inputNames,
+    guider: 'guiderType',
+    enabled: 'guidanceEnabled',
+    use_original_formulation: 'guidanceOriginalFormulation',
+    guidance_rescale: 'guidanceRescale',
+    start: 'guidanceStart',
+    stop: 'guidanceStop',
+  },
   'DiffusersImage.ControlComponent': {
     model_id: 'controlComponentRepo',
     revision: 'controlComponentRevision',
@@ -92,6 +281,17 @@ const nodeInputNames: Record<string, Record<string, string>> = {
     scale: 'ipAdapterScale',
     layer_scales: 'ipAdapterLayerScales',
   },
+};
+const legacyTaskOwnerFields: Record<string, string> = {
+  'modules.ModularDiffusers.ModelsLoader': 'model_type',
+  'modules.DiffusersImage.LoadPipeline': 'pipeline_class',
+  'modules.HuggingFaceTransformers.LoadDepthEstimationModel': 'pipeline_class',
+  'modules.HuggingFaceTransformers.LoadImageTextToTextModel': 'pipeline_class',
+  'modules.ImageOperations.ProcessImage': 'pipeline_class',
+};
+const taskOwnerFields: Record<string, string> = {
+  ...legacyTaskOwnerFields,
+  'modules.DiffusersVideo.LoadPipeline': 'pipeline_class',
 };
 const summaryNames = new Set([
   ...Object.values(inputNames),
@@ -111,6 +311,347 @@ const inputValue = (value: unknown): value is InputValue =>
   scalar(value) || (Array.isArray(value) && value.length <= 16 && value.every(scalar));
 const stringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.length <= 4096 && value.every(text);
+
+// Shape-only parsing. The CLI proof reader verifies the state digest and joins
+// actual application observations to the executed owner and ordered graph.
+function appliedAdapters(value: unknown, scope: string): AppliedAdapters | undefined {
+  const bounded = (item: unknown, maximum: number): item is string =>
+    typeof item === 'string' &&
+    item.length > 0 &&
+    [...item].length <= maximum &&
+    item === item.trim() &&
+    ![...item].some((character) => character.charCodeAt(0) < 32);
+  const sha = (item: unknown) => typeof item === 'string' && /^[a-f0-9]{64}$/u.test(item);
+  const repository = (item: unknown) =>
+    bounded(item, 256) &&
+    item.split('/').length === 2 &&
+    item.split('/').every((part) => part.length <= 96 && /^\w(?:[\w.-]*\w)?$/u.test(part)) &&
+    !item.includes('--') &&
+    !item.includes('..') &&
+    !item.endsWith('.git');
+  if (scope !== 'ModularDiffusers.ModelsLoader' || !record(value) || value.schemaVersion !== 1) return undefined;
+  if (value.status !== 'complete') {
+    if (
+      !exactKeys(value, ['schemaVersion', 'status', 'reason']) ||
+      typeof value.reason !== 'string' ||
+      !(value.status === 'truncated'
+        ? value.reason === 'record-size-limit'
+        : value.status === 'unavailable' &&
+          ['unobserved-application', 'owner-invalidated', 'unsupported-owner', 'unsupported-projection'].includes(
+            String(value.reason),
+          ))
+    )
+      return undefined;
+    return value as AppliedAdapters;
+  }
+  if (
+    !exactKeys(value, [
+      'schemaVersion',
+      'status',
+      'source',
+      'applicationId',
+      'observation',
+      'adapters',
+      'stateSha256',
+    ]) ||
+    value.source !== 'backend-adapter-application' ||
+    typeof value.applicationId !== 'string' ||
+    !/^[a-f0-9]{32}$/u.test(value.applicationId) ||
+    (value.observation !== 'activated' && value.observation !== 'reused') ||
+    !Array.isArray(value.adapters) ||
+    value.adapters.length > 32 ||
+    typeof value.stateSha256 !== 'string' ||
+    !/^sha256:applied-adapters-v1:[a-f0-9]{64}$/u.test(value.stateSha256)
+  )
+    return undefined;
+  const names = new Set();
+  for (const item of value.adapters) {
+    if (
+      !record(item) ||
+      !exactKeys(item, ['adapterName', 'scale', 'descriptorSha256', 'artifact', 'scheduler']) ||
+      !bounded(item.adapterName, 128) ||
+      !/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/u.test(item.adapterName) ||
+      names.has(item.adapterName) ||
+      typeof item.scale !== 'number' ||
+      !Number.isFinite(item.scale) ||
+      item.scale < -20 ||
+      item.scale > 20 ||
+      !sha(item.descriptorSha256) ||
+      !record(item.artifact)
+    )
+      return undefined;
+    names.add(item.adapterName);
+    const artifact = item.artifact;
+    if (
+      !exactKeys(artifact, [
+        'source',
+        'weightName',
+        'sha256',
+        ...(artifact.source === 'hub' ? ['repository', 'revision'] : []),
+      ]) ||
+      (artifact.source !== 'hub' && artifact.source !== 'local') ||
+      !sha(artifact.sha256) ||
+      !bounded(artifact.weightName, 256) ||
+      /[\\:]/u.test(artifact.weightName) ||
+      artifact.weightName.split('/').length > 64 ||
+      !artifact.weightName.endsWith('.safetensors') ||
+      artifact.weightName.split('/').some((part) => !part || part === '.' || part === '..') ||
+      (artifact.source === 'hub' &&
+        (!repository(artifact.repository) ||
+          typeof artifact.revision !== 'string' ||
+          !/^[a-f0-9]{40}$/u.test(artifact.revision)))
+    )
+      return undefined;
+    if (
+      item.scheduler !== null &&
+      (!record(item.scheduler) ||
+        !exactKeys(item.scheduler, ['className', 'configSha256']) ||
+        !bounded(item.scheduler.className, 128) ||
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(item.scheduler.className) ||
+        typeof item.scheduler.configSha256 !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/u.test(item.scheduler.configSha256))
+    )
+      return undefined;
+  }
+  if (new TextEncoder().encode(JSON.stringify({ adapters: value.adapters })).byteLength > 32_768) return undefined;
+  return value as AppliedAdapters;
+}
+
+// Mirror only the backend's bounded accounting policy, not arbitrary objects or
+// new execution authority. Cryptographic and graph joins belong to the recorder.
+const conditionalImageAccountingNames =
+  `image_contract prompt negative_prompt width height seed num_inference_steps guidance_scale
+  image_guidance_scale use_guidance_scale_2 guidance_scale_2 pag_scale pag_adaptive_scale control_guidance_start
+  control_guidance_end layers resolution cfg_normalize use_en_prompt strength padding_mask_crop max_sequence_length
+  output_type`.split(/\s+/u);
+const accountingNames: Record<string, string[]> = {
+  'DiffusersImage.LoadPipeline':
+    `model_id pipeline_class mode revision execution_profile_id conditioning_kind conditioning_model_id
+    conditioning_revision dtype device quantization_mode quantized_components device_map auto_offload offload_mode
+    enable_vae_slicing enable_vae_tiling low_cpu_mem_usage`.split(/\s+/u),
+  'DiffusersRuntime.PipelineQuantizationConfigV2':
+    'backend components dtype excluded_modules component_overrides'.split(' '),
+  'DiffusersRuntime.DiffusersExecutionRecipe': `device_map max_memory device_map_overrides offload_mode device
+    attention_backend attention_components vae_slicing vae_tiling layerwise_casting layerwise_casting_components
+    layerwise_storage_dtype layerwise_compute_dtype channels_last channels_last_components regional_compile
+    compile_components compile_backend compile_mode compile_fullgraph compile_dynamic denoiser_cache cache_threshold cache_options`.split(
+    /\s+/u,
+  ),
+  'DiffusersImage.UnconditionalGenerate':
+    'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
+  'DiffusersImage.Generate': conditionalImageAccountingNames,
+  'DiffusersImage.Edit': [...conditionalImageAccountingNames, 'reference_strength'],
+  'DiffusersImage.Inpaint': [...conditionalImageAccountingNames, 'reference_strength'],
+  'HuggingFaceSpeech.TranscribeAudio': [
+    'task',
+    'language',
+    'timestamps',
+    'ctc_timestamps',
+    'chunk_length_seconds',
+    'stride_length_seconds',
+  ],
+  'HuggingFaceSpeech.TranscribeCTCAudio': ['timestamps', 'chunk_length_seconds', 'stride_length_seconds'],
+  'Image.Preview': ['device', 'export'],
+};
+const accountingPorts: Record<string, [Record<string, string>, Record<string, string>]> = {
+  'DiffusersImage.LoadPipeline': [{ execution_recipe: 'execution-recipe-v1' }, {}],
+  'DiffusersRuntime.PipelineQuantizationConfigV2': [{}, { quantization_config: 'disabled-quantization-v1' }],
+  'DiffusersRuntime.DiffusersExecutionRecipe': [
+    { quantization_config: 'disabled-quantization-v1' },
+    { execution_recipe: 'execution-recipe-v1' },
+  ],
+  'DiffusersImage.UnconditionalGenerate': [{}, {}],
+  'DiffusersImage.Generate': [{}, {}],
+  'DiffusersImage.Edit': [{ image: 'decoded-image-v1' }, {}],
+  'DiffusersImage.Inpaint': [{ image: 'decoded-image-v1', mask_image: 'decoded-mask-v1' }, {}],
+  'HuggingFaceSpeech.TranscribeAudio': [{}, {}],
+  'HuggingFaceSpeech.TranscribeCTCAudio': [{}, {}],
+  'Image.Preview': [{}, {}],
+};
+const accountingReasons = new Set([
+  'adapter-inactive',
+  'feature-disabled',
+  'connected-recipe',
+  'loader-normalization',
+  'presentation-contract',
+  'already-decoded-image',
+  'unsupported-contract',
+]);
+const digest = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
+const exactKeys = (value: Record<string, unknown>, keys: string[]) =>
+  Object.keys(value).length === keys.length && keys.every((key) => hasOwn(value, key));
+const originKeys = (value: Record<string, unknown>) =>
+  value.source === 'connected' ? ['source', 'sourceNodeId', 'sourcePortId'] : ['source'];
+const accountingOrigin = (value: Record<string, unknown>) =>
+  value.source === 'literal' ||
+  value.source === 'override' ||
+  (value.source === 'connected' &&
+    text(value.sourceNodeId) &&
+    Boolean(value.sourceNodeId) &&
+    text(value.sourcePortId) &&
+    Boolean(value.sourcePortId));
+
+function decodedImageProjectionValues(values: Record<string, unknown>, expectedMode: 'RGB' | 'L'): boolean {
+  const { mode, width, height, byteSize, sha256 } = values;
+  const channels = expectedMode === 'L' ? 1 : 3;
+  const positiveInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  return (
+    exactKeys(values, ['mode', 'width', 'height', 'byteSize', 'sha256']) &&
+    mode === expectedMode &&
+    positiveInteger(width) &&
+    positiveInteger(height) &&
+    positiveInteger(byteSize) &&
+    byteSize <= 64 * 1024 * 1024 &&
+    width * height * channels === byteSize &&
+    digest(sha256)
+  );
+}
+
+function fieldAccounting(value: unknown, scope: string): ExecutionFieldAccounting | undefined {
+  if (
+    !record(value) ||
+    !hasOwn(accountingNames, scope) ||
+    value.schemaVersion !== 1 ||
+    !exactKeys(value, [
+      'schemaVersion',
+      'fields',
+      'inputProjections',
+      'outputProjections',
+      'unaccountedFields',
+      'omittedFields',
+      'complete',
+    ]) ||
+    !record(value.fields) ||
+    !record(value.inputProjections) ||
+    !record(value.outputProjections) ||
+    !record(value.omittedFields) ||
+    !stringList(value.unaccountedFields) ||
+    typeof value.complete !== 'boolean'
+  )
+    return undefined;
+  // Bound the new section separately; legacy records retain their old budget.
+  if (
+    JSON.stringify(value).replace(
+      /[\u007f-\uffff]/g,
+      (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    ).length > 65_536
+  )
+    return undefined;
+  const allowed = accountingNames[scope]!;
+  for (const [name, item] of Object.entries(value.fields)) {
+    if (!allowed.includes(name) || !record(item) || !accountingOrigin(item)) return undefined;
+    if (item.disposition === 'metadata') {
+      if (
+        name !== 'image_contract' ||
+        item.reason !== 'presentation-contract' ||
+        !digest(item.sha256) ||
+        !exactKeys(item, ['disposition', 'reason', 'sha256', ...originKeys(item)])
+      )
+        return undefined;
+    } else {
+      if (
+        !['consumed', 'inactive', 'superseded'].includes(String(item.disposition)) ||
+        !inputValue(item.inputValue) ||
+        !inputValue(item.value) ||
+        !exactKeys(item, [
+          'disposition',
+          'inputValue',
+          'value',
+          ...originKeys(item),
+          ...(item.disposition === 'consumed' ? [] : ['reason']),
+        ]) ||
+        (item.disposition !== 'consumed' && !accountingReasons.has(String(item.reason)))
+      )
+        return undefined;
+    }
+  }
+  const ports = accountingPorts[scope]!;
+  for (const [index, label] of ['inputProjections', 'outputProjections'].entries()) {
+    const projections = value[label] as Record<string, unknown>;
+    const expected = ports[index]!;
+    for (const [port, projection] of Object.entries(projections)) {
+      if (
+        !hasOwn(expected, port) ||
+        !record(projection) ||
+        projection.kind !== expected[port] ||
+        !record(projection.values) ||
+        !digest(projection.sha256) ||
+        !exactKeys(projection, ['kind', 'values', 'sha256', ...(index === 0 ? originKeys(projection) : [])]) ||
+        (index === 0 && !accountingOrigin(projection))
+      )
+        return undefined;
+      const values = projection.values;
+      if (projection.kind === 'disabled-quantization-v1') {
+        if (!exactKeys(values, ['backend', 'disabled']) || values.backend !== 'none' || values.disabled !== true)
+          return undefined;
+      } else if (projection.kind === 'decoded-image-v1' || projection.kind === 'decoded-mask-v1') {
+        if (
+          !decodedImageProjectionValues(values, projection.kind === 'decoded-mask-v1' ? 'L' : 'RGB') ||
+          (projection.source !== 'connected' && (value.complete || value.omittedFields[port] !== 'unsupported-origin'))
+        )
+          return undefined;
+      } else {
+        const keys = accountingNames['DiffusersRuntime.DiffusersExecutionRecipe']!.filter(
+          (key) => key !== 'device_map_overrides',
+        );
+        if (
+          !exactKeys(values, [...keys, 'schema_version', 'device_map_strategy', 'quantization']) ||
+          values.schema_version !== 1 ||
+          values.quantization !== 'none' ||
+          values.max_memory !== '{}' ||
+          values.cache_options !== '{}' ||
+          !Object.values(values).every(inputValue)
+        )
+          return undefined;
+      }
+    }
+    if (value.complete && Object.keys(expected).some((port) => !hasOwn(projections, port))) return undefined;
+  }
+  if (
+    Object.entries(value.omittedFields).some(([key, reason]) => !text(key) || !text(reason)) ||
+    value.complete !== (Object.keys(value.omittedFields).length === 0 && value.unaccountedFields.length === 0)
+  )
+    return undefined;
+  return value as ExecutionFieldAccounting;
+}
+
+// Captured observations only: neither an operation label nor an RGB hash grants
+// model, source-region, proposal Apply or resource authority.
+function textGenerationInputValue(key: string, value: InputValue): boolean {
+  const positiveInteger = (item: unknown): item is number =>
+    typeof item === 'number' && Number.isSafeInteger(item) && item > 0;
+  const fingerprint = (item: unknown) => typeof item === 'string' && /^sha256:[0-9a-f]{64}$/u.test(item);
+  switch (key) {
+    case 'operation':
+      return value === 'standard' || value === 'enhance_prompt' || value === 'enhance_prompt_append_details';
+    case 'enhancement_max_new_tokens':
+      return positiveInteger(value) && value <= 3584;
+    case 'prompt_adapter_id':
+      return typeof value === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(value);
+    case 'system_prompt_mode':
+      return value === 't2i' || value === 'i2i' || value === 't2i_bbox' || value === 'i2i_bbox';
+    case 'system_prompt_sha256':
+      return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
+    case 'rendered_prompt_sha256':
+    case 'rendered_input_ids_sha256':
+    case 'processed_pixel_sha256':
+    case 'processed_grid_sha256':
+      return fingerprint(value);
+    case 'rendered_prompt_utf8_bytes':
+      return positiveInteger(value) && value <= 524_288;
+    case 'reference_source_sha256':
+      return Array.isArray(value) && value.length <= 10 && value.every(fingerprint);
+    case 'processed_pixel_shape':
+      return Array.isArray(value) && value.length === 2 && value.every(positiveInteger);
+    case 'processed_grid_shape':
+      return (
+        Array.isArray(value) && value.length === 2 && positiveInteger(value[0]) && value[0] <= 10 && value[1] === 3
+      );
+    default:
+      return true;
+  }
+}
 
 export function coerceResolvedExecutionInputs(
   value: unknown,
@@ -137,7 +678,13 @@ export function coerceResolvedExecutionInputs(
   )
     return undefined;
   if ([...value.ambiguousFields, ...value.unavailableFields].some((key) => !summaryNames.has(key))) return undefined;
+  if (hasOwn(value, 'summaryScopeVersion') && value.summaryScopeVersion !== 2) return undefined;
+  const scopedSummary = value.summaryScopeVersion === 2;
+  let adapterDescriptorSeen = false;
   const seen = new Set<string>();
+  const accounting = new Map<string, ExecutionFieldAccounting>();
+  const applications = new Map<string, AppliedAdapters>();
+  const media = new Map<string, BuiltinMediaEvidence>();
   const candidates = new Map<string, Set<string>>();
   const unavailable = new Set<string>();
   for (const node of value.nodes) {
@@ -153,9 +700,31 @@ export function coerceResolvedExecutionInputs(
       return undefined;
     seen.add(node.nodeId);
     const scope = `${node.module.replace(/^modules\./u, '')}.${node.action}`;
+    if (hasOwn(node, 'mediaEvidence')) {
+      const parsed = parseBuiltinMediaEvidence(node.mediaEvidence, scope);
+      if (!parsed) return undefined;
+      media.set(node.nodeId, parsed);
+    }
+    const adapterDescriptor =
+      scope === 'ModularDiffusers.Lora' ||
+      scope === 'DiffusersImage.LoadAdapter' ||
+      scope === 'DiffusersAudio.LoadAdapter';
+    adapterDescriptorSeen ||= adapterDescriptor;
+    if (hasOwn(node, 'appliedAdapters')) {
+      const parsed = appliedAdapters(node.appliedAdapters, scope);
+      if (!parsed) return undefined;
+      applications.set(node.nodeId, parsed);
+    }
+    if (hasOwn(node, 'fieldAccounting')) {
+      const parsed = fieldAccounting(node.fieldAccounting, scope);
+      if (!parsed) return undefined;
+      accounting.set(node.nodeId, parsed);
+    }
     const names = hasOwn(nodeInputNames, scope) ? nodeInputNames[scope]! : inputNames;
+    const localAudioField = (key: string) => scope === 'DiffusersAudio.Generate' && audioDispatchField.test(key);
     const fields = node.fields;
     const canonicalName = (key: string) => {
+      if (localAudioField(key)) return key;
       if (
         scope === 'Text.ProcessText' &&
         key === 'pipeline_class' &&
@@ -171,7 +740,13 @@ export function coerceResolvedExecutionInputs(
         !canonical ||
         !record(field) ||
         !inputValue(field.value) ||
-        !['literal', 'connected', 'override'].includes(String(field.source))
+        (scope === 'HuggingFaceTransformers.GenerateImageVideoText' && !textGenerationInputValue(key, field.value)) ||
+        (canonical === 'weightLoadingMode' && !isWorkflowResourceValue('weight_loading_mode', field.value)) ||
+        (canonical === 'weightFormat' &&
+          field.value !== 'native' &&
+          field.value !== 'fp8r' &&
+          field.value !== 'nvfp4') ||
+        (field.source !== 'literal' && field.source !== 'connected' && field.source !== 'override')
       )
         return undefined;
       if (
@@ -179,16 +754,19 @@ export function coerceResolvedExecutionInputs(
         (!text(field.sourceNodeId) || !field.sourceNodeId || !text(field.sourcePortId) || !field.sourcePortId)
       )
         return undefined;
-      const values = candidates.get(canonical) ?? new Set<string>();
-      values.add(JSON.stringify(field.value));
-      candidates.set(canonical, values);
+      if ((!scopedSummary || !adapterDescriptor) && !localAudioField(key)) {
+        const values = candidates.get(canonical) ?? new Set<string>();
+        values.add(JSON.stringify(field.value));
+        candidates.set(canonical, values);
+      }
     }
     for (const [key, reason] of Object.entries(node.omittedFields)) {
       const canonical = canonicalName(key);
       if (!canonical || !text(reason)) return undefined;
-      unavailable.add(canonical);
+      if ((!scopedSummary || !adapterDescriptor) && !localAudioField(key)) unavailable.add(canonical);
     }
   }
+  if (scopedSummary && !adapterDescriptorSeen) return undefined;
   const expectedAmbiguous = [...candidates]
     .filter(([, values]) => values.size > 1)
     .map(([key]) => key)
@@ -210,6 +788,9 @@ export function coerceResolvedExecutionInputs(
   )
     return undefined;
   let graphTasks: ResolvedExecutionInputs['graphTasks'];
+  if (value.graphTasksVersion !== undefined && value.graphTasksVersion !== 2) return undefined;
+  if (value.graphTasksVersion === 2 && value.graphTasks === undefined) return undefined;
+  const taskOwners = value.graphTasksVersion === 2 ? taskOwnerFields : legacyTaskOwnerFields;
   if (value.graphTasks !== undefined) {
     if (
       !Array.isArray(value.graphTasks) ||
@@ -229,14 +810,14 @@ export function coerceResolvedExecutionInputs(
         owners.has(item.loaderId)
       )
         return undefined;
-      const owner = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      const owner: unknown = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      const field = record(owner) ? taskOwners[`${owner.module}.${owner.action}`] : undefined;
       if (
         !record(owner) ||
-        owner.module !== 'modules.ModularDiffusers' ||
-        owner.action !== 'ModelsLoader' ||
+        !field ||
         !record(owner.fields) ||
-        !record(owner.fields.model_type) ||
-        owner.fields.model_type.value !== item.pipelineClass
+        !record(owner.fields[field]) ||
+        owner.fields[field].value !== item.pipelineClass
       )
         return undefined;
       owners.add(item.loaderId);
@@ -244,17 +825,55 @@ export function coerceResolvedExecutionInputs(
     }
   }
   if (graphTasks) {
-    const loaders = value.nodes.filter(
-      (node) => record(node) && node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
-    );
+    const loaders = value.nodes.filter((node) => record(node) && hasOwn(taskOwners, `${node.module}.${node.action}`));
     if (loaders.length !== graphTasks.length) return undefined;
   }
+  let fieldAccountingStatus: ResolvedExecutionInputs['fieldAccountingStatus'];
+  if (hasOwn(value, 'fieldAccountingStatus')) {
+    const status = value.fieldAccountingStatus;
+    if (
+      !record(status) ||
+      !exactKeys(status, ['schemaVersion', 'truncated']) ||
+      status.schemaVersion !== 1 ||
+      typeof status.truncated !== 'boolean' ||
+      (!status.truncated && accounting.size === 0)
+    )
+      return undefined;
+    fieldAccountingStatus = { schemaVersion: 1, truncated: status.truncated };
+  } else if (accounting.size > 0) return undefined;
+  let appliedAdaptersStatus: ResolvedExecutionInputs['appliedAdaptersStatus'];
+  if (hasOwn(value, 'appliedAdaptersStatus')) {
+    const status = value.appliedAdaptersStatus;
+    if (
+      !record(status) ||
+      !exactKeys(status, ['schemaVersion', 'truncated']) ||
+      status.schemaVersion !== 1 ||
+      typeof status.truncated !== 'boolean' ||
+      (!status.truncated && applications.size === 0)
+    )
+      return undefined;
+    appliedAdaptersStatus = { schemaVersion: 1, truncated: status.truncated };
+  } else if (applications.size > 0) return undefined;
+  let mediaEvidenceStatus: ResolvedExecutionInputs['mediaEvidenceStatus'];
+  if (hasOwn(value, 'mediaEvidenceStatus')) {
+    const status = value.mediaEvidenceStatus;
+    if (
+      !record(status) ||
+      !exactKeys(status, ['schemaVersion', 'truncated']) ||
+      status.schemaVersion !== 1 ||
+      typeof status.truncated !== 'boolean' ||
+      (!status.truncated && media.size === 0)
+    )
+      return undefined;
+    mediaEvidenceStatus = { schemaVersion: 1, truncated: status.truncated };
+  } else if (media.size > 0) return undefined;
   // Shared backend bounds plus envelope/summary overhead. JSON input only;
   // never stringify live model objects or retain unknown extension fields.
   if (JSON.stringify(value).length > 800_000) return undefined;
   return JSON.parse(
     JSON.stringify({
       ...(graphTasks ? { graphTasks } : {}),
+      ...(value.graphTasksVersion === 2 ? { graphTasksVersion: 2 } : {}),
       schemaVersion: 1,
       source: 'backend-execution',
       taskId: value.taskId,
@@ -280,12 +899,19 @@ export function coerceResolvedExecutionInputs(
           }),
         ),
         omittedFields: node.omittedFields,
+        ...(accounting.has(node.nodeId) ? { fieldAccounting: accounting.get(node.nodeId) } : {}),
+        ...(applications.has(node.nodeId) ? { appliedAdapters: applications.get(node.nodeId) } : {}),
+        ...(media.has(node.nodeId) ? { mediaEvidence: media.get(node.nodeId) } : {}),
       })),
       summary: value.summary,
+      ...(scopedSummary ? { summaryScopeVersion: 2 } : {}),
       ambiguousFields: value.ambiguousFields,
       unavailableFields: value.unavailableFields,
       uncapturedNodeIds: value.uncapturedNodeIds,
       truncated: value.truncated,
+      ...(fieldAccountingStatus ? { fieldAccountingStatus } : {}),
+      ...(appliedAdaptersStatus ? { appliedAdaptersStatus } : {}),
+      ...(mediaEvidenceStatus ? { mediaEvidenceStatus } : {}),
     }),
   ) as ResolvedExecutionInputs;
 }
@@ -299,18 +925,19 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
     promptSettingsHash: undefined,
     exactTemplateCompatible: false,
   };
-  const tasks = new Set(receipt.graphTasks?.map((item) => item.task));
-  const task = [...tasks][0];
-  if (tasks.size === 1 && task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task)) next.mode = task as StudioMode;
+  const task = outputTaskKey(next);
+  if (task) next.mode = task;
   const model = outputModelKey(next);
   if (hasOwn(STUDIO_MODEL_LABELS, model)) {
     next.modelType = model as StudioModelType;
     next.modelLabel = STUDIO_MODEL_LABELS[next.modelType];
   } else next.modelLabel = model === 'uncaptured-model' ? 'Model not uniquely captured' : model;
   for (const key of ['prompt', 'negativePrompt', 'repo'] as const) {
-    if (typeof receipt.summary[key] === 'string') next[key] = receipt.summary[key];
-    else if (resolvedInputUnavailable(receipt, key)) next[key] = '';
+    next[key] =
+      !resolvedInputUnavailable(receipt, key) && typeof receipt.summary[key] === 'string' ? receipt.summary[key] : '';
   }
+  const profile = capturedMediaProfile(receipt);
+  if (profile?.startsWith('Builtin')) next.repo = STUDIO_MODEL_PROFILES[profile].defaultRepo;
   for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale'] as const) {
     const value = outputNumericInputValue(next, key);
     if (value !== undefined) next[key] = value;
@@ -320,10 +947,74 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
   return next;
 }
 
+// Resolve versioned media operation descriptors from their captured owner and
+// summary. Preserve the original fields supplied by the backend.
+const mediaOutputOwners = {
+  'modules.ImageOperations.ProcessImage': 'BuiltinImageOperation',
+  'modules.Audio.ProcessAudio': 'BuiltinAudioOperation',
+  'modules.Video.ProcessVideo': 'BuiltinVideoOperation',
+  'modules.Video.UpscaleVideo': 'SpandrelVideoUpscale',
+  'modules.Text.ProcessText': 'BuiltinDataOperation',
+} as const;
+type MediaOutputProfile = (typeof mediaOutputOwners)[keyof typeof mediaOutputOwners];
+
+function capturedMediaProfile(receipt: ResolvedExecutionInputs): MediaOutputProfile | undefined {
+  if (receipt.truncated) return undefined;
+  const profiles = new Set<MediaOutputProfile>();
+  for (const node of receipt.nodes) {
+    const owner = `${node.module}.${node.action}`;
+    if (!hasOwn(mediaOutputOwners, owner)) continue;
+    const profile = mediaOutputOwners[owner as keyof typeof mediaOutputOwners];
+    if (
+      profile === 'SpandrelVideoUpscale' &&
+      (node.mediaEvidence?.status !== 'complete' || node.mediaEvidence.controls.operation !== 'video_upscale')
+    )
+      return undefined;
+    if (node.fields.pipeline_class?.value === `${profile}V1`) profiles.add(profile);
+  }
+  const profile = [...profiles][0];
+  if (profiles.size !== 1 || !profile) return undefined;
+  const key = profile === 'BuiltinDataOperation' ? 'dataOperationType' : 'modelType';
+  if (profile === 'BuiltinDataOperation' && hasOwn(receipt.summary, 'modelType')) return undefined;
+  return !resolvedInputUnavailable(receipt, key) && receipt.summary[key] === `${profile}V1` ? profile : undefined;
+}
+
+/** A task needs an exact native declaration or complete deterministic call controls. */
+export function outputTaskKey(output: StudioOutput): StudioMode | undefined {
+  const receipt = output.resolvedExecutionInputs;
+  if (!receipt || receipt.truncated) return undefined;
+  if (receipt.graphTasks !== undefined) {
+    const task = receipt.graphTasks[0]?.task;
+    return task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task) && receipt.graphTasks.every((item) => item.task === task)
+      ? (task as StudioMode)
+      : undefined;
+  }
+  const profile = capturedMediaProfile(receipt);
+  if (!profile) return undefined;
+  const tasks = new Set<StudioMode>();
+  for (const node of receipt.nodes) {
+    const owner = `${node.module}.${node.action}`;
+    if (!hasOwn(mediaOutputOwners, owner)) continue;
+    if (mediaOutputOwners[owner as keyof typeof mediaOutputOwners] !== profile) return undefined;
+    const evidence = node.mediaEvidence;
+    if (evidence?.status !== 'complete' || evidence.controls.pipeline_class !== `${profile}V1`) return undefined;
+    const task = evidence.controls.operation;
+    if (typeof task !== 'string' || !STUDIO_MODEL_PROFILES[profile].modes.includes(task as StudioMode))
+      return undefined;
+    tasks.add(task as StudioMode);
+  }
+  return tasks.size === 1 ? [...tasks][0] : undefined;
+}
+
 /** A custom or ambiguous captured model must not inherit the form's filter. */
 export function outputModelKey(output: StudioOutput): string {
   const receipt = output.resolvedExecutionInputs;
-  if (!receipt) return output.modelType;
+  if (!receipt)
+    return output.legacyRecordedFields && !output.legacyRecordedFields.includes('modelType')
+      ? 'uncaptured-model'
+      : output.modelType;
+  const profile = capturedMediaProfile(receipt);
+  if (profile) return profile;
   const model = receipt.summary.modelType;
   return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
     ? model
@@ -367,6 +1058,7 @@ export function outputNumericInputValue(
   }
   // Old records have no execution receipt. Keep their historical display;
   // the inspector explicitly labels these as legacy form/graph settings.
+  if (output.legacyRecordedFields && !output.legacyRecordedFields.includes(key)) return undefined;
   return key === 'numFrames' || key === 'fps' ? output.formSnapshot[key] : output[key];
 }
 

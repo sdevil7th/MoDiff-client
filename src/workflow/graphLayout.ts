@@ -6,7 +6,9 @@ export const GRAPH_LAYOUT_HORIZONTAL_GAP = 140;
 export const GRAPH_LAYOUT_VERTICAL_GAP = 72;
 
 type Size = { width: number; height: number };
+type SizeOfNode = (node: CustomNodeType) => Size;
 type Point = { x: number; y: number };
+type GraphLayoutOptions = { reserveFirstImagePreviewSpace?: boolean };
 
 type Component = {
   id: number;
@@ -15,6 +17,11 @@ type Component = {
   height: number;
   originalY: number;
 };
+
+function graphLayoutNodes(nodes: CustomNodeType[]) {
+  const blockOwners = new Set(nodes.filter((node) => node.data.blockInstanceV2).map(({ id }) => id));
+  return nodes.filter((node) => !blockOwners.has(node.data.blockProjectionOwnerId ?? ''));
+}
 
 function finiteDimension(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -48,6 +55,25 @@ export function graphNodeSize(node: CustomNodeType): Size {
       styleDimension(node.style?.height) ??
       fallbackHeight,
   };
+}
+
+function firstImagePreviewSpace(node: CustomNodeType): number {
+  const file = node.data.params.file;
+  if (
+    node.parentId ||
+    node.data.type !== 'custom' ||
+    node.data.module !== 'modules.Image' ||
+    node.data.action !== 'Load' ||
+    file?.display !== 'filebrowser' ||
+    file.hidden
+  )
+    return 0;
+  const values = Array.isArray(file.value) ? file.value : [file.value];
+  if (values.some((value) => typeof value === 'string' && value.trim())) return 0;
+  // FileBrowserField adds a 360px × 16:9 preview and a spare filename row
+  // once the first image is bound. Allow their combined height in the
+  // initial Example spacing without changing the node's measured size.
+  return 240;
 }
 
 function tarjanComponents(ids: string[], adjacency: Map<string, Set<string>>) {
@@ -163,7 +189,7 @@ function reorderRanks(
   }
 }
 
-function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): Map<string, Point> {
+function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>, sizeOf: SizeOfNode): Map<string, Point> {
   const ids = nodes.map((node) => node.id);
   const idSet = new Set(ids);
   const adjacency = new Map(ids.map((id) => [id, new Set<string>()]));
@@ -176,7 +202,7 @@ function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): M
   const componentByNode = new Map<string, number>();
   const components = rawComponents.map((members, id) => {
     members.forEach((member) => componentByNode.set(member, id));
-    const sizes = members.map((member) => graphNodeSize(nodeById.get(member)!));
+    const sizes = members.map((member) => sizeOf(nodeById.get(member)!));
     return {
       id,
       members,
@@ -243,7 +269,7 @@ function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): M
       const component = components[componentId]!;
       let memberY = y;
       component.members.forEach((member) => {
-        const size = graphNodeSize(nodeById.get(member)!);
+        const size = sizeOf(nodeById.get(member)!);
         positions.set(member, {
           x: (rankX.get(rank) ?? 0) + (component.width - size.width) / 2,
           y: memberY,
@@ -283,14 +309,23 @@ function containerPadding(node: CustomNodeType | undefined) {
  * out first, containers are resized, and then each container participates as a
  * single node in its parent's topology.
  */
-export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): CustomNodeType[] {
+export function arrangeGraphNodes(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  options: GraphLayoutOptions = {},
+): CustomNodeType[] {
   if (nodes.length < 2) return nodes;
+  const sizeOf: SizeOfNode = options.reserveFirstImagePreviewSpace
+    ? (node) => {
+        const size = graphNodeSize(node);
+        return { ...size, height: size.height + firstImagePreviewSpace(node) };
+      }
+    : graphNodeSize;
   // V2 internals are a derived hierarchical projection, not independent graph
   // documents. Moving/resizing them here bypasses their durable presentation
   // and competes with the recursive Block fitter. Arrange each V2 root as one
   // unit; keep its user-edited internal layout and connector geometry intact.
-  const blockOwners = new Set(nodes.filter((node) => node.data.blockInstanceV2).map(({ id }) => id));
-  const layoutNodes = nodes.filter((node) => !blockOwners.has(node.data.blockProjectionOwnerId ?? ''));
+  const layoutNodes = graphLayoutNodes(nodes);
   const nextById = new Map(layoutNodes.map((node) => [node.id, { ...node, position: { ...node.position } }]));
   const nodeById = new Map(layoutNodes.map((node) => [node.id, node]));
   const depths = new Map<string, number>();
@@ -322,7 +357,7 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
       pairKeys.add(key);
       pairs.push([source, target]);
     });
-    const positions = layoutLevel(levelNodes, pairs);
+    const positions = layoutLevel(levelNodes, pairs, sizeOf);
     const parent = parentId ? nextById.get(parentId) : undefined;
     const padding = containerPadding(parent);
     levelNodes.forEach((node) => {
@@ -350,17 +385,39 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
   return nodes.map((node) => nextById.get(node.id) ?? node);
 }
 
-export async function waitForGraphNodeMeasurements(getNodes: () => CustomNodeType[], timeoutMs = 500): Promise<void> {
-  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
-  const startedAt = Date.now();
-  await new Promise<void>((resolve) => {
+export const FRESH_STAGE_CONTROL_LOAD_TIMEOUT_MS = 30_000;
+
+export async function waitForGraphNodeMeasurements(
+  getNodes: () => CustomNodeType[],
+  timeoutMs = 500,
+  options: { controlLoadTimeoutMs?: number; isCurrent?: () => boolean } = {},
+): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return false;
+  return new Promise<boolean>((resolve) => {
+    let startedAt: number | undefined;
+    let geometryStartedAt: number | undefined;
     let lastMeasuredSignature: string | null = null;
     let stableMeasuredFrames = 0;
     const check = () => {
-      const candidates = getNodes().filter((node) => node.data.type !== 'group' && node.data.type !== 'loop');
-      const measured = candidates.every(
-        (node) => finiteDimension(node.measured?.width) && finiteDimension(node.measured?.height),
+      // A large initial React render can hold the main thread past the whole
+      // measurement budget. Start at the first actual frame so ResizeObserver
+      // still gets a chance to publish bounds before an incomplete timeout.
+      if (options.isCurrent && !options.isCurrent()) return resolve(false);
+      const now = Date.now();
+      startedAt ??= now;
+      const candidates = graphLayoutNodes(getNodes()).filter(
+        (node) => !node.hidden && node.data.type !== 'group' && node.data.type !== 'loop',
       );
+      // A lazy controls placeholder has measurable bounds before its actual form arrives.
+      // Let its download finish before starting the ResizeObserver settling budget.
+      const roots = typeof document === 'undefined' ? [] : candidates.map((node) => document.getElementById(node.id));
+      if (roots.some((root) => root?.querySelector('[data-node-load-error]'))) return resolve(false);
+      const loadingControls = roots.some((root) => root?.querySelector('[data-node-layout-pending]'));
+      if (loadingControls) geometryStartedAt = undefined;
+      else geometryStartedAt ??= now;
+      const measured =
+        !loadingControls &&
+        candidates.every((node) => finiteDimension(node.measured?.width) && finiteDimension(node.measured?.height));
       if (measured) {
         const signature = candidates
           .map((node) => `${node.id}:${node.measured!.width}x${node.measured!.height}`)
@@ -372,8 +429,13 @@ export async function waitForGraphNodeMeasurements(getNodes: () => CustomNodeTyp
         lastMeasuredSignature = null;
         stableMeasuredFrames = 0;
       }
-      if (stableMeasuredFrames >= 2 || Date.now() - startedAt >= timeoutMs) {
-        resolve();
+      const controlBudget = options.controlLoadTimeoutMs ?? 0;
+      if (
+        stableMeasuredFrames >= 2 ||
+        now - startedAt >= controlBudget + timeoutMs ||
+        (geometryStartedAt !== undefined && now - geometryStartedAt >= timeoutMs)
+      ) {
+        resolve(stableMeasuredFrames >= 2);
         return;
       }
       window.requestAnimationFrame(check);

@@ -16,6 +16,7 @@ import {
   safeCloneJson,
 } from './outputContracts';
 import { requestArrayBuffer } from '../utils/requestJson';
+import { observedOutputModel } from './observedOutputModel';
 
 export const MODIFF_PNG_METADATA_KEY = 'modiff.workflow';
 
@@ -47,7 +48,7 @@ export type ModiffWorkflowPackage = {
   };
   metadata: {
     exportedAt: string;
-    studio: StudioFormState;
+    studio: Omit<StudioFormState, 'modelType'> & { modelType: string };
     preview: string | null;
   };
   graph: unknown;
@@ -89,16 +90,26 @@ export function buildWorkflowPackage({
   apiGraph,
   form,
   graph,
+  workflowModelType,
   latestOutput = null,
   packageType = 'modiff-workflow-share',
 }: {
   apiGraph?: unknown;
   form: StudioFormState;
   graph: unknown;
+  /** Advisory identity from the exact captured share graph. */
+  workflowModelType?: string;
   latestOutput?: StudioOutput | null;
   packageType?: ModiffWorkflowPackage['manifest']['packageType'];
 }): ModiffWorkflowPackage {
   const exportedAt = new Date().toISOString();
+  const formMetadata = latestOutput?.formSnapshot ?? form;
+  const modelType =
+    packageType === 'modiff-workflow-share'
+      ? workflowModelType
+      : latestOutput
+        ? observedOutputModel(latestOutput)?.pipeline
+        : undefined;
   return {
     manifest: {
       schemaVersion: 1,
@@ -133,7 +144,10 @@ export function buildWorkflowPackage({
     },
     metadata: {
       exportedAt,
-      studio: safeCloneJson(latestOutput?.formSnapshot ?? form) as StudioFormState,
+      studio: safeCloneJson({
+        ...formMetadata,
+        modelType: modelType ?? formMetadata.modelType,
+      }) as ModiffWorkflowPackage['metadata']['studio'],
       preview: latestOutput?.url ?? null,
     },
     graph: safeCloneJson(graph),
@@ -169,9 +183,9 @@ function getNestedRecord(root: Record<string, unknown>, key: string) {
 }
 
 function titleForImportedPackage(output: StudioOutput | undefined, form: StudioFormState) {
-  if (output?.templateLabel) return output.templateLabel;
   const prompt = output?.prompt || form.prompt;
-  return prompt ? prompt.slice(0, 28) : 'Imported workflow';
+  const title = output?.templateLabel || (prompt ? prompt.slice(0, 28) : '');
+  return title.trim() || 'Imported workflow';
 }
 
 export function parseWorkflowPackage(value: unknown): ParsedWorkflowPackage | null {
@@ -329,7 +343,28 @@ export function embedWorkflowPackageInPngBytes(bytes: Uint8Array, packageData: u
 }
 
 export async function createPngWithWorkflowMetadata(sourceUrl: string, packageData: unknown) {
-  const bytes = new Uint8Array(await requestArrayBuffer(sourceUrl));
+  let bytes = new Uint8Array(await requestArrayBuffer(sourceUrl));
+  if (!PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) {
+    const image = await createImageBitmap(new Blob([bytes]));
+    const canvas = document.createElement('canvas');
+    try {
+      if (image.width * image.height > 64_000_000) {
+        throw new Error('Image is too large to export as PNG.');
+      }
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Could not create a PNG export canvas.');
+      context.drawImage(image, 0, 0);
+      const png = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not encode PNG.'))), 'image/png');
+      });
+      bytes = new Uint8Array(await png.arrayBuffer());
+    } finally {
+      image.close();
+      canvas.width = canvas.height = 0;
+    }
+  }
   const png = embedWorkflowPackageInPngBytes(bytes, packageData);
   return new Blob([png], { type: 'image/png' });
 }

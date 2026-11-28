@@ -1,11 +1,22 @@
+import type { Edge } from '@xyflow/react';
 import { hasInlineScalarControl } from './inlineScalarControl';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { blockControlParamsV2, blockModularParentIdsV2, materializeBlockProjectionV2 } from './blockRuntimeV2';
+import {
+  blockControlParamsV2,
+  blockModularParentIdsV2,
+  blockOperationGraphV2,
+  materializeBlockProjectionV2,
+} from './blockRuntimeV2';
 import type { BlockJsonValue } from './blockSchemaV2';
 import { syncManagedNodeControlChange } from './managedControlSync';
 import type { AppModeInput } from './types';
+import { modelSetupControlPresentation } from '../workflow/modelSetupControlPresentation';
+import { EXECUTION_RECIPE_NODE, visibleExecutionRecipeControls } from '../workflow/gatedNodeControls';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
+import { effectiveRecipeTiling, workflowRecipeTilingPolicy } from '../workflow/recipeTilingPresentation';
 
 export type GraphInputCandidate = AppModeInput & { node: CustomNodeType; param: NodeParams };
 
@@ -14,11 +25,37 @@ const controlsBySource = new WeakMap<object, Record<string, NodeParams>>();
 const expandedByInstance = new WeakMap<object, CustomNodeType[]>();
 
 /** The inspector is another view of the canvas control contract, never a schema owner. */
-export function graphNodeControlParams(node: CustomNodeType): Record<string, NodeParams> {
-  const source = node.data.blockInstanceV2 ?? node.data.params;
-  const cached = controlsBySource.get(source);
+export function graphNodeControlParams(
+  node: CustomNodeType,
+  workflowEdges: readonly Edge[] = [],
+  catalog: Pick<
+    ReturnType<typeof useNodesStore.getState>,
+    'workflowModelDescriptors' | 'studioModelCapabilities'
+  > = useNodesStore.getState(),
+  workflowNodes: readonly CustomNodeType[] = useFlowStore.getState().nodes,
+): Record<string, NodeParams> {
+  const instance = node.data.blockInstanceV2;
+  const source = instance ?? node.data.params;
+  const setup = instance && visualOperationGroup(node) === 'setup';
+  // Model Setup depends on current adapter policy and connected suppliers.
+  const recipe = !instance && `${node.data.module}.${node.data.action}` === EXECUTION_RECIPE_NODE;
+  const cacheable = !setup && !recipe;
+  const cached = cacheable ? controlsBySource.get(source) : undefined;
   if (cached) return cached;
-  const params = node.data.blockInstanceV2 ? blockControlParamsV2(node.data.blockInstanceV2) : node.data.params;
+  const base = instance ? blockControlParamsV2(instance) : node.data.params;
+  const params = setup
+    ? modelSetupControlPresentation(instance, blockOperationGraphV2(instance), base, workflowEdges, catalog).params
+    : recipe
+      ? visibleExecutionRecipeControls(
+          effectiveRecipeTiling(
+            base,
+            'vae_tiling',
+            workflowRecipeTilingPolicy(node, workflowNodes, workflowEdges, catalog.studioModelCapabilities),
+          ),
+          node.data.params,
+          (key) => workflowEdges.some((edge) => edge.target === node.id && edge.targetHandle === key),
+        )
+      : base;
   const controls = Object.fromEntries(
     Object.entries(params)
       .filter(([key, param]) => {
@@ -41,13 +78,18 @@ export function graphNodeControlParams(node: CustomNodeType): Record<string, Nod
         },
       ]),
   );
-  controlsBySource.set(source, controls);
+  if (cacheable) controlsBySource.set(source, controls);
   return controls;
 }
 
-export function graphParamInputCandidates(nodes: CustomNodeType[], pinnedIds: string[] = []): GraphInputCandidate[] {
+export function graphParamInputCandidates(
+  nodes: CustomNodeType[],
+  pinnedIds: string[] = [],
+  workflowEdges: readonly Edge[] = [],
+  workflowNodes: readonly CustomNodeType[] = nodes,
+): GraphInputCandidate[] {
   const candidates: GraphInputCandidate[] = nodes.flatMap((node) =>
-    Object.entries(graphNodeControlParams(node)).map(([key, param]) => ({
+    Object.entries(graphNodeControlParams(node, workflowEdges, undefined, workflowNodes)).map(([key, param]) => ({
       id: `graph:${node.id}:${key}`,
       kind: 'graph-param' as const,
       label: `${node.data.label || node.id} / ${param.label || key}`,
@@ -73,16 +115,24 @@ export function graphParamInputCandidates(nodes: CustomNodeType[], pinnedIds: st
           ...root.data,
           blockInstanceV2: {
             ...instance,
-            presentation: { ...instance.presentation, expanded: true, collapsedContainerNodeIds: [] },
+            presentation: {
+              ...instance.presentation,
+              expanded: true,
+              ...(isFocusedStageNode(instance) ? { stageEditorOpen: true } : {}),
+              collapsedContainerNodeIds: [],
+            },
           },
         },
       }).nodes;
       expandedByInstance.set(instance, expanded);
     }
     candidates.push(
-      ...graphParamInputCandidates(expanded.filter(({ id }) => !visibleIds.has(id))).filter(({ id }) =>
-        missingPins.has(id),
-      ),
+      ...graphParamInputCandidates(
+        expanded.filter(({ id }) => !visibleIds.has(id)),
+        [],
+        workflowEdges,
+        workflowNodes,
+      ).filter(({ id }) => missingPins.has(id)),
     );
   }
   return candidates;
@@ -103,6 +153,7 @@ export function revealPinnedGraphInput(workflowId: string | null, node: CustomNo
   }
   useFlowStore.getState().setBlockPresentationV2(ownerId, {
     expanded: true,
+    ...(isFocusedStageNode(instance) ? { stageEditorOpen: true } : {}),
     collapsedContainerNodeIds: (instance.presentation.collapsedContainerNodeIds ?? []).filter(
       (id) => !ancestors.has(id),
     ),
@@ -130,7 +181,7 @@ export function updateGraphNodeControl(
       !Object.prototype.hasOwnProperty.call(params, param)
     )
       return;
-  } else if (!graphNodeControlParams(node)[param]) return;
+  } else if (!graphNodeControlParams(node, flow.edges)[param]) return;
   if (node.data.blockInstanceV2) {
     if (key === undefined || key === 'value') flow.setBlockInstanceValueV2(nodeId, param, value as BlockJsonValue);
     return;

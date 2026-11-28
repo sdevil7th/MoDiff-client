@@ -98,6 +98,8 @@ Use or extend these before creating feature-local visual systems:
 
 When a feature needs a repeated visual pattern that is not listed here, add a small primitive to `src/ui` and export it from `src/ui/index.ts`.
 
+Shared single- and multiple-choice menus show an inline search field from 16 options onward. Filtering matches the visible label, group and option value. Keep full labels readable inside the popup, preserve selections while filtering, and restore focus to the trigger on Escape. Model filters in Template Browser should offer choices backed by a matching recipe in the current category and filter scope.
+
 Shared primitives own focus, disabled/read-only/required/invalid state, label and description associations, portal layering, and selected-value behavior. Feature and graph wrappers may add domain actions and preserve `nodrag`/`nowheel`, but must not recreate those contracts or import the underlying Headless UI control directly. Standalone actions use the shared 28px compact, 32px dense, 36px normal, or 40px prominent sizes.
 
 ## Headless UI Policy

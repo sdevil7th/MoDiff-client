@@ -5696,6 +5696,8 @@ test('live Cluster customization recovers from save failure and remains one undo
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
   const sessionShelf = page.getByTestId('run-session-shelf');
   if (await sessionShelf.isVisible().catch(() => false)) {
+    const showActivity = sessionShelf.getByRole('button', { name: 'Show session activity', exact: true });
+    if (await showActivity.isVisible()) await showActivity.click();
     const dismissButtons = sessionShelf.getByRole('button', { name: /^Dismiss /u });
     while ((await dismissButtons.count()) > 0) await dismissButtons.first().click();
     await expect(sessionShelf).toHaveCount(0);
@@ -8300,7 +8302,8 @@ test('a live recent-run notification restores its exact backend workflow without
     .toBe(recent!.workflowTabId);
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().settings.rightPanelTab)).toBe('studio');
 
-  const checkpointBytes = await page.evaluate(() => localStorage.getItem('modiff.studio')?.length ?? 0);
+  const checkpointBytes = await page.evaluate(() => window.sessionStorage.getItem('modiff.studio')?.length ?? 0);
+  expect(checkpointBytes).toBeGreaterThan(0);
   expect(checkpointBytes).toBeLessThan(2_000_000);
   expect(pageErrors.filter((message) => /QuotaExceededError|Could not open run/i.test(message))).toEqual([]);
 });

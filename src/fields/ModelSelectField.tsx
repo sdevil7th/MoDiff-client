@@ -18,21 +18,15 @@ import { isHfDownloadActive } from '../studio/modelInstall';
 import {
   compatibleInstalledHubModels,
   compatibleInstalledLocalModels,
-  indexedHubModelIsInstalled,
   parseModelSelectionFilters,
 } from '../studio/modelSelection';
 import { FieldFrame, ModiffButton, ModiffDialog, ModiffSearchInput } from '../ui';
 import { GraphIconButton } from '../ui/GraphControls';
 import { enqueueSnackbar } from '../ui/snackbar';
 import fieldAction, { fieldActionSource } from '../utils/fieldAction';
+import { deepEqual } from '../utils/deepEqual';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
-
-type HfCacheItem = {
-  id?: unknown;
-  class_names?: unknown;
-  installed?: unknown;
-  complete?: unknown;
-};
+import { installModelField, modelFieldIsInstalled } from '../utils/modelFieldInstall';
 
 type ModelSource = 'hub' | 'local';
 type ModelFieldValue = { source: ModelSource; value: unknown };
@@ -89,6 +83,19 @@ export default function ModelSelectField(props: FieldProps) {
 }
 
 function RawModelSelectField(props: FieldProps) {
+  const fieldScope = useFlowStore(
+    useShallow((state) => {
+      const owner = state.nodes.find((node) => node.id === props.nodeId);
+      const blockOwner = owner?.data.blockProjectionOwnerId
+        ? state.nodes.find((node) => node.id === owner.data.blockProjectionOwnerId)
+        : undefined;
+      return { owner, blockOwner, edges: state.edges };
+    }),
+  );
+  const fieldGraph = {
+    nodes: [fieldScope.owner, fieldScope.blockOwner].filter((node) => node !== undefined),
+    edges: fieldScope.edges,
+  };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerError, setPickerError] = useState<string | null>(null);
@@ -141,17 +148,11 @@ function RawModelSelectField(props: FieldProps) {
       }),
     [localFilter.className, localFilter.id, localFilter.valid, localModels],
   );
-  const currentInstalled = useMemo(() => {
-    if (!currentModelId) return false;
-    if (sourceType === 'local') return localModels.some((item) => item === currentModelId);
-    return hfCache.some(
-      (item) =>
-        Boolean(item && typeof item === 'object') &&
-        typeof (item as HfCacheItem).id === 'string' &&
-        (item as HfCacheItem).id === currentModelId &&
-        indexedHubModelIsInstalled(item as HfCacheItem),
-    );
-  }, [currentModelId, hfCache, localModels, sourceType]);
+  const currentInstalled = currentModelId
+    ? sourceType === 'local'
+      ? localModels.some((item) => item === currentModelId)
+      : modelFieldIsInstalled(props, currentModelId, hfCache, fieldGraph)
+    : false;
   const currentOptions = sourceType === 'hub' ? hubOptions : localModelOptions;
   const pickerOptions = currentOptions.filter((id) => id.toLowerCase().includes(pickerQuery.trim().toLowerCase()));
   const installProgress = currentModelId ? hfDownloadProgress[currentModelId] : undefined;
@@ -162,7 +163,7 @@ function RawModelSelectField(props: FieldProps) {
     const scheduledAction = props.onChange;
     actionTimerRef.current = window.setTimeout(() => {
       const source = fieldActionSource(props);
-      if (source?.param?.onChange === scheduledAction) {
+      if (source?.param && deepEqual(source.param.onChange, scheduledAction)) {
         void fieldAction(latestActionPropsRef.current, value);
       }
     }, 250);
@@ -197,7 +198,7 @@ function RawModelSelectField(props: FieldProps) {
   const handleInstall = async () => {
     if (!currentModelId || sourceType !== 'hub' || installActive) return;
     try {
-      await installHfModel(currentModelId, sid);
+      await installModelField(props, currentModelId, sid, installHfModel);
       enqueueSnackbar(`${currentModelId} installed`, { variant: 'success', autoHideDuration: 2200 });
     } catch (error) {
       enqueueSnackbar(error instanceof Error ? error.message : `Could not install ${currentModelId}`, {
@@ -271,7 +272,7 @@ function RawModelSelectField(props: FieldProps) {
           type="button"
           onClick={handleOpenModels}
           disabled={props.disabled || isLoading}
-          label="Choose model"
+          label={`Browse models for ${props.label}`}
         >
           <Library size={16} />
         </GraphIconButton>

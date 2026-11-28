@@ -34,6 +34,8 @@ When the canvas is empty, the task launcher offers common guided entry points:
 
 **Browse recipes** opens the template browser. Templates are often the clearest way to discover image, video, audio, or advanced workflows that are not shown as first-screen shortcuts.
 
+In **All templates**, search for a card title, recipe ID, model name or words from its prompt. The **Recommended** sort puts matching names ahead of recipes that only mention the words in their prompts. Choose **Task**, **Model** or **Runtime** to order the same matches by that field.
+
 The model list is filtered by task. A model profile being visible means the client understands its intended fields and requirements; it does not guarantee that the current backend, artifact, or machine can run it.
 
 ## Understand The Interface
@@ -46,6 +48,8 @@ The model list is filtered by task. A model profile being visible means the clie
   already-open Queue, Setup, or Block tool. Refresh preserves your explicit open/collapsed choice.
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
+  Opening a saved workflow from the library keeps its saved revision and timestamp.
+  Subsequent edits still autosave; opening an unchanged document does not save it again.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
 - **Auto view / Expert view** changes editing tools and node discovery. It preserves the graph and execution settings.
 - **Resources → Automatic / Expert overrides** selects this workflow's execution policy in either view.
@@ -345,6 +349,8 @@ For gated models, accept the provider's terms and authenticate through supported
 
 ## Run Readiness
 
+Template cards show **Auto check at Run** when their model prerequisites and required inputs pass the template check. This is not a current memory-fit assessment of the complete workflow. Run checks the actual graph and current memory before submitting an Auto task. Explicit Custom recipes retain their experimental prerequisite status; built-in processing that needs no model download can show **Ready now**.
+
 The current graph is checked before submission. Blocking issues can include:
 
 - Backend or websocket unavailable
@@ -480,3 +486,30 @@ This test avoids claiming real model support when only the UI is available. Use 
 14. Stop the dev processes with the repository stop script and confirm unrelated listeners are left untouched.
 
 For automated UI coverage, run `npm run check:ui`. It uses mocked backend routes and proves client behavior without downloading or executing a real model.
+
+The Models window separates local files from supported model variants. A metadata-only
+or incomplete Hub snapshot stays visible for diagnosis. A verified selection confirms
+the selected files; running the workflow also depends on its requirements. Search
+accepts a repository, variant label, or task. The download view shows the cache
+destination and available capacity when the server reports it.
+
+On shared-memory accelerators, Resource usage shows the accessible pool and dedicated
+reservation separately. The compact gauge names the busiest measured resource. Storage
+shows free space for model downloads, managed Studio outputs, and default disk offload.
+Setup lists requirements for the inspected workflow first. Use **Show other runtimes**
+to explore additional installations. **Review runtime** opens the package named by a run issue and keeps its controls visible while they have keyboard focus.
+
+### Reviewing a run and navigating the canvas
+
+Select a completed run in Queue or Session activity to see that run’s output. Use
+**Open workflow** in the preview to inspect its stages. A result in Gallery has
+a **Download** menu for the available file and recipe formats. **Result details**
+opens its generation settings and provenance. Restoring a result uses its saved
+workflow name when available.
+
+On a narrow screen, the canvas keeps its width as the libraries and workspace
+open one at a time. **More toolbar actions** contains file, setup and export
+controls. Use **Ctrl+K** (or **Command+K**), type a command and press Enter.
+The arrow keys move through available commands. Keyboard users can jump to
+the canvas from the first navigation link or resize a desktop panel by focusing
+its separator and pressing the left or right arrow.

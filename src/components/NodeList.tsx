@@ -3,6 +3,9 @@ import NodeDiscoveryFilters from './NodeDiscoveryFilters';
 import CustomNodeLibrary from './CustomNodeLibrary';
 import { useNodeDiscovery } from '../stores/useNodeDiscoveryStore';
 import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
+import VisualStageLibrary from './VisualStageLibrary';
+import { representedStageOperations, visualStageMatches } from '../studio/visualNodeCatalog';
+import { operationsForTask } from '../workflow/operationCatalog';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -98,6 +101,8 @@ const OperationCatalogPanel = lazy(() => import('./OperationCatalogPanel'));
 
 function NodeList() {
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
+  const stageCatalog = useNodesStore((state) => state.visualNodeCatalog);
+  const [showMoreStages, setShowMoreStages] = useState(false);
   const operationContracts = useNodesStore((state) => state.operationContracts);
   const pipelineSupport = useNodesStore((state) => state.pipelineSupport);
   const addNode = useFlowStore((state) => state.addNode);
@@ -129,6 +134,20 @@ function NodeList() {
   const [extensionsKind, setExtensionsKind] = useState<'local' | 'hub'>('local');
   const [clusterInsertionIds, setClusterInsertionIds] = useState<Set<string>>(() => new Set());
   const { view: effectiveCatalogView, pipeline, task } = useNodeDiscovery();
+  const stageResults = useMemo(
+    () =>
+      stageCatalog
+        ? visualStageMatches(stageCatalog, nodesRegistry, search, {
+            all: effectiveCatalogView === 'advanced' || effectiveCatalogView === 'all',
+            targeted: showMoreStages,
+            showModelHints: true,
+            operations: pipeline ? operationsForTask(operationContracts, pipeline, task) : undefined,
+          })
+        : [],
+    [stageCatalog, nodesRegistry, search, effectiveCatalogView, showMoreStages, operationContracts, pipeline, task],
+  );
+  const rawRegistryVisible = !stageCatalog;
+  const represented = useMemo(() => representedStageOperations(stageResults), [stageResults]);
   const catalogNodes = useMemo(
     () =>
       runtimeCatalogNodes(nodesRegistry, operationContracts, pipelineSupport, effectiveCatalogView, { pipeline, task }),
@@ -159,20 +178,14 @@ function NodeList() {
     () => filterHuggingFaceCatalogSections(allHuggingFaceSections, search, effectiveCatalogView),
     [allHuggingFaceSections, search, effectiveCatalogView],
   );
-  const huggingFaceCatalogCount = useMemo(
-    () =>
-      filterHuggingFaceCatalogSections(allHuggingFaceSections, '', effectiveCatalogView).reduce(
-        (total, section) => total + section.entries.length,
-        0,
-      ),
-    [allHuggingFaceSections, effectiveCatalogView],
-  );
-  const runtimeNodeCount = useMemo(
-    () =>
-      nodeCatalogEntries(catalogNodes).filter((entry) => nodeCatalogEntryMatchesView(entry, effectiveCatalogView))
-        .length,
-    [catalogNodes, effectiveCatalogView],
-  );
+  const runtimeNodeCount = useMemo(() => {
+    if (stageCatalog) return 0;
+    return nodeCatalogEntries(catalogNodes).filter(
+      (entry) =>
+        nodeCatalogEntryMatchesView(entry, effectiveCatalogView, Boolean(search.trim())) &&
+        nodeCatalogEntryMatchesSearch(entry, search),
+    ).length;
+  }, [catalogNodes, effectiveCatalogView, search, stageCatalog]);
 
   const handleInsertUserBlock = useCallback(
     (block: StoredUserBlockDefinition) => {
@@ -217,8 +230,17 @@ function NodeList() {
         height: 420,
       });
       addNode({ ...node, selected: true });
+      if (activeWorkflowTabId) {
+        const time = Date.now();
+        setWorkflowFocusRequest({
+          workflowTabId: activeWorkflowTabId,
+          nodeId: node.id,
+          requestId: time,
+          requestedAt: time,
+        });
+      }
     },
-    [addNode, nodeCount, nodesRegistry, viewport],
+    [addNode, nodeCount, nodesRegistry, viewport, activeWorkflowTabId, setWorkflowFocusRequest],
   );
 
   const handleInsertHuggingFaceCluster = useCallback(
@@ -326,16 +348,29 @@ function NodeList() {
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
               <p className="truncate text-xs text-modiff-subtle-text">
-                {runtimeNodeCount} nodes · {huggingFaceCatalogCount} catalog entries
+                {stageCatalog ? `${stageResults.length} stages` : `${runtimeNodeCount} nodes`}
               </p>
             </div>
           </div>
+          <ModiffButton
+            size="compact"
+            tone="secondary"
+            icon={<Plus size={14} />}
+            aria-label="Add custom node"
+            onClick={() => {
+              setExtensionsView('add');
+              setExtensionsKind('local');
+              setExtensionsOpen(true);
+            }}
+          >
+            Custom
+          </ModiffButton>
         </div>
       </header>
       <div className="p-2">
         <ModiffSearchInput
           aria-label="Search nodes"
-          placeholder="Search nodes"
+          placeholder="Search names or actions"
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
           onClear={() => setSearch('')}
@@ -343,22 +378,6 @@ function NodeList() {
       </div>
       <NodeDiscoveryFilters />
 
-      {
-        <div className="px-3 pb-2">
-          <ModiffButton
-            tone="primary"
-            fullWidth
-            icon={<Plus size={16} />}
-            onClick={() => {
-              setExtensionsView('add');
-              setExtensionsKind('local');
-              setExtensionsOpen(true);
-            }}
-          >
-            Add custom node
-          </ModiffButton>
-        </div>
-      }
       {extensionsOpen ? (
         <Suspense fallback={null}>
           <CustomExtensionsDialog
@@ -368,11 +387,26 @@ function NodeList() {
           />
         </Suspense>
       ) : null}
-      <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
-        Nodes, task Blocks and Saved Blocks share this library. Choose a pipeline to add nodes with its declared inputs.
-      </p>
-
-      <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
+      <div className="min-h-0 flex-1 select-none overflow-y-auto border-t border-modiff-border px-2 py-3">
+        {stageCatalog && (
+          <>
+            <VisualStageLibrary matches={stageResults} insert={handleInsertNode} searchQuery={search.trim()} />
+            {!search.trim() && (
+              <ModiffButton
+                size="compact"
+                tone="ghost"
+                className="my-2"
+                aria-expanded={showMoreStages}
+                onClick={() => setShowMoreStages(!showMoreStages)}
+              >
+                {showMoreStages ? 'Hide additional stages' : 'Show task stages'}
+              </ModiffButton>
+            )}
+          </>
+        )}
+        <p className="mt-2 border-t border-modiff-border px-2 pb-2 pt-3 text-xs text-modiff-subtle-text">
+          Saved Blocks reuse canvas nodes. Custom nodes run your Python code.
+        </p>
         <CustomNodeLibrary
           search={search}
           insert={handleInsertNode}
@@ -382,12 +416,23 @@ function NodeList() {
           }}
         />
         <Suspense fallback={null}>
-          <OperationCatalogPanel search={search} onInsert={handleInsertNode} />
+          <OperationCatalogPanel search={search} onInsert={handleInsertNode} represented={represented} />
         </Suspense>
         <NodeGroupList
-          nodes={Object.fromEntries(Object.entries(catalogNodes).filter(([key]) => !key.startsWith('custom.')))}
+          nodes={
+            rawRegistryVisible
+              ? Object.fromEntries(Object.entries(catalogNodes).filter(([key]) => !key.startsWith('custom.')))
+              : {}
+          }
           search={search}
           view={effectiveCatalogView}
+          showEmpty={
+            !stageResults.length &&
+            !represented.size &&
+            !nodeCatalogEntries(catalogNodes).some(
+              (entry) => entry.node.module.startsWith('custom.') && nodeCatalogEntryMatchesSearch(entry, search),
+            )
+          }
           userBlocks={[...userBlockDefinitionsV2, ...userBlocks]}
           huggingFaceSections={huggingFaceSections}
           huggingFaceLoading={!huggingFaceLibraryLoaded}
@@ -509,6 +554,7 @@ function getIcon(category: string) {
     case 'embedding':
       return <LayoutGrid size={16} />;
     case 'upscaler':
+    case 'image & video':
       return <Maximize size={16} />;
     case 'image_filter':
       return <Filter size={16} />;
@@ -963,6 +1009,7 @@ function NodeGroupList({
   search,
   view,
   userBlocks,
+  showEmpty,
   huggingFaceSections,
   huggingFaceLoading,
   huggingFaceError,
@@ -978,6 +1025,7 @@ function NodeGroupList({
   search: string;
   view: NodeCatalogView;
   userBlocks: StoredUserBlockDefinition[];
+  showEmpty: boolean;
   huggingFaceSections: HuggingFaceCatalogSection[];
   huggingFaceLoading: boolean;
   huggingFaceError: string | null;
@@ -993,7 +1041,7 @@ function NodeGroupList({
 
   const groups = useMemo(() => {
     return nodeCatalogEntries(nodes)
-      .filter((entry) => nodeCatalogEntryMatchesView(entry, view))
+      .filter((entry) => nodeCatalogEntryMatchesView(entry, view, Boolean(search.trim())))
       .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
       .reduce(
         (acc, entry) => {
@@ -1098,7 +1146,10 @@ function NodeGroupList({
           </TreeChildrenPanel>
         ) : null}
       </div>
-      {orderedGroups.length === 0 && matchingUserBlocks.length === 0 && huggingFaceSections.length === 0 ? (
+      {showEmpty &&
+      orderedGroups.length === 0 &&
+      matchingUserBlocks.length === 0 &&
+      huggingFaceSections.length === 0 ? (
         <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
           No nodes match this view.
         </div>

@@ -1,8 +1,15 @@
 import { useSettingsStore } from './useSettingsStore';
+import { useNodesStore } from './useNodeStore';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
+import { forgetFreshWorkflowId, markFreshWorkflowId } from '../studio/workflowDocumentOrigin';
+import {
+  matchesCleanWorkflowHydrationBaseline,
+  type WorkflowHydrationBaseline,
+} from '../studio/workflowHydrationBaseline';
 import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
+import { studioSpeechTimestampContract } from '../studio/effectiveControls';
 import {
   DEFAULT_STUDIO_FORM,
   STUDIO_MODEL_PROFILES,
@@ -19,11 +26,13 @@ import {
   coerceStudioTemplateId,
   isRecord,
   optionalNullableString,
+  outputWorkflowTitle,
   safeCloneJson,
 } from '../studio/outputContracts';
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
 import { withDurableBlockPreviewsV2 } from '../studio/blockPreviewPersistenceV2';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
+import { savedAttentionDefaultUpdate } from '../studio/savedStudioSpecCompatibility';
 import { normalizeStudioDeviceOffloadPlan } from '../studio/deviceOffload';
 import {
   firstImageValue,
@@ -45,9 +54,14 @@ import {
   stableStringify,
 } from '../studio/templateExactness';
 import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
-import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
-import { migrateLocalStorageKey } from '../utils/persistMigration';
+import {
+  adoptManagedWorkflowGraph,
+  inferStudioFormFromWorkflow,
+  restoreReviewedDirectImageModelType,
+} from '../studio/workflowInference';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
+import { createPageCheckpointStorage } from '../utils/checkpointStorage';
+import { restoreManagedAttentionDefault, restoreSavedAttentionDefaults } from '../workflow/savedAttentionCompatibility';
 import type { MediaArtifact } from '../utils/imageArtifacts';
 import { autoPlanKeyForForm, autoResourcePlanTargetMatches, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
@@ -79,6 +93,13 @@ import {
   type CustomNodeType,
   useFlowStore,
 } from './useFlowStore';
+
+function normalizeAuthoredSpeechTimestamps(form: StudioFormState): StudioFormState {
+  const contract = studioSpeechTimestampContract(form, useNodesStore.getState());
+  return contract && !contract.options.includes(form.speechTimestamps)
+    ? { ...form, speechTimestamps: contract.defaultValue }
+    : form;
+}
 
 export type StudioRecentChange = {
   id: string;
@@ -122,12 +143,12 @@ type StudioVolatileState = {
     message: string | null;
     startedAt: number | null;
   };
-  canvasTransition: {
-    type: 'template_graph_building';
-    workflowTabId: string;
-    templateId: StudioTemplateId;
-    startedAt: number;
-  } | null;
+  canvasTransition:
+    | ({ workflowTabId: string; startedAt: number } & (
+        | { type: 'template_graph_building'; templateId: StudioTemplateId }
+        | { type: 'task_graph_building'; templateId?: never; keepLauncher: boolean }
+      ))
+    | null;
   launcherDismissed: boolean;
   currentRunContext: StudioRunContext | null;
   runContextsByClientRunId: Record<string, StudioRunContext>;
@@ -228,12 +249,16 @@ type StudioActions = {
     snapshot?: WorkflowTabSnapshot,
     source?: WorkflowTab['source'],
     sourceLabel?: string,
+    normalizationIntent?: 'restore' | 'import',
   ) => string;
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
   moveWorkflowTab: (id: string, targetId: string, placement: 'before' | 'after') => void;
   renameWorkflowTab: (id: string, title: string) => void;
-  mergeBackendWorkflow: (tab: WorkflowTab, options?: { acknowledgement?: boolean }) => void;
+  mergeBackendWorkflow: (
+    tab: WorkflowTab,
+    options?: { acknowledgement?: boolean; hydrationBaseline?: WorkflowHydrationBaseline },
+  ) => void;
   removeBackendWorkflow: (id: string) => void;
   createAppModeConfig: (workflowTabId?: string | null) => string | null;
   updateAppModeConfig: (
@@ -454,7 +479,15 @@ function reconcileSnapshotGraphBinding(
 }
 
 function isInferredRecoveryBinding(binding: StudioGraphBinding | null) {
-  return Boolean(binding && binding.createdAt === 0 && binding.updatedAt === 0);
+  return Boolean(
+    binding &&
+    binding.createdAt === 0 &&
+    binding.updatedAt === 0 &&
+    !binding.executionSpec &&
+    !binding.controlled &&
+    !binding.finalizationProof &&
+    !binding.finalizationProofInvalid,
+  );
 }
 
 export function normalizeManagedSnapshotExecutionPlan(
@@ -519,6 +552,7 @@ function normalizeWorkflowSnapshot(
   snapshot: unknown,
   templateSourceId: StudioTemplateId | null = null,
   allowCanonicalAdoption = true,
+  intent: 'restore' | 'import' = 'restore',
 ): WorkflowTabSnapshot {
   const value = isRecord(snapshot) ? snapshot : {};
   const hasPersistedTemplateId = Object.prototype.hasOwnProperty.call(value, 'activeTemplateId');
@@ -528,31 +562,38 @@ function normalizeWorkflowSnapshot(
   const activeTemplate = activeTemplateId
     ? STUDIO_TEMPLATES.find((template) => template.id === activeTemplateId)
     : undefined;
-  const rawPersistedStudioForm = resolveStudioResourceForm(coerceStudioFormState(value.studioForm));
+  // Restoring an authored document is not a new Auto-plan selection. Replacing
+  // its precision/offload fields with current profile defaults can split the
+  // displayed form from its unchanged executable graph. Run still checks the
+  // current backend plan and reports unsupported settings without rewriting it.
+  const rawPersistedStudioForm = coerceStudioFormState(value.studioForm);
   // Template identity is durable workflow provenance. Older clients could
   // coerce newly added model types (notably LTX and Wan variants) to Z-Image
   // while retaining the original graph and template id. Repair those existing
   // documents from their template contract instead of perpetuating the split.
   const persistedStudioForm = activeTemplate
-    ? resolveStudioResourceForm({
+    ? {
         ...rawPersistedStudioForm,
         mode: activeTemplate.mode,
         modelType: activeTemplate.modelType,
-      })
+      }
     : rawPersistedStudioForm;
   const normalizedFlow = normalizePersistedFlowState({
     nodes: Array.isArray(value.nodes) ? safeCloneJson(value.nodes) : [],
     edges: Array.isArray(value.edges) ? safeCloneJson(value.edges) : [],
   });
+  const ordinaryOperationGraph = normalizedFlow.nodes.some((node) =>
+    Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring),
+  );
   const seenNodeIds = new Set<string>();
-  const nodes = normalizedFlow.nodes
+  const nodes = restoreSavedAttentionDefaults(normalizedFlow.nodes, persistedStudioForm.attentionBackend)
     .filter((node) => {
       if (seenNodeIds.has(node.id)) return false;
       seenNodeIds.add(node.id);
       return true;
     })
     .map((node) => {
-      if (!activeTemplateId || typeof node.data.studioRole !== 'string') return node;
+      if (!activeTemplateId || ordinaryOperationGraph || typeof node.data.studioRole !== 'string') return node;
       return { ...node, data: { ...node.data, studioOwned: true } };
     });
   const nodeIds = new Set(nodes.map((node) => node.id));
@@ -587,32 +628,98 @@ function normalizeWorkflowSnapshot(
     // Legacy template inference must never reinterpret, rebuild, or remove
     // registered/User Block roots merely because their internal actions look
     // like one managed task graph.
-    !nodes.some((node) => Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring)) &&
+    !ordinaryOperationGraph &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
+  // Whole-task exports carry presentation roles, but no execution-spec
+  // receipt. Keep those exact ordinary nodes as the workflow authority rather
+  // than inventing a managed binding which the current contract must reject.
+  const ordinaryTaskImport =
+    shouldRecoverManagedIdentity &&
+    nodes.some(
+      (node) =>
+        ([
+          'modules.DiffusersImage',
+          'modules.DiffusersAudio',
+          'modules.DiffusersVideo',
+          'modules.DiffusersThreeD',
+        ].includes(node.data.module) &&
+          node.data.action === 'LoadPipeline') ||
+        (node.data.module === 'modules.HuggingFaceTransformers' &&
+          [
+            'LoadDepthEstimationModel',
+            'LoadImageTextToTextModel',
+            'LoadTextGenerationModel',
+            'LoadAnyToAnyModel',
+          ].includes(node.data.action)) ||
+        (node.data.module === 'modules.HuggingFaceSpeech' &&
+          ['LoadSpeechRecognitionModel', 'LoadCTCSpeechRecognitionModel'].includes(node.data.action)) ||
+        [
+          'modules.ImageOperations.ProcessImage',
+          'modules.Audio.ProcessAudio',
+          'modules.Video.ProcessVideo',
+          'modules.Text.ProcessText',
+        ].includes(`${node.data.module}.${node.data.action}`) ||
+        (node.data.module === 'modules.Spandrel' && node.data.action === 'Upscaler'),
+    );
   const inferredManagedForm = shouldRecoverManagedIdentity
-    ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
+    ? resolveStudioResourceForm({
+        ...inferStudioFormFromWorkflow(nodes, persistedStudioForm, edges as import('@xyflow/react').Edge[]),
+        // Graph inference refreshes the recipe summary, not the document's
+        // explicit memory policy. Missing/invalid legacy values already coerce to Auto.
+        resourceMode: persistedStudioForm.resourceMode,
+      })
     : persistedStudioForm;
-  const adoptedGraph = shouldRecoverManagedIdentity
-    ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
-    : null;
-  const studioForm = adoptedGraph ? inferredManagedForm : persistedStudioForm;
+  const adoptedGraph =
+    shouldRecoverManagedIdentity && !ordinaryTaskImport
+      ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
+      : null;
+  // Restoring an ordinary graph is not permission to replace its authored form
+  // with a graph-derived summary. Explicit imports and legacy snapshots without
+  // a recognized form still infer it; managed/template recovery stays separate.
+  const hasPersistedForm =
+    isRecord(value.studioForm) &&
+    value.studioForm.mode === persistedStudioForm.mode &&
+    value.studioForm.modelType === persistedStudioForm.modelType;
+  const inferOrdinaryForm = ordinaryTaskImport && (intent === 'import' || !hasPersistedForm);
+  const inferredOrSavedForm = adoptedGraph || inferOrdinaryForm ? inferredManagedForm : persistedStudioForm;
+  const studioForm =
+    activeTemplateId || persistedGraphBinding || adoptedGraph
+      ? inferredOrSavedForm
+      : restoreReviewedDirectImageModelType(nodes, edges, inferredOrSavedForm);
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
-  const executionNormalizedNodes = normalizeManagedSnapshotExecutionPlan(
-    normalizedNodes,
-    studioForm,
-    persistedGraphBinding ?? adoptedGraph?.binding ?? null,
-  );
-  const studioGraphBinding = reconcileSnapshotGraphBinding(
-    isInferredRecoveryBinding(persistedGraphBinding)
-      ? (adoptedGraph?.binding ?? null)
-      : (persistedGraphBinding ?? adoptedGraph?.binding ?? null),
-    executionNormalizedNodes,
-    edges,
-    studioForm,
-    Boolean(templateSourceId && activeTemplateId === templateSourceId && !persistedGraphBinding),
-  );
+  const executionNormalizedNodes =
+    ordinaryTaskImport || ordinaryOperationGraph
+      ? nodes
+      : savedAttentionDefaultUpdate(persistedGraphBinding)
+        ? normalizedNodes
+        : normalizeManagedSnapshotExecutionPlan(
+            normalizedNodes,
+            studioForm,
+            persistedGraphBinding ?? adoptedGraph?.binding ?? null,
+          );
+  const studioGraphBinding = ordinaryTaskImport
+    ? null
+    : reconcileSnapshotGraphBinding(
+        isInferredRecoveryBinding(persistedGraphBinding)
+          ? (adoptedGraph?.binding ?? null)
+          : (persistedGraphBinding ?? adoptedGraph?.binding ?? null),
+        executionNormalizedNodes,
+        edges,
+        studioForm,
+        Boolean(
+          !ordinaryOperationGraph &&
+          templateSourceId &&
+          activeTemplateId === templateSourceId &&
+          !persistedGraphBinding,
+        ),
+      );
   return {
-    nodes: executionNormalizedNodes,
+    nodes: restoreManagedAttentionDefault(
+      executionNormalizedNodes,
+      edges,
+      studioGraphBinding,
+      studioForm.attentionBackend,
+    ),
     edges,
     viewport,
     studioForm,
@@ -686,7 +793,7 @@ function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot, workflowTabId: str
   flow.replaceGraph({
     nodes: retainedBlockNodes(cloneJson(snapshot.nodes) as typeof flow.nodes, workflowTabId),
     edges: cloneJson(snapshot.edges) as typeof flow.edges,
-    viewport: (cloneJson(snapshot.viewport) as typeof flow.viewport) ?? flow.viewport,
+    viewport: cloneJson(snapshot.viewport ?? flow.viewport) as typeof flow.viewport,
   });
   // Undo/redo belongs to the document whose graph produced it. A canvas
   // replacement must never leave another tab's snapshots armed.
@@ -708,9 +815,13 @@ function retainActiveBlockPreviews() {
 function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
   if (!state.activeWorkflowTabId) return state.workflowTabs;
   const snapshot = currentWorkflowSnapshot(state);
-  return state.workflowTabs.map((tab) =>
-    tab.id === state.activeWorkflowTabId ? { ...tab, snapshot, updatedAt: Date.now(), dirty: true } : tab,
-  );
+  return state.workflowTabs.map((tab) => {
+    if (tab.id !== state.activeWorkflowTabId) return tab;
+    const current = { ...tab, snapshot };
+    // Canvas subscriptions also checkpoint passive updates and tab navigation.
+    // An identical document keeps its saved state, including pending real edits.
+    return sameWorkflowDocument(tab, current) ? tab : { ...current, updatedAt: Date.now(), dirty: true };
+  });
 }
 
 function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
@@ -721,11 +832,16 @@ function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
 }
 
 const MAX_LOCAL_WORKFLOW_TABS = 12;
+// Leave room for the active canvas and unsaved edits in the same page storage.
+// This bounds only redundant inactive saved copies, never workflow size.
+const MAX_INACTIVE_BACKEND_TAB_BYTES = 2 * 1024 * 1024;
 
 /**
- * Workflow documents are backend-owned. localStorage is only a bounded crash
- * checkpoint for tabs currently in use; mirroring a large saved-workflow
- * library here can exceed the browser's per-origin quota.
+ * Saved workflow documents are backend-owned. Keep their browser checkpoint
+ * bounded by count and size, but retain the active, dirty and unacknowledged
+ * documents: their current edits may exist only in this browser. Omitted clean
+ * saved documents remain in My workflows, and acknowledged drafts remain in
+ * Recovery drafts. Only their redundant browser copies are omitted.
  */
 export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkflowTabId: string | null) {
   const ranked = [...tabs].sort((left, right) => {
@@ -735,7 +851,32 @@ export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkfl
     return right.updatedAt - left.updatedAt;
   });
   const retained = new Set(ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS));
-  return tabs.filter((tab) => retained.has(tab)).slice(0, MAX_LOCAL_WORKFLOW_TABS);
+  const retainedIds = new Set([...retained].map((tab) => tab.id));
+  for (const tab of ranked) {
+    if (tab.dirty && !retainedIds.has(tab.id)) {
+      retained.add(tab);
+      retainedIds.add(tab.id);
+    }
+  }
+  let inactiveSavedBytes = 0;
+  for (const tab of retained) {
+    if (
+      tab.id === activeWorkflowTabId ||
+      tab.dirty ||
+      !(typeof tab.backendRevision === 'number' && tab.backendRevision > 0)
+    )
+      continue;
+    try {
+      // Web Storage accounts for UTF-16 strings. Serialization failure must
+      // preserve the document and let the existing checkpoint warning explain it.
+      const bytes = JSON.stringify(tab).length * 2;
+      if (inactiveSavedBytes + bytes > MAX_INACTIVE_BACKEND_TAB_BYTES) retained.delete(tab);
+      else inactiveSavedBytes += bytes;
+    } catch {
+      /* Never discard a document whose recoverability could not be measured. */
+    }
+  }
+  return tabs.filter((tab) => retained.has(tab)).slice(0, Math.max(MAX_LOCAL_WORKFLOW_TABS, retained.size));
 }
 
 function normalizePersistedStudioState(
@@ -782,7 +923,7 @@ function normalizePersistedStudioState(
   // live values normally. A legacy canonical graph whose missing binding was
   // recovered during snapshot normalization is the exception: its actual
   // loader node is authoritative and can correct stale top-level model data.
-  const liveForm = resolveStudioResourceForm(coerceStudioFormState(mergedState.form));
+  const liveForm = coerceStudioFormState(mergedState.form);
   const activeBinding = activeSnapshot?.studioGraphBinding;
   const liveIdentityMatchesActiveDocument =
     !activeBinding || (liveForm.mode === activeBinding.mode && liveForm.modelType === activeBinding.modelType);
@@ -1499,21 +1640,6 @@ function isNonEmptyPreviewValue(value: unknown) {
 }
 
 const STUDIO_STORAGE_KEY = 'modiff.studio';
-migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
-
-const resilientStudioStorage = {
-  getItem: (name: string) => localStorage.getItem(name),
-  removeItem: (name: string) => localStorage.removeItem(name),
-  setItem: (name: string, value: string) => {
-    try {
-      localStorage.setItem(name, value);
-    } catch (error) {
-      // The full documents remain on the backend. A failed browser checkpoint
-      // must not break tab switching or a notification click.
-      console.warn('Could not update the local Studio checkpoint; backend workflows remain available.', error);
-    }
-  },
-};
 
 export type WorkflowOperationContext = {
   workflowTabId: string | null;
@@ -1581,7 +1707,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       selectMode: (mode) => {
         const current = get().form;
-        const nextForm = resolveStudioResourceForm(getFormDefaultsForMode(mode, current.modelType));
+        const nextForm = resolveStudioResourceForm(
+          normalizeAuthoredSpeechTimestamps(getFormDefaultsForMode(mode, current.modelType)),
+        );
         set({
           selectedMode: mode,
           activeTemplateId: null,
@@ -1636,6 +1764,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             lastError = `${STUDIO_MODEL_PROFILES[values.modelType].label} does not support ${values.mode ?? state.form.mode}; switched to ${fallbackMode.replace(/_/g, ' ')}.`;
           }
 
+          if (values.modelType !== undefined || values.mode !== undefined) {
+            form = normalizeAuthoredSpeechTimestamps(form);
+          }
           form = preservePinnedAutoFormValues(
             resolveStudioResourceForm(form),
             state.form,
@@ -1666,17 +1797,22 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const presetValues = getPreset(template.presetId)?.values || {};
         const lockedValues = getTemplateLockedSettings(template);
         set((state) => {
-          const form = resolveStudioResourceForm({
-            ...state.form,
-            ...defaults,
-            ...presetValues,
-            ...lockedValues,
-            ...inputDefaults,
-            mode: template.mode,
-            modelType: template.modelType,
-            prompt: template.prompt,
-            negativePrompt: template.negativePrompt ?? lockedValues.negativePrompt,
-          });
+          const form = resolveStudioResourceForm(
+            normalizeAuthoredSpeechTimestamps({
+              ...state.form,
+              ...defaults,
+              ...presetValues,
+              ...lockedValues,
+              attentionBackend: template.example?.lockedSettings?.attentionBackend,
+              // Missing legacy template storage means native, not the prior tab selection.
+              weightFormat: lockedValues.weightFormat,
+              ...inputDefaults,
+              mode: template.mode,
+              modelType: template.modelType,
+              prompt: template.prompt,
+              negativePrompt: template.negativePrompt ?? lockedValues.negativePrompt,
+            }),
+          );
           return {
             selectedMode: template.mode,
             activeTemplateId: template.id,
@@ -2371,6 +2507,12 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       restoreWorkflowFromOutput: (output) => {
         const restoredForm = coerceStudioFormState(output.formSnapshot);
+        // Coercion supplies a valid fallback even for legacy outputs without a
+        // saved form. Preserve that distinction until the new tab is normalized.
+        const hasSavedForm =
+          isRecord(output.formSnapshot) &&
+          output.formSnapshot.mode === restoredForm.mode &&
+          output.formSnapshot.modelType === restoredForm.modelType;
         const snapshot: WorkflowTabSnapshot = {
           nodes: output.graphSnapshot?.nodes ?? [],
           edges: output.graphSnapshot?.edges ?? [],
@@ -2383,10 +2525,11 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         };
 
         get().createWorkflowTab(
-          output.templateLabel || output.prompt.slice(0, 28) || 'Gallery workflow',
+          outputWorkflowTitle(output, get().workflowTabs.find((tab) => tab.id === output.workflowTabId)?.title),
           snapshot,
           'gallery',
           output.id,
+          hasSavedForm ? 'restore' : 'import',
         );
       },
 
@@ -2665,6 +2808,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const snapshot = currentWorkflowSnapshot(state);
         const id = nanoid();
         useFlowStore.getState().resetHistory();
+        markFreshWorkflowId(id);
         set({
           workflowTabs: [
             {
@@ -2685,17 +2829,27 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       },
 
       saveActiveWorkflowTab: (dirty = true) => {
-        set((state) => ({
-          workflowTabs: savedTabsWithActiveSnapshot(state).map((tab) =>
-            tab.id === state.activeWorkflowTabId ? { ...tab, dirty } : tab,
-          ),
-        }));
+        set((state) => {
+          // Fresh task controls mount so their actual bounds can be measured. Only the finalized draft is saved.
+          if (
+            state.canvasTransition?.type === 'task_graph_building' &&
+            state.canvasTransition.workflowTabId === state.activeWorkflowTabId
+          )
+            return state;
+          const workflowTabs = savedTabsWithActiveSnapshot(state).map((tab) =>
+            tab.id === state.activeWorkflowTabId && !dirty && tab.dirty ? { ...tab, dirty: false } : tab,
+          );
+          return workflowTabs.every((tab, index) => tab === state.workflowTabs[index]) ? state : { workflowTabs };
+        });
       },
 
-      createWorkflowTab: (title, snapshot, source = 'new', sourceLabel) => {
+      createWorkflowTab: (title, snapshot, source = 'new', sourceLabel, normalizationIntent) => {
         const id = nanoid();
         const state = get();
-        const nextSnapshot = normalizeWorkflowSnapshot(snapshot ?? blankWorkflowSnapshot());
+        // Save As, Duplicate and output Restore already carry an authored
+        // document. Creating their tab must not reinterpret its saved form.
+        const intent = normalizationIntent ?? (source === 'manual' || source === 'gallery' ? 'restore' : 'import');
+        const nextSnapshot = normalizeWorkflowSnapshot(snapshot ?? blankWorkflowSnapshot(), null, true, intent);
         const templateSourceId =
           source === 'template' && !snapshot ? (coerceStudioTemplateId(sourceLabel) ?? null) : null;
         if (templateSourceId) {
@@ -2716,6 +2870,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           snapshot: cloneJson(nextSnapshot),
         };
         applyWorkflowSnapshot(nextSnapshot, id);
+        markFreshWorkflowId(id);
         set({
           workflowTabs: [...savedTabs, tab],
           activeWorkflowTabId: id,
@@ -2777,6 +2932,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       closeWorkflowTab: (id) => {
         const state = get();
         if (!state.workflowTabs.some((tab) => tab.id === id)) return;
+        forgetFreshWorkflowId(id);
         if (id !== state.activeWorkflowTabId) {
           // Closing a background view must not checkpoint, rehydrate, clear
           // errors, or reset the active document's pending graph work/history.
@@ -2788,6 +2944,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           const snapshot = normalizeWorkflowSnapshot(blankWorkflowSnapshot());
           const newId = nanoid();
           applyWorkflowSnapshot(snapshot, newId);
+          markFreshWorkflowId(newId);
           set({
             workflowTabs: [
               {
@@ -2913,9 +3070,20 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           });
           return;
         }
+        const cleanHydrationBaseline = Boolean(
+          !options.acknowledgement &&
+          options.hydrationBaseline &&
+          existing &&
+          localDocument &&
+          state.activeWorkflowTabId === normalized.id &&
+          state.workflowCanvasEpoch === options.hydrationBaseline.canvasEpoch &&
+          existing.backendRevision === options.hydrationBaseline.tab.backendRevision &&
+          matchesCleanWorkflowHydrationBaseline(localDocument, options.hydrationBaseline),
+        );
         const hasUnsavedLocalDocument = Boolean(
           existing &&
           localDocument &&
+          !cleanHydrationBaseline &&
           (options.acknowledgement || existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
           !sameWorkflowDocument(localDocument, normalized),
         );
@@ -3146,7 +3314,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     }),
     {
       name: STUDIO_STORAGE_KEY,
-      storage: createJSONStorage(() => resilientStudioStorage),
+      storage: createJSONStorage(() => createPageCheckpointStorage('studio')),
       partialize: (state) => ({
         selectedMode: state.selectedMode,
         form: state.form,

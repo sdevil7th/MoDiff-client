@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,12 +54,26 @@ function hash(namespace, value) {
 }
 
 const contract = readJson(CONTRACT_PATH);
+// A retained hash cannot attest that today's templates/source still match it.
+// Reuse the existing read-only verifier; never regenerate the contract here.
+const contractVerification = spawnSync(process.execPath, [join(SCRIPT_DIR, 'release-contract.mjs'), '--check'], {
+  cwd: CLIENT_ROOT,
+  env: { ...process.env, MODIFF_BACKEND_DIR: BACKEND_ROOT },
+  encoding: 'utf8',
+  timeout: 120_000,
+  maxBuffer: 1024 * 1024,
+});
+const releaseContractCurrent =
+  contractVerification.status === 0 && !contractVerification.error && !contractVerification.signal;
 const hardwareQualification = existsSync(HARDWARE_QUALIFICATION_PATH)
   ? readJson(HARDWARE_QUALIFICATION_PATH)
   : { receipts: [] };
-const resourceQualification = existsSync(RESOURCE_QUALIFICATION_PATH)
+const savedResourceQualification = existsSync(RESOURCE_QUALIFICATION_PATH)
   ? readJson(RESOURCE_QUALIFICATION_PATH)
-  : { status: 'missing', coverage: { required: 0, qualified: 0, missing: 0 } };
+  : null;
+const resourceQualificationStale =
+  savedResourceQualification !== null && savedResourceQualification.releaseContractHash !== contract.contractHash;
+const resourceQualification = resourceQualificationStale ? null : savedResourceQualification;
 const packageSet = Object.values(contract.packageSets ?? {})[0] ?? {};
 const incompleteTemplates = contract.templates
   .filter((template) => !template.releaseEligible)
@@ -66,9 +81,48 @@ const incompleteTemplates = contract.templates
     id: template.id,
     missing: template.missingReleaseEvidence,
   }));
-const incompleteWorkflows = contract.workflows
+const incompleteWorkflowEvidence = contract.workflows
   .filter((workflow) => !workflow.releaseEligible)
-  .map((workflow) => workflow.id);
+  .map((workflow) => ({
+    id: workflow.id,
+    executionStatus:
+      workflow.canonicalExecutionEvidence?.status ??
+      (workflow.lastSuccessfulRealRun ? 'retained_template_execution' : 'missing'),
+    missing: workflow.missingReleaseEvidence ?? [],
+    ...(workflow.reviewedRetainedTemplate
+      ? {
+          reviewedRetainedTemplate: {
+            templateId: workflow.reviewedRetainedTemplate.templateId,
+            associationHash: workflow.reviewedRetainedTemplate.associationHash,
+            qualificationScope: workflow.reviewedRetainedTemplate.qualificationScope,
+          },
+        }
+      : {}),
+  }));
+const incompleteWorkflows = incompleteWorkflowEvidence.map(({ id }) => id);
+const standaloneExecutionScopes = new Map([
+  ['verified_execution_only', 'exactModelWorkflows'],
+  ['verified_input_bound_model_variant', 'boundVariants'],
+  ['verified_prompt_bound_model_variant', 'boundVariants'],
+  ['verified_deterministic_execution', 'deterministicWorkflows'],
+  ['verified_deterministic_media_execution', 'deterministicWorkflows'],
+]);
+const standaloneExecution = {
+  verified: 0,
+  exactModelWorkflows: 0,
+  boundVariants: 0,
+  deterministicWorkflows: 0,
+  alreadyReleaseEligible: 0,
+  awaitingReleaseEligibility: 0,
+};
+for (const workflow of contract.workflows) {
+  const scope = standaloneExecutionScopes.get(workflow.canonicalExecutionEvidence?.status);
+  if (!scope || !workflow.lastSuccessfulRealRun) continue;
+  standaloneExecution[scope] += 1;
+  standaloneExecution.verified += 1;
+  if (workflow.releaseEligible) standaloneExecution.alreadyReleaseEligible += 1;
+  else standaloneExecution.awaitingReleaseEligibility += 1;
+}
 const missingFieldCounts = {};
 for (const template of contract.templates) {
   for (const field of template.qualificationReceiptMissingFields ?? []) {
@@ -89,16 +143,25 @@ const {
 } = hardwareCoverage;
 
 const gates = {
-  releaseContractCurrent: true,
+  releaseContractCurrent,
   templatesEligible: incompleteTemplates.length === 0,
   workflowsEligible: incompleteWorkflows.length === 0,
   qualificationReceiptsComplete:
     contract.coverage?.completeQualificationReceiptCount === contract.coverage?.templateCount,
-  resourceRecipesQualified: resourceQualification.status === 'complete',
+  resourceRecipesQualified: resourceQualification?.status === 'complete',
   supportedProfileDeclared: hardwareCoverage.hasSupportedProfile,
   supportedProfilesPhysicallyQualified: hardwareCoverage.allSupportedProfilesQualified,
 };
 const blockers = [
+  ...(gates.releaseContractCurrent
+    ? []
+    : [
+        {
+          id: 'release-contract-not-current',
+          message:
+            'The retained release contract did not pass current-source verification. Run npm run release:contract:verify; preserve and diagnose stale or unavailable evidence before regenerating.',
+        },
+      ]),
   ...(gates.templatesEligible
     ? []
     : [
@@ -133,9 +196,11 @@ const blockers = [
     ? []
     : [
         {
-          id: 'resource-recipes-incomplete',
-          count: resourceQualification.coverage?.missing ?? null,
-          message: 'Every advertised model-family resource recipe requires a measured real-weight run.',
+          id: resourceQualificationStale ? 'resource-report-not-current' : 'resource-recipes-incomplete',
+          count: resourceQualification?.coverage?.missing ?? null,
+          message: resourceQualificationStale
+            ? 'The saved resource report belongs to a different release contract. Run npm run release:resources:generate.'
+            : 'Every advertised model-family resource recipe requires a measured real-weight run.',
         },
       ]),
   ...(gates.supportedProfileDeclared
@@ -172,13 +237,17 @@ const body = {
     completeQualificationReceipts: contract.coverage?.completeQualificationReceiptCount ?? 0,
     workflows: contract.coverage?.workflowCount ?? 0,
     eligibleWorkflows: contract.coverage?.releaseEligibleWorkflowCount ?? 0,
-    resourceRecipes: resourceQualification.coverage,
-    releaseEligibleResourceRecipes: resourceQualification.coverage?.byReleaseLane?.releaseEligible ?? null,
-    deferredResourceRecipes: resourceQualification.coverage?.byReleaseLane?.deferred ?? null,
+    previewFreeResearchWorkflows: contract.coverage?.previewFreeResearchWorkflowCount ?? 0,
+    privateQualifiedWorkflows: contract.coverage?.privateQualifiedWorkflowCount ?? 0,
+    standaloneExecution,
+    resourceRecipes: resourceQualification?.coverage ?? null,
+    releaseEligibleResourceRecipes: resourceQualification?.coverage?.byReleaseLane?.releaseEligible ?? null,
+    deferredResourceRecipes: resourceQualification?.coverage?.byReleaseLane?.deferred ?? null,
   },
   receiptMissingFieldCounts: missingFieldCounts,
   incompleteTemplates,
   incompleteWorkflows,
+  incompleteWorkflowEvidence,
   advertisedSupportedProfiles,
   physicallyQualifiedProfiles,
   physicallyObservedProfiles,

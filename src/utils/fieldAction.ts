@@ -14,6 +14,12 @@ import config from '../../app.config';
 import { beginManagedGraphSchemaMutation, finishManagedGraphSchemaMutation } from './managedGraphSchemaMutation';
 import { formatRequestError, requestJson, RequestError } from './requestJson';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import {
+  visualStageFieldSource,
+  visualStageFieldSources,
+  visualStageRuntimeNode,
+} from '../studio/visualStageFieldActions';
+import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { collapsedUserBlockFieldSource } from '../studio/userBlocks';
 
 type FieldActionDescriptor = {
@@ -88,8 +94,20 @@ function fieldTypeForParam(param: NodeParams) {
 
 /** Build the generic field-action adapter for any node in the visible graph. */
 export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldProps | null {
-  const node = useFlowStore.getState().nodes.find((candidate) => candidate.id === nodeId);
-  const param = nodeConnectorParam(node, fieldKey);
+  const nodes = useFlowStore.getState().nodes;
+  const runtime = visualStageRuntimeNode(nodes, nodeId);
+  const node = runtime
+    ? blockOperationGraphV2(runtime.instance).nodes.find((candidate) => candidate.id === nodeId)
+    : nodes.find((candidate) => candidate.id === nodeId);
+  const param =
+    nodeConnectorParam(node, fieldKey) ??
+    (node &&
+      visualStageFieldSource(nodes, {
+        nodeId,
+        fieldKey,
+        module: node.data.module,
+        action: node.data.action,
+      })?.param);
   if (!node || !param) return null;
 
   const display = param.isInput ? 'input' : param.display || '';
@@ -124,13 +142,16 @@ export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldPr
 }
 
 /** Resolve the live field owner without accepting a stale or unrelated control. */
-export function fieldActionSource(props: Pick<FieldProps, 'nodeId' | 'fieldKey' | 'module' | 'action'>) {
-  const nodes = useFlowStore.getState().nodes;
+export function fieldActionSource(
+  props: Pick<FieldProps, 'nodeId' | 'fieldKey' | 'module' | 'action'>,
+  nodes = useFlowStore.getState().nodes,
+) {
   const direct = nodes.find((candidate) => candidate.id === props.nodeId);
   const directMatches = direct?.data.module === props.module && direct.data.action === props.action;
   const source =
+    visualStageFieldSource(nodes, props) ??
     collapsedUserBlockFieldSource(nodes, props.nodeId, props.fieldKey) ??
-    (directMatches
+    (directMatches && !direct.data.blockInstanceV2
       ? { node: direct, fieldKey: props.fieldKey, param: nodeConnectorParam(direct, props.fieldKey) }
       : null);
   return source?.param &&
@@ -172,7 +193,16 @@ export default async function fieldAction(
   const workflowContext = props.workflowContext ?? captureWorkflowOperationContext();
   const isCurrent = () => workflowOperationContextIsCurrent(workflowContext, { includeForm: false });
   if (!isCurrent()) return;
-  const updateStore = props.updateFieldActionStore ?? props.updateStore;
+  let updateStore = props.updateFieldActionStore ?? props.updateStore;
+  if (event === 'onSignal' && !props.updateFieldActionStore) {
+    const owner = fieldActionSource(props)?.node;
+    if (owner?.id === props.nodeId && !owner.data.blockProjectionOwnerId && !owner.data.huggingFaceClusterRole) {
+      // A received wire signal refreshes the consumer contract, including on
+      // Undo or reload. Recording that refresh as an edit clears Redo and
+      // prevents Undo from reaching the original model selection.
+      updateStore = (field, next, property) => useFlowStore.getState().setParam(owner.id, field, next, property);
+    }
+  }
   props = {
     ...props,
     workflowContext,
@@ -180,6 +210,46 @@ export default async function fieldAction(
       if (isCurrent()) updateStore(...args);
     },
   };
+  const stageSources = visualStageFieldSources(useFlowStore.getState().nodes, props);
+  if (stageSources && stageSources.length > 1) {
+    await Promise.all(
+      stageSources.map(({ node, fieldKey, param }) =>
+        fieldAction(
+          {
+            ...props,
+            nodeId: node.id,
+            module: node.data.module,
+            action: node.data.action,
+            fieldKey,
+            onChange: param.onChange,
+            onSignal: param.onSignal,
+          },
+          value,
+          event,
+          options,
+        ),
+      ),
+    );
+    return;
+  }
+  const stageSource = stageSources?.[0];
+  if (stageSource) {
+    const { node, fieldKey, param } = stageSource;
+    const registered =
+      useNodesStore.getState().nodesRegistry[`${node.data.module}.${node.data.action}`]?.params[fieldKey];
+    props = {
+      ...props,
+      nodeId: node.id,
+      module: node.data.module,
+      action: node.data.action,
+      fieldKey,
+      onChange: props.onChange ?? param.onChange ?? registered?.onChange,
+      onSignal: props.onSignal ?? param.onSignal ?? registered?.onSignal,
+      updateStore: (...args) => {
+        if (isCurrent()) useFlowStore.getState().setParam(node.id, ...args);
+      },
+    };
+  }
   const onEvent = event === 'onChange' ? props.onChange : event === 'onSignal' ? props.onSignal : null;
   if (!onEvent) {
     return;

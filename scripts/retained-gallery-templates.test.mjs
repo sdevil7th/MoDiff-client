@@ -1,0 +1,823 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { after, before, test } from 'node:test';
+import { join, resolve } from 'node:path';
+import { createServer } from 'vite';
+import retainedGalleryAuthoringArchives from '../config/retained-gallery-authoring-archives.v1.json' with { type: 'json' };
+import { canonicalJsonHash } from './canonical-json.mjs';
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { readCanonicalEvidenceFile } from './release-contract-core.mjs';
+import { selectCanonicalWorkflowSources } from './workflow-library-manifest-state.mjs';
+
+const client = resolve(import.meta.dirname, '..');
+const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(client, '../MoDiff'));
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+let server, recipes, fixture, studio, flow, nodeStore, graphBridge, published, exactness, approvedBatchIds;
+
+before(async () => {
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
+  };
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:5191' },
+    localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.localStorage,
+    dispatchEvent: () => true,
+    setTimeout: globalThis.setTimeout,
+  };
+  server = await createServer({
+    root: client,
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, hmr: false, watch: null },
+    appType: 'custom',
+  });
+  ({ RETAINED_GALLERY_TEMPLATES: recipes } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts'));
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
+  approvedBatchIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
+  ({ STUDIO_TEMPLATES: published } = await server.ssrLoadModule('/src/studio/templates.ts'));
+  exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
+  ({ useStudioStore: studio } = await server.ssrLoadModule('/src/stores/useStudioStore.ts'));
+  ({ useFlowStore: flow } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
+  ({ useNodesStore: nodeStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts'));
+  graphBridge = await server.ssrLoadModule('/src/studio/graphBridge.ts');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = join(client, 'scripts/template-operation-fixtures.py');
+  const args = [script, '--mock-cuda'];
+  fixture = JSON.parse(
+    execFileSync(
+      process.platform === 'win32' ? python : join(backend, 'scripts/with-runtime-env.sh'),
+      process.platform === 'win32' ? args : [python, ...args],
+      {
+        cwd: backend,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        env: { ...process.env, MODIFF_BACKEND_DIR: backend },
+        input: JSON.stringify(
+          recipes.map(({ template: { id, modelType, mode, executionSelection } }) => ({
+            id,
+            studioSpecOnly: !executionSelection,
+            selection: executionSelection ?? { bindingSpec: { modelType, mode } },
+          })),
+        ),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    ),
+  );
+});
+
+after(async () => {
+  await server?.close();
+});
+
+const authorsAudioFixture = 'review-source-audio.wav';
+
+function retainedTemplateGraph(recipe, sourceValue = recipe.inputFileName ?? authorsAudioFixture) {
+  const manifest = JSON.parse(readFileSync(join(backend, 'data/workflow-library-manifest.json'), 'utf8'));
+  const { template } = recipe;
+  const row = manifest.workflows.find((item) => item.id === recipe.workflowId);
+  assert.equal(row.sourceTemplateId, recipe.sourceTaskTemplateId);
+  assert.equal(row.modelType, template.modelType);
+  assert.equal(row.mode, template.mode);
+
+  const graph = JSON.parse(readFileSync(join(backend, 'data/graphs', row.graphPath), 'utf8'));
+  const api = flow.getState().exportGraph('retained-template-check', undefined, {
+    sourceGraph: graph,
+    randomizeSeeds: false,
+  });
+  const nodes = Object.values(api.nodes);
+  if (recipe.inputSha256) {
+    const [binding] = template.inputBindings;
+    const audio = binding.mediaType === 'audio';
+    assert.equal(binding.origin, 'user');
+    assert.match(recipe.inputSha256, /^[a-f0-9]{64}$/u);
+    const source = nodes.find(
+      (node) => node.module === (audio ? 'modules.Audio' : 'modules.Image') && node.action === 'Load',
+    );
+    assert.deepEqual(source.params.file.value, audio ? '' : []);
+    source.params.file.value = [sourceValue];
+  }
+  if (recipe.promptSha256) {
+    assert.equal(recipe.promptSha256, sha256(template.prompt));
+    const promptNode = nodes.find((node) => node.action === (template.mode === 'edit_image' ? 'Edit' : 'GenerateText'));
+    assert.equal(promptNode.params.prompt.value, '');
+    promptNode.params.prompt.value = template.prompt;
+    if (template.modelType === 'SanaSprintPipeline' && template.mode === 'edit_image') {
+      assert.equal(promptNode.params.strength.value, 0.5);
+      assert.equal(template.example.lockedSettings.strength, 0.75);
+      promptNode.params.strength.value = template.example.lockedSettings.strength;
+    }
+  }
+  return canonicalGraphIdentity(api);
+}
+
+test('retained Gallery recipes preserve the native graph identities and standalone skeletons', () => {
+  const skeletons = recipes.map(({ sourceTaskTemplateId, template }) => ({
+    id: sourceTaskTemplateId,
+    modelType: template.modelType,
+    mode: template.mode,
+  }));
+  const sources = selectCanonicalWorkflowSources(
+    published,
+    skeletons,
+    new Set(recipes.map(({ template }) => template.id)),
+  );
+  for (const recipe of recipes) {
+    const { template, reviewedCatalogLock } = recipe;
+    const settings = exactness.getTemplateLockedSettings(template);
+    assert.equal(published.filter((item) => item.id === template.id).length, 1);
+    assert.equal(
+      published.find((item) => item.id === template.id),
+      template,
+    );
+    assert.equal(canonicalJsonHash({ template, settings }), recipe.reviewedTemplateSha256);
+    assert.equal(exactness.getTemplateLockHash(template), reviewedCatalogLock.templateLockHash);
+    assert.equal(
+      exactness.getTemplateLockHash(template, `${template.modelArtifact.value}@${template.modelArtifact.revision}`),
+      reviewedCatalogLock.galleryTemplateLockHash,
+    );
+    assert.equal(exactness.getPromptSettingsHash(settings), reviewedCatalogLock.promptSettingsHash);
+    if (recipe.inputSha256) assert.equal(exactness.getTemplateInputContractHash(template), undefined);
+    const source = sources.get(`${template.modelType}|${template.mode}`);
+    const authored = published.find(({ id }) => id === recipe.sourceTaskTemplateId);
+    const task = skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId);
+    assert.equal(source.id, recipe.sourceTaskTemplateId, recipe.workflowId);
+    assert.deepEqual(source, authored ?? { ...task, taskContract: true });
+    if (approvedBatchIds.has(template.id)) {
+      const authoringArchive = retainedGalleryAuthoringArchives[recipe.workflowId];
+      assert.equal(authoringArchive.descriptorSha256, recipe.originalReceiptSha256);
+      assert.ok(authoringArchive.bytes > 0);
+      assert.match(authoringArchive.sha256, /^[a-f0-9]{64}$/u);
+      const evidenceRoot = join(
+        backend,
+        'data/qualification/release/canonical-workflow-evidence',
+        recipe.originalReceiptSha256,
+      );
+      const evidenceFile = join(evidenceRoot, 'evidence.json');
+      if (recipe.promptSha256 !== undefined) assert.equal(sha256(template.prompt), recipe.promptSha256);
+      if (existsSync(evidenceFile)) {
+        const originalAuthoring = readCanonicalEvidenceFile(evidenceRoot, {
+          path: 'authoring-spec.original.json',
+          bytes: authoringArchive.bytes,
+          sha256: authoringArchive.sha256,
+        });
+        assert.equal(JSON.parse(originalAuthoring.bytes).canonicalWorkflowId, recipe.workflowId);
+        const bytes = readFileSync(evidenceFile);
+        assert.equal(sha256(bytes), recipe.originalReceiptSha256);
+        const descriptor = JSON.parse(bytes);
+        const capture = descriptor.capture
+          ? JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.capture).bytes)
+          : descriptor;
+        if (descriptor.format === 'modiff.private.saved-vace-composite.v1') {
+          const run = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.run).bytes);
+          assert.equal(run.task.status, 'completed');
+          assert.equal(canonicalGraphIdentity(run.outputs[0].apiGraphSnapshot).hash, recipe.retainedGraphHash);
+          assert.deepEqual(
+            [descriptor.sourceVideo.sha256, descriptor.maskVideo.sha256, descriptor.referenceImage.sha256],
+            [recipe.inputSha256, recipe.maskSha256, recipe.referenceImageSha256],
+          );
+          continue;
+        }
+        const saved = JSON.parse(
+          readCanonicalEvidenceFile(evidenceRoot, capture.creatorPackage ?? capture.creator).bytes,
+        );
+        const api = flow.getState().exportGraph('retained-batch-check', undefined, {
+          sourceGraph: saved.graph,
+          randomizeSeeds: false,
+        });
+        assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
+        assert.deepEqual(
+          Object.values(
+            capture.inputs ?? (capture.input || capture.source ? [capture.input ?? { file: capture.source }] : []),
+          )
+            .map(({ file }) => file.sha256)
+            .sort(),
+          [
+            ...new Set([
+              recipe.inputSha256,
+              recipe.maskSha256,
+              recipe.guideSha256,
+              recipe.lastFrameSha256,
+              recipe.secondaryReferenceSha256,
+              recipe.referenceImageSha256,
+              ...Object.values(recipe.videoConditionerHashes ?? {}),
+            ]),
+          ]
+            .filter(Boolean)
+            .sort(),
+        );
+      }
+    } else if (recipe.inputLocatorSha256) {
+      const evidenceRoot = join(
+        backend,
+        'data/qualification/release/canonical-workflow-evidence',
+        recipe.originalReceiptSha256,
+      );
+      const evidenceFile = join(evidenceRoot, 'evidence.json');
+      assert.match(recipe.inputLocatorSha256, /^[a-f0-9]{64}$/u);
+      assert.equal(recipe.inputFileName, undefined);
+      // Repository CI has no private source. The browser-form checks below
+      // can use a synthetic picker string without exposing the real locator.
+      if (existsSync(evidenceFile)) {
+        const bytes = readFileSync(evidenceFile);
+        assert.equal(sha256(bytes), recipe.originalReceiptSha256);
+        const { capture } = JSON.parse(bytes);
+        const { inputs } = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, capture).bytes);
+        assert.equal(inputs.length, 1);
+        assert.equal(sha256(inputs[0].sourceValue), recipe.inputLocatorSha256);
+        assert.equal(retainedTemplateGraph(recipe, inputs[0].sourceValue).hash, recipe.retainedGraphHash, template.id);
+      }
+    } else {
+      assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
+    }
+  }
+  const pag = published.find((item) => item.id === 'pixart_sigma_pag_pink_mascot');
+  assert.equal(pag.modelType, 'PixArtSigmaPAGPipeline');
+  assert.equal(pag.prompt, '');
+  assert.equal(pag.example.lockedSettings.pagScale, 4);
+  assert.deepEqual(
+    published.filter((item) => item.modelType === 'ShapEPipeline').map(({ id }) => id),
+    ['shap_e_traffic_cone_turntable'],
+  );
+});
+
+test('fresh Expert recipes prepare with current backend specs and without a generation request', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWebSocket = globalThis.WebSocket;
+  const previousStudio = studio.getState();
+  const previousFlow = flow.getState();
+  const previousNodes = nodeStore.getState();
+  let contract;
+  let audioContract;
+  let videoContract;
+  const fieldActions = [];
+  try {
+    globalThis.WebSocket = undefined;
+    globalThis.fetch = async (request, options) => {
+      assert.ok(
+        String(request).endsWith('/fields/action'),
+        'Only metadata actions belong in the offline authoring test.',
+      );
+      const payload = JSON.parse(options.body);
+      fieldActions.push(payload.fn);
+      if (payload.module === 'modules.DiffusersAudio') {
+        assert.equal(payload.fn, 'update_audio_contract');
+        assert.ok(audioContract);
+        if (payload.action === 'LoadPipeline') {
+          assert.equal(payload.values.pipeline_class, audioContract.pipelineClass);
+          assert.equal(payload.values.mode, audioContract.mode);
+          flow
+            .getState()
+            .setParam(
+              payload.node,
+              'pipeline',
+              { direction: 'output', origin: 'audio_contract', value: audioContract },
+              'signal',
+            );
+        } else {
+          assert.equal(payload.action, 'Generate');
+          if (payload.values.audio_contract !== audioContract.pipelineClass) {
+            assert.deepEqual(payload.values.audio_contract, audioContract);
+          }
+        }
+        return Response.json({ error: false, nodes: [] });
+      }
+      if (payload.module === 'modules.DiffusersVideo') {
+        assert.ok(videoContract);
+        if (payload.action === 'LoadPipeline') {
+          assert.equal(payload.fn, 'select_adapter');
+          assert.equal(payload.values.pipeline_class, videoContract.pipelineClass);
+          flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: videoContract }, 'signal');
+        } else {
+          assert.ok(['Generate', 'GenerateVideoAudio'].includes(payload.action));
+          assert.equal(payload.fn, 'update_adapter_modes');
+          assert.deepEqual(payload.values.video_contract, videoContract);
+        }
+        return Response.json({ error: false, nodes: [] });
+      }
+      assert.equal(payload.module, 'modules.DiffusersImage');
+      assert.ok(contract);
+      if (payload.fn === 'update_pipeline_contract') {
+        assert.equal(payload.action, 'LoadPipeline');
+        assert.equal(payload.values.pipeline_class, contract.pipelineClass);
+        assert.equal(payload.values.mode, contract.mode);
+        flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: contract }, 'signal');
+      } else {
+        assert.equal(payload.fn, 'update_image_contract');
+        assert.ok(
+          [
+            'PredictMap',
+            'Edit',
+            'Generate',
+            'Inpaint',
+            'ControlGenerate',
+            'ControlEdit',
+            'ControlInpaint',
+            'LayerDecompose',
+            'UnconditionalGenerate',
+          ].includes(payload.action),
+        );
+        assert.deepEqual(payload.values.image_contract, contract);
+      }
+      return Response.json({ error: false, nodes: [] });
+    };
+    nodeStore.setState({
+      nodesRegistry: fixture.registry,
+      studioModelCapabilities: fixture.capabilities,
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const recipe of recipes) {
+      const { template } = recipe;
+      // FLF metadata changes the runtime ports. Exercise that transition with
+      // the real backend in the retained first/last-frame browser test.
+      if (recipe.lastFrameSha256) continue;
+      const row = fixture.recipes.find((item) => item.id === template.id);
+      if (template.workflowBlockSettings?.videoMaskedComposite) {
+        const { createTemplateOperationGraph } = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
+        const { parseOperationStarter } = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+        const { parseOperationContracts } = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+        assert.ok(template.executionSelection, 'The composite requires its declared normal template graph.');
+        studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+        studio.getState().applyTemplate(template, {
+          sourceVideo: 'review-source-video.mp4',
+          maskVideo: 'review-mask-video.mp4',
+          referenceImages: ['review-reference-image.png'],
+        });
+        const form = studio.getState().form;
+        const selection = template.executionSelection;
+        const starter = parseOperationStarter(
+          row.starter,
+          selection.pipelineClass,
+          selection.task,
+          parseOperationContracts(fixture.publicPayload.operationContracts, 3),
+          selection,
+        );
+        const capability = fixture.capabilities.find(({ modelType }) => modelType === selection.bindingSpec.modelType);
+        assert.ok(capability);
+        const graph = createTemplateOperationGraph(template, form, starter, fixture.registry, row.spec, capability);
+        const api = flow.getState().exportGraph('retained-video-composite', undefined, {
+          sourceGraph: graph,
+          randomizeSeeds: false,
+        });
+        const actions = Object.entries(api.nodes);
+        const [compositeId, compose] = actions.find(([, node]) => node.action === 'MaskedComposite');
+        const [alignedId, aligned] = actions.find(([, node]) => node.action === 'AlignMask');
+        const [upscaleId, upscale] = actions.find(([, node]) => node.action === 'Upscaler');
+        const [encoderId, encoder] = actions.find(([, node]) => node.action === 'EncodeInputs');
+        const [generatedId, generated] = actions.find(
+          ([, node]) => node.module === 'modules.DiffusersVideo' && node.action === 'Generate',
+        );
+        const output = actions.find(([, node]) => node.module === 'modules.Video' && node.action === 'Export')[1];
+        const settings = template.workflowBlockSettings.videoMaskedComposite;
+        assert.equal(api.nodes[compose.params.source.sourceId].params.file.value, 'review-source-video.mp4');
+        assert.equal(api.nodes[aligned.params.mask.sourceId].params.file.value, 'review-mask-video.mp4');
+        assert.deepEqual(api.nodes[encoder.params.reference_images.sourceId].params.file.value, [
+          'review-reference-image.png',
+        ]);
+        assert.equal(encoder.params.mask.sourceId, alignedId);
+        assert.equal(generated.params.encoded_inputs.sourceId, encoderId);
+        assert.equal(upscale.params.image.sourceId, generatedId);
+        assert.equal(compose.params.generated.sourceId, upscaleId);
+        assert.equal(compose.params.mask.sourceId, alignedId);
+        assert.equal(compose.params.feather.value, settings.feather);
+        assert.equal(aligned.params.grow_pixels.value, settings.maskGrowPixels);
+        assert.equal(output.params.video.sourceId, compositeId);
+        continue;
+      }
+      const { spec, imageContract, audioContract: nextAudioContract, videoContract: nextVideoContract } = row;
+      contract = imageContract;
+      audioContract = nextAudioContract;
+      videoContract = nextVideoContract;
+      const inputBinding = template.inputBindings?.[0];
+      const audio = inputBinding?.mediaType === 'audio';
+      const sourceVideo = template.inputBindings?.some(({ field }) => field === 'sourceVideo');
+      const controlVideo = template.inputBindings?.some(({ field }) => field === 'controlVideo');
+      const guide = template.inputBindings?.some(({ field }) => field === 'controlImage')
+        ? 'review-control-image.png'
+        : undefined;
+      const input =
+        recipe.inputSha256 && ['referenceImages', 'sourceAudio'].includes(inputBinding?.field)
+          ? [
+              recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png'),
+              ...(recipe.secondaryReferenceSha256 ? ['review-second-reference.png'] : []),
+            ]
+          : [];
+      const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
+      const motionInputRoles = [
+        ['face', 'faceVideo', 'loadFaceVideo', 'face_video'],
+        ['pose', 'poseVideo', 'loadPoseVideo', 'pose_video'],
+        ['background', 'backgroundVideo', 'loadBackgroundVideo', 'background_video'],
+        ['mask', 'maskVideo', 'loadMaskVideo', 'mask'],
+      ].filter(([role]) => recipe.videoConditionerHashes?.[role]);
+      const motionInputs = Object.fromEntries(
+        motionInputRoles.map(([role, field]) => [field, 'review-' + role + '.mp4']),
+      );
+      const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+      studio.getState().applyTemplate(
+        template,
+        audio
+          ? { sourceAudio: input[0] }
+          : {
+              referenceImages: input,
+              ...(mask && { maskImage: mask }),
+              ...(guide && { controlImage: guide }),
+              ...(sourceVideo && { sourceVideo: 'review-source-video.mp4' }),
+              ...(controlVideo && { controlVideo: 'review-control-video.mp4' }),
+              ...motionInputs,
+            },
+      );
+      const form = studio.getState().form;
+      assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
+      assert.equal(form.resourceMode, template.example.lockedSettings.resourceMode ?? 'expert');
+      assert.equal(form.randomSeed, false);
+      await graphBridge.createOrUpdateStudioGraph(form, undefined, 3000).catch((error) => {
+        assert.fail(
+          `${template.id}: ${error.message}: ${JSON.stringify({
+            finalization: studio.getState().graphFinalization,
+            nodes: flow.getState().nodes.map((node) => [node.data.studioRole, node.data.action]),
+            edges: flow.getState().edges.map(({ sourceHandle, targetHandle }) => [sourceHandle, targetHandle]),
+          })}`,
+        );
+      });
+      if (template.workflowBlockSettings?.videoPromptWindows) {
+        const { applyTemplateVideoPromptWindows } = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+        applyTemplateVideoPromptWindows(template);
+      }
+      const binding = studio.getState().graphBinding;
+      assert.equal(binding.executionSpec.contentHash, spec.contentHash);
+      assert.equal(studio.getState().activeWorkflowTabId, tabId);
+      const api = flow.getState().exportGraph('retained-template-check', undefined, { randomizeSeeds: false });
+      const attentionBackend = template.example.lockedSettings.attentionBackend;
+      assert.equal(form.attentionBackend, attentionBackend, template.id);
+      if (attentionBackend !== undefined) {
+        const recipe = Object.values(api.nodes).find(({ action }) => action === 'DiffusersExecutionRecipe');
+        assert.equal(recipe?.params.attention_backend.value, attentionBackend, template.id);
+      }
+      if (template.modelType === 'SpandrelImageUpscale') {
+        const source = api.nodes[binding.nodes.loadImage].params;
+        const upscaler = api.nodes[binding.nodes.imageUpscaler].params;
+        const preview = api.nodes[binding.nodes.preview].params;
+        assert.deepEqual(source.file.value, input);
+        assert.equal(source.alpha_channel.value, 'ignore');
+        const { value, ...artifact } = template.modelArtifact;
+        assert.deepEqual(upscaler.model_id.value, { ...artifact, value: `${value}/RealESRGAN_x2plus.pth` });
+        assert.equal(upscaler.tile_size.value, 256);
+        assert.equal(upscaler.tile_overlap.value, 32);
+        assert.equal(upscaler.downscale.value, 1);
+        assert.equal(upscaler.device.value, 'cuda:0');
+        assert.equal(upscaler.image.sourceId, binding.nodes.loadImage);
+        assert.equal(upscaler.image.sourceKey, 'image');
+        assert.equal(preview.image.sourceId, binding.nodes.imageUpscaler);
+        assert.equal(preview.image.sourceKey, 'output');
+        const comparable = structuredClone(api);
+        comparable.nodes[binding.nodes.loadImage].params.file.value = [recipe.inputFileName];
+        assert.deepEqual(canonicalGraphIdentity(comparable), retainedTemplateGraph(recipe));
+        continue;
+      }
+      if (template.modelType === 'SpandrelVideoUpscale') {
+        const upscaler = api.nodes[binding.nodes.videoUpscaler].params;
+        const { value, ...artifact } = template.modelArtifact;
+        assert.deepEqual(upscaler.model_id.value, { ...artifact, value: `${value}/RealESRGAN_x2plus.pth` });
+        assert.deepEqual([upscaler.video.value].flat(), ['review-source-video.mp4']);
+        assert.equal(upscaler.fps.value, template.example.lockedSettings.fps);
+        assert.equal(upscaler.tile_size.value, 256);
+        assert.equal(upscaler.tile_overlap.value, 32);
+        continue;
+      }
+      const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
+      if (template.mode === 'text_to_3d') {
+        const { lockedSettings, lockedSeed } = template.example;
+        const render = Object.entries(api.nodes).find(
+          ([, node]) => node.module === 'modules.DiffusersThreeD' && node.action === 'GenerateRenderedArtifact',
+        );
+        assert.ok(render);
+        const [renderId, generation] = render;
+        const delivery = Object.values(api.nodes).find(
+          ({ module, action }) => module === 'modules.Video' && action === 'Export',
+        );
+        assert.equal(loader.params.model_id.value.value, template.modelArtifact.value);
+        assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+        assert.equal(generation.params.frame_size.value, lockedSettings.width);
+        assert.equal(generation.params.num_inference_steps.value, lockedSettings.steps);
+        assert.equal(generation.params.guidance_scale.value, lockedSettings.guidanceScale);
+        assert.equal(generation.params.prompt.value, template.prompt);
+        assert.equal(Number(generation.params.seed.value), lockedSeed);
+        assert.equal(delivery.params.fps.value, lockedSettings.fps);
+        assert.equal(delivery.params.video.sourceId, renderId);
+        continue;
+      }
+      if (template.example.retainedVideoPreview) {
+        const { lockedSettings, lockedSeed } = template.example;
+        const generation = api.nodes[binding.nodes.wanGenerate];
+        assert.equal(generation.params.num_inference_steps.value, lockedSettings.steps);
+        assert.equal(generation.params.guidance_scale.value, lockedSettings.guidanceScale);
+        assert.equal(Number(generation.params.seed.value), lockedSeed);
+        assert.equal(generation.params.num_frames?.value, lockedSettings.numFrames);
+        assert.equal(generation.params.prompt.value, template.prompt);
+        assert.equal(loader.params.model_id.value.value, template.modelArtifact.value);
+        assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+        const promptWindows = template.workflowBlockSettings?.videoPromptWindows;
+        if (promptWindows) {
+          assert.equal(generation.params.prompt_segments_json.value, promptWindows.promptsJson);
+          assert.equal(generation.params.segment_frame_length.value, promptWindows.segmentFrameLength);
+          assert.equal(generation.params.temporal_overlap.value, promptWindows.temporalOverlap);
+          assert.equal(
+            generation.params.temporal_overlap_condition_strength.value,
+            promptWindows.overlapConditionStrength,
+          );
+        }
+        if (sourceVideo) {
+          const source = api.nodes[binding.nodes.loadVideo];
+          assert.equal(source.params.file.value, 'review-source-video.mp4');
+          assert.equal(generation.params.video.sourceId, binding.nodes.normalizeVideo);
+          const normalized = api.nodes[binding.nodes.normalizeVideo];
+          assert.equal(normalized.module, 'modules.VideoConditioning');
+          assert.equal(normalized.action, 'Normalize');
+          assert.equal(normalized.params.video.sourceId, binding.nodes.loadVideo);
+          assert.equal(normalized.params.video.sourceKey, 'video');
+        }
+        if (controlVideo) {
+          const source = api.nodes[binding.nodes.loadControlVideo];
+          assert.equal(source.params.file.value, 'review-control-video.mp4');
+          const guide = api.nodes[generation.params.control_video.sourceId];
+          assert.equal(guide.module, 'modules.VideoConditioning');
+        }
+        if (input.length) {
+          const reference = generation.params.reference_images;
+          const source = api.nodes[reference?.sourceId];
+          assert.equal(source?.module, 'modules.Image', template.id);
+          assert.equal(source.action, 'Load', template.id);
+          assert.deepEqual([source.params.file.value].flat(), input);
+          assert.equal(reference.sourceKey, 'image', template.id);
+        }
+        for (const [, field, role, port] of motionInputRoles) {
+          const loaderId = binding.nodes[role];
+          assert.equal(api.nodes[loaderId].params.file.value, motionInputs[field]);
+          assert.equal(generation.params[port].sourceId, loaderId);
+          assert.equal(generation.params[port].sourceKey, 'video');
+        }
+        if (motionInputRoles.length) {
+          const { coerceStudioFormState } = await server.ssrLoadModule('/src/studio/outputContracts.ts');
+          const { inferStudioFormFromWorkflow } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+          const restored = coerceStudioFormState(JSON.parse(JSON.stringify(form)));
+          const inferred = inferStudioFormFromWorkflow(flow.getState().nodes, form, flow.getState().edges);
+          assert.equal(inferred.mode, template.mode);
+          assert.equal(inferred.sourceVideo, '');
+          for (const [, field] of motionInputRoles) {
+            assert.equal(restored[field], motionInputs[field]);
+            assert.equal(inferred[field], motionInputs[field]);
+          }
+        }
+        continue;
+      }
+      assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
+      assert.equal(loader.params.revision.value, template.modelArtifact.revision, template.id);
+      assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
+      assert.equal(loader.params.device.value, form.device);
+      if (template.mode === 'text_to_audio' && binding.nodes.audioGenerate) {
+        const generation = api.nodes[binding.nodes.audioGenerate].params;
+        const output = api.nodes[binding.nodes.audioExport].params;
+        const locked = template.example.lockedSettings;
+        assert.equal(generation.prompt.value, template.prompt);
+        assert.equal(generation.stable_audio_steps.value, locked.steps);
+        assert.equal(generation.stable_audio_guidance.value, locked.guidanceScale);
+        assert.equal(generation.audio_duration.value, locked.audioDuration);
+        assert.equal(generation.sample_rate.value, template.example.expectedOutput.sampleRate);
+        assert.equal(Number(generation.seed.value), template.example.lockedSeed);
+        assert.equal(generation.pipeline.sourceId, binding.nodes.audioPipeline);
+        assert.equal(output.audio.sourceId, binding.nodes.audioGenerate);
+        continue;
+      }
+      if (approvedBatchIds.has(template.id) && !audio) {
+        const actions = Object.values(api.nodes);
+        const generation = actions.find(({ action }) =>
+          [
+            'Generate',
+            'Edit',
+            'Inpaint',
+            'ControlGenerate',
+            'ControlEdit',
+            'ControlInpaint',
+            'LayerDecompose',
+            'GenerateAnyToAny',
+            'GenerateImageVideoText',
+            'UnconditionalGenerate',
+          ].includes(action),
+        );
+        assert.equal(generation.params.prompt?.value ?? '', template.prompt);
+        const locked = template.example.lockedSettings;
+        if (generation.action === 'LayerDecompose') {
+          assert.equal(generation.params.layers.value, locked.layers);
+          assert.equal(generation.params.cfg_normalize.value, false);
+          assert.equal(generation.params.use_en_prompt.value, false);
+        }
+        if (generation.action === 'UnconditionalGenerate') {
+          assert.equal(generation.params.num_inference_steps.value, locked.steps);
+          assert.equal(Number(generation.params.seed.value), template.example.lockedSeed);
+          assert.equal(generation.params.pipeline.sourceId, binding.nodes.diffusersImagePipeline);
+          assert.equal(generation.params.pipeline.sourceKey, 'pipeline');
+          assert.equal(generation.params.prompt, undefined);
+        } else if (!['GenerateAnyToAny', 'GenerateImageVideoText'].includes(generation.action)) {
+          for (const [field, control] of [
+            ['width', 'width'],
+            ['height', 'height'],
+            ['num_inference_steps', 'steps'],
+            ['guidance_scale', 'guidanceScale'],
+          ]) {
+            assert.equal(generation.params[field].value, locked[control], `${template.id} ${control}`);
+          }
+          assert.equal(Number(generation.params.seed.value), template.example.lockedSeed);
+          assert.equal(loader.params.quantization_mode.value, 'none');
+        }
+        const sources = actions.filter(({ module, action }) => module === 'modules.Image' && action === 'Load');
+        assert.equal(sources.length, Number(input.length > 0) + Number(Boolean(mask)) + Number(Boolean(guide)));
+        if (input.length) {
+          assert.ok(
+            sources.some(({ params }) => {
+              const files = [params.file.value].flat();
+              return files.length === input.length && files.every((file, index) => file === input[index]);
+            }),
+            `${template.id} source inputs`,
+          );
+        }
+        if (mask) assert.ok(sources.some(({ params }) => params.file.value?.includes(mask)));
+        if (guide) {
+          assert.ok(sources.some(({ params }) => params.file.value?.includes(guide)));
+          if (locked.conditioningScale !== undefined) {
+            assert.equal(generation.params.conditioning_scale.value, locked.conditioningScale);
+          } else {
+            assert.equal(generation.params.image_contract?.value.fieldParams?.conditioning_scale?.hidden, true);
+          }
+          if (generation.action === 'ControlEdit' && locked.strength !== undefined) {
+            assert.equal(generation.params.strength.value, locked.strength);
+          }
+        }
+        continue;
+      }
+      if (audio) {
+        const source = api.nodes[binding.nodes.loadAudio];
+        // The interactive file picker supplies a local locator. The retained
+        // native file evidence records the same selected file as a one-item list.
+        const file = source.params.file.value;
+        assert.deepEqual(typeof file === 'string' ? [file] : file, input);
+        if (template.mode === 'speech_translation') {
+          const consumer = Object.values(api.nodes).find(({ action }) => action === 'TranscribeAudio');
+          assert.equal(consumer.params.task.value, 'translate');
+          assert.equal(consumer.params.language.value, template.example.lockedSettings.speechLanguage);
+          assert.equal(consumer.params.timestamps.value, 'segment');
+          continue;
+        }
+        source.params.file.value = input;
+        const withIndependentInputsOrdered = ({ canonicalGraph }) => {
+          // The fresh form inserts the model before Audio Load. Both are
+          // independent suppliers to Transcribe Audio.
+          const { nodes, paths } = canonicalGraph;
+          assert.deepEqual(
+            nodes
+              .slice(0, 2)
+              .map(({ key }) => key)
+              .sort(),
+            ['modules.Audio.Load#1', 'modules.HuggingFaceSpeech.' + spec.loaderAction + '#1'],
+          );
+          assert.equal(paths.length, 1);
+          return {
+            ...canonicalGraph,
+            nodes: [...nodes.slice(0, 2).sort((a, b) => a.key.localeCompare(b.key)), ...nodes.slice(2)],
+            paths: [[...paths[0].slice(0, 2).sort(), ...paths[0].slice(2)]],
+          };
+        };
+        assert.deepEqual(
+          withIndependentInputsOrdered(canonicalGraphIdentity(api)),
+          withIndependentInputsOrdered(retainedTemplateGraph(recipe)),
+        );
+        continue;
+      }
+      assert.equal(loader.params.quantization_mode.value, 'none');
+      if (template.mode === 'edit_image') {
+        const locked = template.example.lockedSettings;
+        const source = api.nodes[binding.nodes.loadImage].params;
+        assert.deepEqual(source.file.value, input);
+        assert.equal(source.alpha_channel.value, 'ignore');
+        const edit = api.nodes[binding.nodes.diffusersImageEdit].params;
+        assert.deepEqual(edit.image_contract.value, contract);
+        const values = Object.fromEntries(
+          ['prompt', 'width', 'height', 'num_inference_steps', 'guidance_scale', 'strength', 'seed', 'output_type'].map(
+            (key) => [key, edit[key].value],
+          ),
+        );
+        assert.deepEqual(values, {
+          prompt: template.prompt,
+          width: locked.width,
+          height: locked.height,
+          num_inference_steps: locked.steps,
+          guidance_scale: locked.guidanceScale,
+          strength: locked.strength,
+          seed: template.example.lockedSeed,
+          output_type: locked.outputType,
+        });
+        assert.equal(edit.image.sourceId, binding.nodes.loadImage);
+        assert.equal(edit.pipeline.sourceId, binding.nodes.diffusersImagePipeline);
+        assert.equal(api.nodes[binding.nodes.preview].params.image.sourceId, binding.nodes.diffusersImageEdit);
+        const controls = api.nodes[binding.nodes.diffusersRecipe].params;
+        assert.equal(controls.offload_mode.value, locked.offloadMode);
+        assert.equal(controls.attention_backend.value, 'auto');
+        assert.equal(controls.vae_slicing.value, true);
+        assert.equal(controls.vae_tiling.value, true);
+        continue;
+      }
+      if (recipe.inputSha256) {
+        assert.ok(fieldActions.includes('update_pipeline_contract'));
+        assert.ok(fieldActions.includes('update_image_contract'));
+        assert.deepEqual(api.nodes[binding.nodes.loadImage].params.file.value, input);
+        const params = api.nodes[binding.nodes.diffusersPredictMap].params;
+        assert.deepEqual(params.image_contract.value, contract);
+        assert.equal(params.seed.value, 42);
+        assert.equal(params.num_inference_steps.value, 1);
+        assert.equal(params.processing_resolution.value, 768);
+        assert.equal(params.match_input_resolution.value, true);
+        const controls = api.nodes[binding.nodes.diffusersRecipe].params;
+        assert.equal(controls.offload_mode.value, 'none');
+        assert.equal(controls.attention_backend.value, 'auto');
+        assert.equal(controls.vae_slicing.value, true);
+        assert.equal(controls.vae_tiling.value, true);
+      } else {
+        const params = api.nodes[binding.nodes.transformersTextGenerate].params;
+        assert.equal(params.prompt.value, template.prompt);
+        assert.deepEqual(
+          Object.fromEntries(
+            Object.entries(params)
+              .filter(([key]) => key !== 'model')
+              .map(([key, param]) => [key, param.value]),
+          ),
+          {
+            do_sample: false,
+            max_new_tokens: 256,
+            min_new_tokens: 0,
+            num_beams: 1,
+            prompt: template.prompt,
+            repetition_penalty: 1,
+            temperature: 1,
+            top_k: 50,
+            top_p: 1,
+            use_chat_template: true,
+          },
+        );
+        assert.deepEqual(JSON.parse(JSON.stringify(api.nodes[binding.nodes.transformersTextPreview].params.value)), {
+          display: 'input',
+          sourceId: binding.nodes.transformersTextGenerate,
+          sourceKey: 'result',
+        });
+      }
+      const comparable = structuredClone(api);
+      if (recipe.inputSha256) {
+        // Delivery assigns a backend-specific upload identifier after checking
+        // source bytes. Compare the rest of the API using the archived picker.
+        comparable.nodes[binding.nodes.loadImage].params.file.value = [recipe.inputFileName];
+        const model = comparable.nodes[binding.nodes.diffusersImagePipeline].params;
+        for (const name of ['control_components', 'image_prompt_adapter', 'prequantized_transformer']) {
+          assert.deepEqual(model[name], { display: 'input', value: undefined }, name);
+          delete model[name];
+        }
+        assert.equal(model.execution_profile_id.value, '');
+        delete model.execution_profile_id;
+        const preview = comparable.nodes[binding.nodes.preview].params;
+        // Preview uses its device only for latent decoding. PredictMap
+        // delivers decoded PIL images here and the VAE input is unconnected.
+        assert.equal(preview.image.sourceKey, 'preview_images');
+        assert.equal(preview.vae.sourceId, undefined);
+        assert.equal(preview.device.value, 'cuda:0');
+        preview.device.value = 'cpu:0';
+      } else {
+        // This retained loader predates the two explicit placement controls.
+        // Verify the fresh graph uses the same defaults before comparing the
+        // remaining fields against the archived recipe.
+        const model = comparable.nodes[binding.nodes.transformersTextModel].params;
+        assert.equal(model.weight_loading_mode?.value, 'cpu', 'The fresh text loader defaults to CPU weight loading');
+        assert.equal(model.quantization_mode?.value, 'none', 'The fresh text loader defaults to unquantized weights');
+        delete model.weight_loading_mode;
+        delete model.quantization_mode;
+      }
+      const byRole = ({ nodes }) => Object.fromEntries(nodes.map((node) => [node.key, node.params]));
+      assert.deepEqual(
+        byRole(canonicalGraphIdentity(comparable).canonicalGraph),
+        byRole(retainedTemplateGraph(recipe).canonicalGraph),
+        template.id,
+      );
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
+    globalThis.WebSocket = previousWebSocket;
+    nodeStore.setState(previousNodes);
+    studio.setState(previousStudio);
+    flow.setState(previousFlow);
+  }
+});

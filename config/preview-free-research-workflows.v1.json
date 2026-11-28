@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "reviews": [
+    {
+      "workflowId": "DreamLiteMobilePipeline:edit_image",
+      "sourceTemplateId": "task-template:dreamlite-mobile:edit-image:v1",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:6cf362ac7bb4c479b7e56dca9a4b42fea1e670e57543c0cf65428aaa8fc9ae37",
+      "executedGraphHash": "sha256:canonical-graph-v1:d3a30a1637b45b5447c5ae112d98ef4d14f27e888b1bc6a37aca20c16bde1fd0",
+      "evidenceSha256": "0c4806ce6be2a0bf02c2aa5d7520dd279450df3c8b860c62be33dffb8dc130d1",
+      "outputHash": "sha256:bytes:21f5daf54cb23ffcde40b218a031eabec9295871ed574f8791cf7eac4f187933"
+    },
+    {
+      "workflowId": "DreamLiteMobilePipeline:text_to_image",
+      "sourceTemplateId": "task-template:dreamlite-mobile:text-to-image:v1",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:dc4c8d8e18b592d23c0ce3329b1d0237e8ae180e6b5f53dda2c80bbe0fc6fde6",
+      "executedGraphHash": "sha256:canonical-graph-v1:2b672169c805ec5bd825d1af8521b966c0f051f220ec01d14add8669a55e1e57",
+      "evidenceSha256": "e151ee1315431ae8a27a16d435da3f540ab3fb402999f42561811f454471fef6",
+      "outputHash": "sha256:decoded-output-collection-v1:1da3ba9fe52c5395e3fee83176f57a19db5720fa0e456df06c19d5f4c5b3e46f"
+    },
+    {
+      "workflowId": "DreamLitePipeline:edit_image",
+      "sourceTemplateId": "task-template:dreamlite-base:edit-image:v1",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:34999f99197323dc1da2cf25e05899c4782fb08ea9bfdf77455090d98de769aa",
+      "executedGraphHash": "sha256:canonical-graph-v1:73f5fda695f45f0ffdc6e6e657d030a58e0d9c83441c7b60fa9ed45cc88d6aaf",
+      "evidenceSha256": "0a08f4e9afc7ac0a579cf25be7f575d6cd57906b64f8503b593317fa96526c8d",
+      "outputHash": "sha256:bytes:4a27ba447583747634766c53f7d6f39eb34bc4a089950793821392b8666b7c05"
+    },
+    {
+      "workflowId": "DreamLitePipeline:text_to_image",
+      "sourceTemplateId": "task-template:dreamlite-base:text-to-image:v1",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:f4aeea2217b04c962955052c60fe0324388bdf00c74f0facab3d19d5ba510d77",
+      "executedGraphHash": "sha256:canonical-graph-v1:a6bfeacd6d9fb12d01bd8c27caee9fb992fb94e14c49da4fea9a3d515090724e",
+      "evidenceSha256": "5c84087fbbd770103610a2f6f3787565ba0ffb9868957b580fb64c6e529de181",
+      "outputHash": "sha256:bytes:e70c63ed0594eb02b9190bf6f10b1d248522a57f0ba15fc2befbd648e17e2378"
+    }
+  ]
+}

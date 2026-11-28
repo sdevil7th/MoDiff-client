@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "format": "modiff.gallery.recipe-history.v1",
+  "source": {
+    "repository": "sourav-das/modiff-template-gallery",
+    "revision": "b3fefedf324c08cb50eaf4654ce68fefc041d0ef"
+  },
+  "records": [
+    {
+      "templateId": "flux_lora_ghibli_story",
+      "currentTemplateLockHash": "tpl_2365c66a",
+      "bindings": {
+        "templateLockHash": "tpl_c3ae3e8e",
+        "promptSettingsHash": "ps_df2d27f3",
+        "modelRevision": "alvarobartt/ghibli-characters-flux-lora@ed846114c71efc525e7f5a51e274dc976bb970a8 | black-forest-labs/FLUX.1-dev@3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+        "modelCommit": "alvarobartt/ghibli-characters-flux-lora@ed846114c71efc525e7f5a51e274dc976bb970a8 | black-forest-labs/FLUX.1-dev@3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+        "modelSetHash": "sha256:model-set-v1:5fa8d82d74196e11dc0c520be9d31596292a1f268a01c393d049b0dbd1c42341",
+        "inputArtifactsHash": "sha256:input-artifacts-v1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "templateRevisionHash": "sha256:template-revision-v1:5699062506dfb9ea15f344016f6ac66a00b2dcecead1d6f6b3813315fa248444",
+        "graphHash": "sha256:canonical-graph-v1:b563b60f373571d19da7d0e99c2ef5c5a620e944e71f63d706c6e1fe99698da1",
+        "proofLockHash": "sha256:live-proof-lock-v1:4a1c9bc6fd1a8cb83e4354d88e53e4d9c9ba912dc9a5b8684621f4dbe7096ddd",
+        "provenanceHash": "sha256:canonical-json:22c15d4f1d99bf087a3d04c6d337bad19ee7b0240b416d9bec55f36d3344d288",
+        "qualityReviewHash": "sha256:canonical-json:55b5a31babbb0eafbf0457d8b0b8263f8d3da35bf53e1be4e8e277d1bba5f18b",
+        "mediaHash": "sha256:decoded-rgba:9a9d7ec768c9e3baa85918763f0e61c73a08eae3eec6a060a98334436977e236",
+        "outputPath": "/template-gallery/flux_lora_ghibli_story.webp",
+        "provenancePath": "/template-gallery/reviews/flux_lora_ghibli_story.reviewed-provenance.json",
+        "qualityReviewPath": "/template-gallery/reviews/flux_lora_ghibli_story.quality-review.json"
+      },
+      "creator": {
+        "executionSelection": null,
+        "workflowBlocks": ["lora"],
+        "workflowBlockSettings": {
+          "lora": {
+            "model": {
+              "source": "hub",
+              "value": "alvarobartt/ghibli-characters-flux-lora",
+              "revision": "ed846114c71efc525e7f5a51e274dc976bb970a8",
+              "sha256": "5216bd7eeb12bf6f18cd5d40cb090831796b28aca7446577d08c5a7e4a09dc63",
+              "byteSize": 171969336,
+              "license": "flux-1-dev-non-commercial; personal-use-only"
+            },
+            "weightName": "ghibli-characters-flux-lora.safetensors",
+            "adapterName": "ghibli_style",
+            "scale": 0.8
+          }
+        }
+      },
+      "declarationSource": {
+        "source": "Original immutable Gallery creator lock and retained proof. The later native-stage execution selection is absent in this saved recipe."
+      },
+      "evidenceScope": "approved_historical_recipe",
+      "currentGraphExecutionProved": false
+    },
+    {
+      "templateId": "wan_22_ti2v_5b_seed_vault",
+      "currentTemplateLockHash": "tpl_8552a85a",
+      "evidenceScope": "approved_historical_recipe",
+      "currentGraphExecutionProved": false,
+      "creator": {
+        "executionSelection": null,
+        "workflowBlockSettings": {
+          "soundtrack": {
+            "model": {
+              "source": "hub",
+              "value": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+              "revision": "200ba991ae448051e14b0183157e35c2d27c9fb0"
+            },
+            "pipelineClass": "AceStepPipeline",
+            "prompt": "Instrumental diegetic solo acoustic-guitar soundtrack matching existing subway footage. For the entire twelve seconds, perform forceful uninterrupted 84 BPM eighth-note down-up chord strumming on one warm steel-string acoustic guitar. Start the established strumming pattern immediately and keep its energy, tempo, and full-chord attack constant past ten seconds. Use a clear alternating downstroke-upstroke pick pattern, realistic pick attack, and natural fret noise, with no pauses or melodic detours. Do not cadence, resolve, decay, slow down, thin out, or stop early; the usable soundtrack will be cut from the middle of this continuous performance. Keep subtle station room ambience far beneath the guitar. No fingerpicking, arpeggio, lead melody, vocals, spoken words, drums, percussion, bass, band, synthesizer, applause, crowd cheering, fade-in, fade-out, or early ending.",
+            "negativePrompt": "fingerpicking, fingerpicked riff, arpeggio, arpeggiated guitar, lead guitar, lead melody, guitar solo, single-note melody, sparse picking, gentle picking, vocals, singing, speech, drums, percussion, bass guitar, full band, synthesizer, electronic beat, applause, crowd cheering, silence, pause, breakdown, cadence, final chord, early resolution, early decay, early ending, long intro, fade-in, fade-out, clipping, abrupt cutoff",
+            "durationSeconds": 12,
+            "steps": 8,
+            "guidanceScale": 1,
+            "seed": 1684710282,
+            "bpm": 84,
+            "keyscale": "E minor",
+            "timesignature": "4/4",
+            "audioFit": {
+              "sourceStartSeconds": 1,
+              "sourceDurationSeconds": 5.041666666666667,
+              "targetDurationSeconds": 5.041666666666667,
+              "delaySeconds": 0.16666666666666666,
+              "targetSampleRate": 48000,
+              "fadeInSeconds": 0.008,
+              "fadeOutSeconds": 0.12
+            }
+          }
+        }
+      },
+      "bindings": {
+        "verificationStatus": "reviewed",
+        "promptSettingsHash": "ps_7a8322d1",
+        "templateLockHash": "tpl_28550081",
+        "modelRevision": "ACE-Step/acestep-v15-xl-turbo-diffusers@200ba991ae448051e14b0183157e35c2d27c9fb0 | Wan-AI/Wan2.2-TI2V-5B-Diffusers@b8fff7315c768468a5333511427288870b2e9635",
+        "runtimeFingerprint": "sha256:stable-runtime-v1:82d4fd031dfb97607d1a1919c782d4ee3fa2fec4c95a46e3778bf01625334ba3",
+        "graphHash": "sha256:canonical-graph-v1:1e80e3dfd8b6ccd39ab616a34727853a3816a9d7d1c0e5645722f5b5c9df6436",
+        "proofLockHash": "sha256:live-proof-lock-v1:1f07f9a222ff0509490fa7f971714ceb54fffcd5d57b2627e7562f9047c927f3",
+        "backendSourceFingerprint": "sha256:backend-source-v1:d87e3a14c747fafb3350a4678a7f24569a36482551153716cd8e3937618d1b73",
+        "backendContractFingerprint": "sha256:backend-contract-v1:b45747235e613231f4d66b46f8dae48cf642ee4a7b036b2c06cf6b1096156ad6",
+        "modelCommit": "ACE-Step/acestep-v15-xl-turbo-diffusers@200ba991ae448051e14b0183157e35c2d27c9fb0 | Wan-AI/Wan2.2-TI2V-5B-Diffusers@b8fff7315c768468a5333511427288870b2e9635",
+        "modelSetHash": "sha256:model-set-v1:1e8868fb125d028ff0d54ccb1bc67be6d4a8dc0e623d14bc89e0ce2b8dd67f17",
+        "inputArtifactsHash": "sha256:input-artifacts-v1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "templateRevisionHash": "sha256:template-revision-v1:caa6c16a2bac675ca369f7c3155b0f8a3f112e1ba7bb5615b3960183d5b6052e",
+        "provenancePath": "/template-gallery/reviews/wan_22_ti2v_5b_seed_vault.reviewed-provenance.json",
+        "provenanceHash": "sha256:canonical-json:c33a05cce51bae8c8d8133333bb0b5697545dac15d594921db1214f109961dc1",
+        "outputPath": "/template-gallery/wan_22_ti2v_5b_seed_vault.mp4",
+        "thumbnailPath": "/template-gallery/wan_22_ti2v_5b_seed_vault.poster.png",
+        "mediaHash": "sha256:decoded-video-framemd5:f46d1387bd5848c62fe9343a800d813a906ea33e0139f43f50926cc822bb1de7",
+        "decodedAudioHash": "sha256:decoded-audio-pcm-s16le-48000-stereo:7971158f3e9988632c8c2100cd1f485c3477dbdb1006e9814d52fcbb1c84db3d",
+        "audiovisualMediaHash": "sha256:decoded-av-v1:abb6bde8c9ac4d302e1741e51eb38bc139d873ae6914b5de548058a00c4bb476",
+        "mediaType": "video",
+        "verificationTimestamp": "2026-07-24T16:33:53.785Z",
+        "qualityReviewPath": "/template-gallery/reviews/wan_22_ti2v_5b_seed_vault.quality-review.json",
+        "qualityReviewHash": "sha256:canonical-json:7d1a9b1e47da3c779078312ac1d0ee42c339554f78154f29564d54f865c30ab8",
+        "qualityReviewStatus": "approved_reviewed",
+        "reviewer": "Maintainer synchronized-playback approval with Codex technical verification",
+        "reviewedAt": "2026-07-24T16:29:22.000Z",
+        "width": 1280,
+        "height": 704,
+        "frames": 121,
+        "durationSeconds": 5.04,
+        "cardPreviewPath": "/template-gallery/wan_22_ti2v_5b_seed_vault.card-preview.mp4",
+        "cardPreviewSha256": "sha256:bytes:f610ee34c08aa97e5b2a42e029c7e4acfe2e22f5a73431dcd9ce875ec4dd1145"
+      }
+    }
+  ],
+  "recordsHash": "sha256:canonical-json:e302107a88e92f2591a8315ba263d097d861c6eafc65e86cc22d01d0a27b744e"
+}

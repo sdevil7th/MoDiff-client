@@ -23,7 +23,10 @@ import type {
   HuggingFaceNodeLibraryBlockPlacement,
   HuggingFaceNodeLibraryDefinition,
 } from './huggingFaceNodeLibrary';
-import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
+import {
+  modularConditionalSnapshotForSource,
+  type HuggingFaceModularConditionalSnapshot,
+} from './huggingFaceModularConditionals';
 import { createModularDiffusersCatalogNode } from './modularDiffusersBlockInsertion';
 import { compactReviewedModularInternalLayoutV2, reviewedWorkflowHierarchyV2 } from './reviewedModularGraphV2';
 import { normalizeBlockValueTypeV2 } from './blockValueTypeCompatibilityV2';
@@ -213,8 +216,9 @@ export function createCatalogOnlyModularBlockRootV2(
 ): CustomNodeType {
   if (definition.provider !== 'diffusers' || !definition.blocksClass)
     throw new Error('Only a reviewed Modular Diffusers workflow can use the structural V2 compiler.');
-  if (snapshot.diffusersRevision !== definition.libraryRevision)
-    throw new Error('The unpruned Modular Diffusers hierarchy revision is stale.');
+  const sourceSnapshot = modularConditionalSnapshotForSource(snapshot, definition.libraryRevision);
+  if (!sourceSnapshot) throw new Error('The unpruned Modular Diffusers hierarchy revision is stale.');
+  snapshot = sourceSnapshot;
   const hierarchy = reviewedWorkflowHierarchyV2(snapshot, definition);
   if (!hierarchy) throw new Error('The exact reviewed Modular Diffusers workflow hierarchy is unavailable.');
   const blocks = new Map([...library.blockDefinitions, ...snapshot.blockDefinitions].map((block) => [block.id, block]));

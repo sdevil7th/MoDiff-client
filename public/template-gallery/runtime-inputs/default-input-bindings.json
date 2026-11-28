@@ -53,9 +53,102 @@
           "id": "ace_step_audio_variation-source-audio",
           "label": "Reviewed source audio",
           "mediaType": "audio",
+          "previewPath": "/template-gallery/inputs/ace_step_audio_variation.before.wav",
           "runtimePath": "/template-gallery/runtime-inputs/assets/e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7.wav",
           "runtimeSha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
           "fileName": "ace_step_audio_variation.source_audio.wav"
+        }
+      ]
+    }
+  ],
+  "ace_step_lyric_music_video": [
+    {
+      "id": "ace_step_lyric_music_video-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "ace_step_lyric_music_video-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/424477289e9872767f3d880913cbe89a55fd765a4c7a78cc05e16543d57f5da9.webp",
+          "runtimeSha256": "sha256:bytes:424477289e9872767f3d880913cbe89a55fd765a4c7a78cc05e16543d57f5da9",
+          "fileName": "ace_step_lyric_music_video.reference_image_1.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/3c77210d30a5954105564bbf3025322eb5b3cfb839717185eed8f4f3bac12c3c.webp",
+          "runtimeSha256": "sha256:bytes:3c77210d30a5954105564bbf3025322eb5b3cfb839717185eed8f4f3bac12c3c",
+          "fileName": "ace_step_lyric_music_video.reference_image_2.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-3",
+          "label": "Reviewed reference image 3",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/923228d65b793a2c9b4007d067309ba38aa1384a5692f5e89ceadb20e53655e7.png",
+          "runtimeSha256": "sha256:bytes:923228d65b793a2c9b4007d067309ba38aa1384a5692f5e89ceadb20e53655e7",
+          "fileName": "ace_step_lyric_music_video.reference_image_3.png"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-4",
+          "label": "Reviewed reference image 4",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e7445aefeb2c248ff76caa56c1da1a29129ac57994b4d62fcb8cb0bcfe6a0734.png",
+          "runtimeSha256": "sha256:bytes:e7445aefeb2c248ff76caa56c1da1a29129ac57994b4d62fcb8cb0bcfe6a0734",
+          "fileName": "ace_step_lyric_music_video.reference_image_4.png"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-5",
+          "label": "Reviewed reference image 5",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b.webp",
+          "runtimeSha256": "sha256:bytes:0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b",
+          "fileName": "ace_step_lyric_music_video.reference_image_5.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-6",
+          "label": "Reviewed reference image 6",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b.webp",
+          "runtimeSha256": "sha256:bytes:0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b",
+          "fileName": "ace_step_lyric_music_video.reference_image_6.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-7",
+          "label": "Reviewed reference image 7",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/4fcc47b98431770a667597cca11ca0d7de82dd340ab999e4c5057a07fc46c6e6.webp",
+          "runtimeSha256": "sha256:bytes:4fcc47b98431770a667597cca11ca0d7de82dd340ab999e4c5057a07fc46c6e6",
+          "fileName": "ace_step_lyric_music_video.reference_image_7.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-8",
+          "label": "Reviewed reference image 8",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/fcca725348f3a6ffbb0f4db657c52e16216dbe6735305fbcc5e164f1fee49ab4.webp",
+          "runtimeSha256": "sha256:bytes:fcca725348f3a6ffbb0f4db657c52e16216dbe6735305fbcc5e164f1fee49ab4",
+          "fileName": "ace_step_lyric_music_video.reference_image_8.webp"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-9",
+          "label": "Reviewed reference image 9",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/f92394469d782bfcc9e00fdda22a9aff3ce0f0cfd9c3258ef9ff0a7ed2b2b89b.png",
+          "runtimeSha256": "sha256:bytes:f92394469d782bfcc9e00fdda22a9aff3ce0f0cfd9c3258ef9ff0a7ed2b2b89b",
+          "fileName": "ace_step_lyric_music_video.reference_image_9.png"
+        },
+        {
+          "id": "ace_step_lyric_music_video-reference-image-10",
+          "label": "Reviewed reference image 10",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/379cdf80a147cdbe84ccad4b97daec4a734c0a274761da9900e658a09ca48d28.webp",
+          "runtimeSha256": "sha256:bytes:379cdf80a147cdbe84ccad4b97daec4a734c0a274761da9900e658a09ca48d28",
+          "fileName": "ace_step_lyric_music_video.reference_image_10.webp"
         }
       ]
     }
@@ -274,8 +367,8 @@
   ],
   "flux_kontext_multi_reference": [
     {
-      "id": "flux_kontext_multi_reference-reference-images-defaults",
-      "label": "Reviewed reference images",
+      "id": "flux-kontext-material-preservation-v2-inputs",
+      "label": "Source bottle and material-only reference",
       "mediaType": "image",
       "origin": "template",
       "requiredAt": "workflow_start",
@@ -283,7 +376,7 @@
       "defaultAssets": [
         {
           "id": "flux_kontext_multi_reference-reference-image-1",
-          "label": "Reviewed reference image 1",
+          "label": "Approved source bottle",
           "mediaType": "image",
           "previewPath": "/template-gallery/inputs/flux_kontext_multi_reference.before.webp",
           "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
@@ -291,12 +384,12 @@
           "fileName": "flux_kontext_multi_reference.reference_image_1.webp"
         },
         {
-          "id": "flux_kontext_multi_reference-reference-image-2",
-          "label": "Reviewed reference image 2",
+          "id": "flux-kontext-cobalt-material-only-v2",
+          "label": "Cobalt surface colour and texture strip",
           "mediaType": "image",
-          "runtimePath": "/template-gallery/runtime-inputs/assets/9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897.webp",
-          "runtimeSha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
-          "fileName": "flux_kontext_multi_reference.reference_image_2.webp"
+          "runtimePath": "/template-gallery/runtime-inputs/assets/70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34.png",
+          "runtimeSha256": "sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34",
+          "fileName": "flux_kontext_multi_reference.material_strip_v2.png"
         }
       ]
     }
@@ -657,6 +750,7 @@
           "id": "qwen_layered_portrait-reference-image-1",
           "label": "Reviewed reference image 1",
           "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_layered_portrait.before.webp",
           "runtimePath": "/template-gallery/runtime-inputs/assets/965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de.webp",
           "runtimeSha256": "sha256:bytes:965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de",
           "fileName": "qwen_layered_portrait.reference_image_1.webp"

@@ -19,6 +19,43 @@ function readJson(path, label) {
   }
 }
 
+// The authoring manifest can retain unavailable historical files. Only paths
+// included in the public subset can expose a preview, including a renamed copy.
+export function readPrivateGalleryReviews(clientRoot, source, manifest, gallery) {
+  const registry = readJson(
+    join(clientRoot, 'config', 'private-workflow-qualification.v1.json'),
+    'Private workflow review registry',
+  );
+  if (registry.schemaVersion !== 1 || !Array.isArray(registry.reviews)) {
+    throw new Error('Invalid private workflow review registry.');
+  }
+  const privateHashes = new Set();
+  const privateTemplates = new Set();
+  for (const review of registry.reviews) {
+    if (!/^[a-f0-9]{64}$/u.test(review.outputSha256) || !review.sourceTemplateId) {
+      throw new Error('Invalid private workflow preview identity.');
+    }
+    privateHashes.add(`sha256:bytes:${review.outputSha256}`);
+    privateTemplates.add(review.sourceTemplateId);
+  }
+  const unavailable = new Set(source.unavailableAssets ?? []);
+  for (const { path, sha256 } of manifest.assets) {
+    if (privateHashes.has(sha256) && !unavailable.has(path)) {
+      throw new Error(`Private workflow output is listed as a public Gallery file: ${path}`);
+    }
+  }
+  for (const entry of gallery.examples) {
+    if (!privateTemplates.has(entry.templateId)) continue;
+    for (const key of ['outputPath', 'thumbnailPath', 'cardPreviewPath', 'beforePath', 'afterPath', 'posterPath']) {
+      const path = entry[key]?.replace(/^\/+/, '');
+      if (path && !unavailable.has(path)) {
+        throw new Error(`Private workflow preview is available in the Gallery: ${entry.templateId} (${key})`);
+      }
+    }
+  }
+  return registry.reviews;
+}
+
 export function verifyRemoteTemplateAssetBuild(distRoot, expectedSourceValue) {
   if (!existsSync(distRoot) || !statSync(distRoot).isDirectory()) {
     throw new Error(`Release build directory is missing: ${distRoot}`);
@@ -60,7 +97,10 @@ export function validateTemplateAssetReleaseCheckoutSource(clientRoot = CLIENT_R
     'Checked-in Template Gallery asset source',
   );
   const manifest = readJson(join(clientRoot, 'config', 'template-assets.v1.json'), 'Template Gallery asset manifest');
-  return validateTemplateAssetRelease(source, manifest);
+  const validatedSource = validateTemplateAssetRelease(source, manifest);
+  const gallery = readJson(join(clientRoot, 'public', 'template-gallery', 'manifest.json'), 'Template Gallery');
+  readPrivateGalleryReviews(clientRoot, validatedSource, manifest, gallery);
+  return validatedSource;
 }
 
 export function verifyTemplateAssetReleaseCheckout(clientRoot = CLIENT_ROOT, distRoot = join(clientRoot, 'dist')) {

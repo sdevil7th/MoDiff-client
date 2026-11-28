@@ -92,6 +92,7 @@ export function ControlStateMatrix() {
   const [comboboxQuery, setComboboxQuery] = useState('Model');
   const [comboboxValue, setComboboxValue] = useState<string | null>('model');
   const [checked, setChecked] = useState(false);
+  const [checkboxEvents, setCheckboxEvents] = useState<string[]>([]);
   const [switched, setSwitched] = useState(false);
   const [radio, setRadio] = useState('balanced');
   const [radioCard, setRadioCard] = useState('direct');
@@ -107,6 +108,8 @@ export function ControlStateMatrix() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [menuResult, setMenuResult] = useState('No menu action');
   const popoverAnchorRef = useRef<HTMLButtonElement>(null);
+  const recordCheckboxChange = (name: string, nextChecked: boolean) =>
+    setCheckboxEvents((events) => [...events, `${name}:${nextChecked}`]);
 
   return (
     <main className="mx-auto grid max-w-6xl gap-5 p-6 font-sans text-modiff-text" data-testid="control-state-matrix">
@@ -345,23 +348,37 @@ export function ControlStateMatrix() {
       <section className="grid gap-4 rounded-modiff-panel border border-modiff-border bg-modiff-surface p-4">
         <h2 className="text-modiff-card-title font-semibold">Choices and navigation</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="grid gap-3">
-            <ModiffCheckbox checked={checked} label="Checkbox" onCheckedChange={setChecked} />
+          <div className="grid gap-3" data-testid="checkbox-interactions" data-events={checkboxEvents.join(',')}>
+            <ModiffCheckbox
+              id="matrix-checkbox"
+              checked={checked}
+              label={<span>Checkbox</span>}
+              onCheckedChange={(nextChecked) => {
+                recordCheckboxChange('checkbox', nextChecked);
+                setChecked(nextChecked);
+              }}
+            />
             <ModiffCheckbox
               checked={false}
               indeterminate
               data-testid="checkbox-indeterminate"
+              aria-label="Mixed checkbox selection"
               label="Indeterminate checkbox"
-              onCheckedChange={() => undefined}
+              onCheckedChange={(nextChecked) => recordCheckboxChange('indeterminate', nextChecked)}
             />
             <ModiffCheckbox
               checked
               invalid
               readOnly
               label="Invalid read-only checkbox"
-              onCheckedChange={() => undefined}
+              onCheckedChange={(nextChecked) => recordCheckboxChange('readOnly', nextChecked)}
             />
-            <ModiffCheckbox checked label="Disabled checkbox" disabled onCheckedChange={() => undefined} />
+            <ModiffCheckbox
+              checked
+              label="Disabled checkbox"
+              disabled
+              onCheckedChange={(nextChecked) => recordCheckboxChange('disabled', nextChecked)}
+            />
             <ModiffSwitch checked={switched} label="Switch" onCheckedChange={setSwitched} />
             <ModiffSwitch checked label="Read-only switch" readOnly onCheckedChange={() => undefined} />
             <ModiffSwitch checked={false} label="Disabled switch" disabled onCheckedChange={() => undefined} />

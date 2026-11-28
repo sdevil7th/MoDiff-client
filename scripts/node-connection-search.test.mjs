@@ -31,6 +31,131 @@ const definition = (params, action = 'Process') => ({
   params,
 });
 
+test('an unmatched output recommends a usable material sibling and respects the exact role on each output', () => {
+  const output = (type, label, extra = {}) => ({ display: 'output', type, label, ...extra });
+  const source = definition({
+    original: output('prediction_map', 'Native prediction'),
+    width: output('int', 'Width'),
+    hidden: output('image', 'Internal preview', { hidden: true }),
+    off: output('image', 'Inactive preview', { disabled: true }),
+    metadata: output('any', 'Metadata'),
+    input: { display: 'input', type: 'image' },
+    mask: output('image', 'Mask', { connectionRole: 'mask' }),
+    color: output('image', 'Color preview', { connectionRole: 'source' }),
+  });
+  const target = definition({
+    image: { display: 'input', type: 'image', signalCompatibility: { role: 'source' } },
+    width: { display: 'input', type: 'int' },
+  });
+  const origin = { node: source, handleId: 'original' };
+  const probed = [];
+  const result = search.usableSiblingOutput(origin, (sibling, type) => {
+    probed.push(sibling.handleId);
+    return search.matchingNodeHandleForDrop(target, type, 'source', sibling, false)?.[0];
+  });
+  assert.deepEqual(result, { handleId: 'color', label: 'Color preview', destination: 'image' });
+  assert.deepEqual(probed, ['mask', 'color']);
+  assert.equal(
+    search.usableSiblingOutput(origin, () => undefined),
+    undefined,
+  );
+});
+
+test('the shipped Marigold workflow points from its native depth map to its wired preview image', () => {
+  const graph = JSON.parse(
+    readFileSync(
+      new URL('../../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json', import.meta.url),
+    ),
+  );
+  const source = graph.nodes.find((node) => node.data.action === 'PredictMap');
+  const preview = graph.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Preview');
+  const origin = { node: source.data, handleId: 'prediction_map' };
+  assert.equal(
+    search.matchingNodeHandleForDrop(preview.data, source.data.params.prediction_map.type, 'source', origin, false),
+    undefined,
+  );
+  const suggestion = search.usableSiblingOutput(origin, (sibling, type) =>
+    search.matchingNodeHandleForDrop(preview.data, type, 'source', sibling, false) ? preview.data.label : undefined,
+  );
+  assert.deepEqual(suggestion, { handleId: 'preview_images', label: 'Preview', destination: 'Preview Image' });
+  assert.ok(
+    graph.edges.some(
+      (edge) =>
+        edge.source === source.id &&
+        edge.sourceHandle === suggestion.handleId &&
+        edge.target === preview.id &&
+        edge.targetHandle === 'image',
+    ),
+  );
+});
+
+test('backend-declared component role selectors accept only an exact unconnected literal selection', async () => {
+  const storage = new Map();
+  globalThis.localStorage ??= {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
+  };
+  globalThis.window ??= {
+    location: { origin: 'http://127.0.0.1:5191' },
+    localStorage: globalThis.localStorage,
+    dispatchEvent: () => true,
+  };
+  const matching = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const { parseNodesResponse } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const selector = { field: 'model_type', values: { controlnet: 'controlnet_component' } };
+  const loader = definition(
+    {
+      model_type: { type: 'string', value: 'controlnet' },
+      model: { display: 'output', type: 'diffusers_auto_model', connectionRoleSelector: selector },
+    },
+    'AutoModelLoader',
+  );
+  const control = definition(
+    {
+      controlnet: {
+        display: 'input',
+        type: 'diffusers_auto_model',
+        signalCompatibility: { role: 'controlnet_component' },
+      },
+    },
+    'Controlnet',
+  );
+  const parsed = parseNodesResponse({
+    instance: 'component-contract',
+    nodes: { 'custom.Workbench.AutoModelLoader': loader },
+  });
+  assert.deepEqual(parsed.nodes['custom.Workbench.AutoModelLoader'].params.model.connectionRoleSelector, selector);
+  const compatible = (source) => matching.nodeConnectionSemanticsAreCompatible(source, 'model', control, 'controlnet');
+  assert.equal(compatible(loader), true);
+  for (const value of ['', 'vae', 'unet', 'transformer', 'unknown', undefined, 1, { value: 'controlnet' }]) {
+    const source = structuredClone(loader);
+    source.params.model_type.value = value;
+    assert.equal(compatible(source), false, `unsupported selector ${JSON.stringify(value)}`);
+  }
+  const connected = structuredClone(loader);
+  connected.params.model_type.isConnected = true;
+  assert.equal(compatible(connected), false, 'a connected selector cannot borrow the stale local literal');
+  const missing = structuredClone(loader);
+  delete missing.params.model_type;
+  assert.equal(compatible(missing), false);
+  for (const malformed of [
+    null,
+    [],
+    {},
+    { field: 'model_type', values: {} },
+    { field: 'model_type', values: { controlnet: 1 } },
+    { field: 'model_type', values: { controlnet: 'controlnet_component' }, extra: true },
+    { field: '__proto__', values: { controlnet: 'controlnet_component' } },
+  ]) {
+    const source = structuredClone(loader);
+    source.params.model.connectionRoleSelector = malformed;
+    source.params.model.connectionRole = 'controlnet_component';
+    assert.throws(() => parseNodesResponse({ nodes: { source } }), /invalid connection role selector/);
+    assert.equal(compatible(source), false, 'malformed saved declarations fail closed');
+  }
+});
+
 test('insertion preserves the discovery policy and rejects stale endpoints without choosing another socket', async () => {
   const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
   const node = definition({ metadata: { type: 'any', display: 'input' }, image: { type: 'image', display: 'input' } });
@@ -52,6 +177,40 @@ test('insertion preserves the discovery policy and rejects stale endpoints witho
     matchingNodeHandleForInsertion(producer, { ...selection, handleType: 'target', origin: consumer }, consumer)?.[0],
     'image',
   );
+});
+
+test('generic drag suggestions and insertion exclude hidden or disabled candidate sockets in both directions', async () => {
+  const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  for (const handleType of ['source', 'target']) {
+    const display = handleType === 'source' ? 'input' : 'output';
+    const origin = {
+      handleId: 'image',
+      node: definition({ image: { type: 'image', display: display === 'input' ? 'output' : 'input' } }),
+    };
+    for (const restriction of ['hidden', 'disabled']) {
+      for (const allowUnverified of [false, true]) {
+        const unavailable = { type: 'image', display, [restriction]: true };
+        const node = definition({ unavailable });
+        const selection = { dataType: 'image', handleType, origin, allowUnverified };
+        assert.deepEqual(
+          search.connectionSearchEntries({ candidate: node }, 'image', handleType, '', 'all', origin, allowUnverified),
+          [],
+          `${restriction} ${display} must not be suggested`,
+        );
+        assert.equal(matchingNodeHandleForInsertion(node, selection, origin), undefined);
+        const visible = definition({ unavailable, image: { type: 'image', display } });
+        assert.equal(
+          search.matchingNodeHandleForDrop(visible, 'image', handleType, origin, allowUnverified)?.[0],
+          'image',
+        );
+        assert.equal(matchingNodeHandleForInsertion(visible, selection, origin)?.[0], 'image');
+        if (display === 'input') {
+          const widget = definition({ unavailable: { ...unavailable, display: 'text', isInput: true } });
+          assert.equal(matchingNodeHandleForInsertion(widget, selection, origin), undefined);
+        }
+      }
+    }
+  }
 });
 
 test('insertion revalidates derived Block crossing sockets using the normal connector resolver', async () => {
@@ -624,4 +783,46 @@ test('every shipped compiled catalog interface agrees with the frontend route an
         );
     }
   }
+});
+
+test('a wire from an authored stage finds model-resolved ports absent from its bare registry', () => {
+  const pipeline = 'ExampleModularPipeline';
+  const common = { pipelineClass: pipeline, task: 'text_to_image', binding: { values: {}, pipelineClass: pipeline } };
+  const encoder = { ...common, operationId: 'image.encode', nodeKey: 'modules.Sample.Encode', ports: [] };
+  const port = { name: 'image_latents', direction: 'input', roles: ['value'], types: ['latents'], hidden: false };
+  const denoise = { ...common, operationId: 'image.denoise', nodeKey: 'modules.Sample.Denoise', ports: [port] };
+  const bare = definition({ unet: { type: 'model', display: 'input' } });
+  const stage = {
+    node: {
+      ...definition({}),
+      blockInstanceV2: {
+        effectiveInterface: { boundary: { inputs: [], outputs: [] } },
+        effectiveGraph: { nodes: [{ nodeId: 'encoder', data: { operationAuthoring: { operation: encoder } } }] },
+      },
+    },
+    handleId: 'image_latents',
+  };
+  assert.deepEqual(search.wireOperationScope(stage, [encoder, denoise]), { pipeline, task: common.task });
+  assert.deepEqual(search.wireOperationScope(stage, [denoise]), undefined);
+  assert.equal(search.operationWirePort(bare, denoise, 'latents', 'source'), 'image_latents');
+  assert.equal(search.operationWirePort(bare, denoise, 'string', 'source'), undefined);
+  assert.equal(search.operationWirePort(bare, denoise, 'latents', 'target'), undefined);
+  assert.equal(
+    search.operationWirePort(bare, { ...denoise, ports: [{ ...port, hidden: true }] }, 'latents', 'source'),
+    undefined,
+  );
+});
+
+test('a dedicated prompt socket wins over a same-type editable prompt earlier in the contract', () => {
+  const value = { direction: 'input', roles: ['value'], types: ['string'] };
+  const op = {
+    ports: [
+      { ...value, name: 'prompt' },
+      { ...value, name: 'prompt_input' },
+    ],
+  };
+  const bare = definition({ prompt_input: { type: 'string', display: 'input' } });
+  assert.equal(search.operationWirePort(bare, op, 'string', 'source'), 'prompt_input');
+  const resolved = definition({ ...bare.params, prompt: { type: 'string', display: 'textarea' } });
+  assert.equal(search.operationWirePort(resolved, op, 'string', 'source'), 'prompt_input');
 });

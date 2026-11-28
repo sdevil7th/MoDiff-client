@@ -16,7 +16,7 @@ import {
   createModularDiffusersCatalogFragmentV2,
   modularDiffusersCatalogEntryHasDescendants,
 } from '../studio/modularDiffusersBlockInsertion';
-import { matchingNodeHandleForDrop, type HandleDirection } from './nodeConnectionMatching';
+import { matchingNodeHandleForDrop, type ConnectionSearchOrigin, type HandleDirection } from './nodeConnectionMatching';
 
 type CatalogContext = {
   library: HuggingFaceNodeLibrary;
@@ -34,6 +34,7 @@ export function catalogNodeSearchEntries(
   dataType?: string | string[],
   handleType?: HandleDirection,
   allowUnverified = false,
+  origin?: ConnectionSearchOrigin,
 ) {
   return filterHuggingFaceCatalogSections(sections, search, view)
     .flatMap(({ entries }) => entries)
@@ -61,7 +62,7 @@ export function catalogNodeSearchEntries(
           return false;
         }
       }
-      return Boolean(node && matchingNodeHandleForDrop(node, dataType, handleType, undefined, allowUnverified));
+      return Boolean(node && matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified));
     });
 }
 

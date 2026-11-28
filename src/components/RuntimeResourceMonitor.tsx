@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Cpu, Gauge, HardDrive, MemoryStick } from 'lucide-react';
 
 import {
+  acceleratorMemoryPercent,
+  runtimeResourceMetric,
+  storageDestinationLabels,
   fetchRuntimeResourceSnapshot,
   formatResourceBytes,
   formatResourcePercent,
@@ -17,18 +20,6 @@ type RuntimeResourceMonitorProps = {
   active: boolean;
   connected: boolean;
 };
-
-function acceleratorMemoryPercent(accelerator?: RuntimeAcceleratorResource) {
-  if (
-    !accelerator ||
-    accelerator.memoryUsedBytes === null ||
-    accelerator.memoryTotalBytes === null ||
-    accelerator.memoryTotalBytes <= 0
-  ) {
-    return null;
-  }
-  return (accelerator.memoryUsedBytes / accelerator.memoryTotalBytes) * 100;
-}
 
 function metricTone(pressure: number | null) {
   if (pressure !== null && pressure >= 95) return 'text-modiff-invalid';
@@ -54,6 +45,18 @@ function ResourceRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function StoragePath({ label, path, freeBytes }: { label: string; path: string; freeBytes?: number | null }) {
+  return (
+    <div className="min-w-0 border-t border-modiff-border-subtle pt-1 text-xs">
+      <div className="flex justify-between gap-2">
+        <span>{label}</span>
+        {freeBytes !== undefined && <span>{formatResourceBytes(freeBytes)} free</span>}
+      </div>
+      <div className="break-all text-modiff-subtle-text">{path}</div>
+    </div>
+  );
+}
+
 function AcceleratorSection({ accelerator, active }: { accelerator: RuntimeAcceleratorResource; active: boolean }) {
   return (
     <section className="grid gap-1.5 rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/60 p-2">
@@ -75,11 +78,40 @@ function AcceleratorSection({ accelerator, active }: { accelerator: RuntimeAccel
             : `${formatResourcePercent(accelerator.utilizationPercent)} (${accelerator.utilizationSource ?? 'runtime'})`
         }
       />
-      <ResourceRow
-        label={accelerator.memoryKind === 'shared' ? 'GPU memory (shared)' : 'GPU memory'}
-        value={`${formatResourceBytes(accelerator.memoryUsedBytes)} / ${formatResourceBytes(accelerator.memoryTotalBytes)}`}
-      />
-      <ResourceRow label="Free" value={formatResourceBytes(accelerator.memoryFreeBytes)} />
+      {accelerator.memoryKind === 'shared' || accelerator.memoryKind === 'unified' ? (
+        <>
+          <ResourceRow
+            label="GPU-accessible pool"
+            value={formatResourceBytes(accelerator.accessibleMemoryTotalBytes ?? null)}
+          />
+          <ResourceRow
+            label="Available to GPU"
+            value={formatResourceBytes(accelerator.accessibleMemoryFreeBytes ?? null)}
+          />
+          {accelerator.accessibleMemoryTotalBytes == null &&
+            accelerator.dedicatedMemoryTotalBytes == null &&
+            accelerator.memoryTotalBytes != null && (
+              <ResourceRow label="Reported planning region" value={formatResourceBytes(accelerator.memoryTotalBytes)} />
+            )}
+          {accelerator.dedicatedMemoryTotalBytes != null && (
+            <ResourceRow
+              label="Dedicated reservation"
+              value={formatResourceBytes(accelerator.dedicatedMemoryTotalBytes)}
+            />
+          )}
+          <p className="text-xs text-modiff-subtle-text">
+            The accessible pool shares system RAM. Reservation and pool sizes overlap.
+          </p>
+        </>
+      ) : (
+        <>
+          <ResourceRow
+            label="GPU memory used"
+            value={`${formatResourceBytes(accelerator.memoryUsedBytes)} / ${formatResourceBytes(accelerator.memoryTotalBytes)}`}
+          />
+          <ResourceRow label="Free" value={formatResourceBytes(accelerator.memoryFreeBytes)} />
+        </>
+      )}
       <ResourceRow label="MoDiff allocated" value={formatResourceBytes(accelerator.allocatedBytes)} />
       <ResourceRow label="MoDiff reserved" value={formatResourceBytes(accelerator.reservedBytes)} />
       <ResourceRow label="Peak allocated" value={formatResourceBytes(accelerator.peakAllocatedBytes)} />
@@ -165,7 +197,7 @@ export default function RuntimeResourceMonitor({ active, connected }: RuntimeRes
   const gpuMemoryPercent = acceleratorMemoryPercent(accelerator);
   const sharedGpuMemory = accelerator?.memoryKind === 'shared';
   const storageLabel = snapshot?.storage.kind === 'ssd' ? 'SSD' : snapshot?.storage.kind === 'hdd' ? 'HDD' : 'DISK';
-  const pressure = runtimeResourcePressure(snapshot);
+  const metric = runtimeResourceMetric(snapshot);
   const tooltip = snapshot
     ? `System CPU ${formatResourcePercent(snapshot.system.cpuPercent)}, RAM ${formatResourcePercent(snapshot.system.ramPercent)}, GPU compute ${formatResourcePercent(accelerator?.utilizationPercent ?? null)}, disk active time ${formatResourcePercent(snapshot.storage.activePercent)}, GPU memory${sharedGpuMemory ? ' (shared)' : ''} ${formatResourcePercent(gpuMemoryPercent)}`
     : connected
@@ -225,7 +257,7 @@ export default function RuntimeResourceMonitor({ active, connected }: RuntimeRes
               ) : null}
             </span>
             <span className={cx('text-xs font-semibold tabular-nums 2xl:hidden', metricTone(sustainedPressure))}>
-              {formatResourcePercent(pressure)}
+              {metric ? `${metric.label} ${formatResourcePercent(metric.value)}` : '—'}
             </span>
           </ModiffButton>
         )}
@@ -236,7 +268,7 @@ export default function RuntimeResourceMonitor({ active, connected }: RuntimeRes
         ariaLabel="System resource usage"
         onClose={() => setOpen(false)}
         open={open}
-        panelClassName="w-80 p-3"
+        panelClassName="modiff-scrollbar-thin max-h-[85dvh] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto p-3"
         placement="bottom-end"
         testId="topbar-resource-popover"
       >
@@ -280,7 +312,15 @@ export default function RuntimeResourceMonitor({ active, connected }: RuntimeRes
             />
             <ResourceRow label="Active time" value={formatResourcePercent(snapshot?.storage.activePercent ?? null)} />
             <ResourceRow label="Free" value={formatResourceBytes(snapshot?.storage.freeBytes ?? null)} />
-            {snapshot?.storage.path ? <ResourceRow label="MoDiff data volume" value={snapshot.storage.path} /> : null}
+            {snapshot?.storage.path ? <StoragePath label="MoDiff data volume" path={snapshot.storage.path} /> : null}
+            {Object.entries(snapshot?.storage.destinations ?? {}).map(([role, destination]) => (
+              <StoragePath
+                key={role}
+                label={storageDestinationLabels[role as keyof typeof storageDestinationLabels]}
+                path={destination.path}
+                freeBytes={destination.freeBytes}
+              />
+            ))}
           </section>
 
           {snapshot?.accelerators.length ? (

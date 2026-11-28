@@ -1,4 +1,6 @@
 import { getFormDefaultsForMode } from './modelProfiles';
+import { sourceVideoTimingMatches } from './sourceVideoTiming';
+import { retainedVideoPreviewMatches } from './retainedVideoPreview';
 import { coerceStudioTemplateId } from './outputContracts';
 import templateGalleryContract from './templateGalleryContract.json';
 import { resolveTemplateAssetUrl } from './templateAssets';
@@ -11,6 +13,17 @@ import type {
   TemplateMediaType,
 } from './types';
 import { hashString, stableStringify } from './stableHash';
+import { explicitStudioWeightFormat, persistedStudioWeightFormat } from './weightFormat';
+import historicalSelections from './templateHistoricalSelections.json';
+
+// The reviewed index can legitimately be empty after its recipes become
+// current again. Retain the record contract instead of inferring never[].
+const historicalSelectionRecords: readonly {
+  templateId: string;
+  currentTemplateLockHash: string;
+  templateLockHash: string;
+  executionSelection: unknown;
+}[] = historicalSelections.records;
 export { hashString, stableStringify } from './stableHash';
 
 export const TEMPLATE_GALLERY_MANIFEST_PATH = resolveTemplateAssetUrl('/template-gallery/manifest.json') as string;
@@ -206,7 +219,7 @@ export function parseTemplateGalleryManifest(value: unknown): TemplateGalleryMan
 }
 
 export type TemplateExampleUiState = {
-  status: 'reviewed' | 'exact' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
+  status: 'reviewed' | 'exact' | 'historical' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
   label: string;
   tone: 'success' | 'warning' | 'error' | 'neutral';
   modifiedFields: Array<keyof StudioTemplateLockedSettings>;
@@ -226,6 +239,7 @@ const LOCKED_FIELDS = [
   'guidanceScale',
   'resourceMode',
   'dtype',
+  'weightFormat',
   'quantizationMode',
   'autoOffload',
   'offloadMode',
@@ -280,7 +294,9 @@ export function getTemplateInputContractHash(template: StudioTemplate) {
   return `tic_${hashString(stableStringify(defaults))}`;
 }
 
-export function getTemplateLockedSettings(template: StudioTemplate): StudioTemplateLockedSettings {
+export function getTemplateLockedSettings(
+  template: StudioTemplate,
+): StudioTemplateLockedSettings & Partial<Pick<StudioFormState, 'device' | 'speechLanguage'>> {
   const defaults = getFormDefaultsForMode(template.mode, template.modelType);
   const presetValues = getPreset(template.presetId)?.values ?? {};
   const lockedSettings = template.example?.lockedSettings ?? {};
@@ -297,11 +313,19 @@ export function getTemplateLockedSettings(template: StudioTemplate): StudioTempl
   };
 
   return LOCKED_FIELDS.reduce(
-    (settings, field) => ({
-      ...settings,
-      [field]: merged[field],
-    }),
-    {} as StudioTemplateLockedSettings,
+    (settings, field) =>
+      field === 'weightFormat'
+        ? {
+            ...settings,
+            ...(explicitStudioWeightFormat(merged) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(merged) }
+              : {}),
+          }
+        : { ...settings, [field]: merged[field] },
+    {
+      ...(lockedSettings.device !== undefined && { device: lockedSettings.device }),
+      ...(lockedSettings.speechLanguage !== undefined && { speechLanguage: lockedSettings.speechLanguage }),
+    } as StudioTemplateLockedSettings & Partial<Pick<StudioFormState, 'device' | 'speechLanguage'>>,
   );
 }
 
@@ -309,18 +333,22 @@ export function getTemplateLockHash(
   template: StudioTemplate,
   modelRevision = template.example?.modelRevision ?? 'unlocked',
 ) {
-  const workflowLock = template.workflowBlocks?.length
-    ? {
-        blocks: template.workflowBlocks,
-        settings: template.workflowBlockSettings ?? {},
-      }
-    : undefined;
+  const workflowLock =
+    template.workflowBlocks?.length ||
+    template.workflowBlockSettings?.encodingInputs ||
+    template.workflowBlockSettings?.videoPromptWindows
+      ? {
+          blocks: template.workflowBlocks ?? [],
+          settings: template.workflowBlockSettings ?? {},
+        }
+      : undefined;
   return `tpl_${hashString(
     stableStringify({
       templateId: template.id,
       lockedSettings: getTemplateLockedSettings(template),
       modelRevision,
       mediaType: template.example?.mediaType ?? 'image',
+      ...(template.executionSelection ? { executionSelection: template.executionSelection } : {}),
       ...(workflowLock ? { workflow: workflowLock } : {}),
     }),
   )}`;
@@ -328,10 +356,15 @@ export function getTemplateLockHash(
 
 export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | StudioFormState) {
   const promptSettings = LOCKED_FIELDS.reduce(
-    (locked, field) => ({
-      ...locked,
-      [field]: settings[field],
-    }),
+    (locked, field) =>
+      field === 'weightFormat'
+        ? {
+            ...locked,
+            ...(explicitStudioWeightFormat(settings) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(settings) }
+              : {}),
+          }
+        : { ...locked, [field]: settings[field] },
     {} as StudioTemplateLockedSettings,
   );
 
@@ -341,14 +374,27 @@ export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | S
 export function getTemplateModifiedFields(template: StudioTemplate, form: StudioFormState) {
   const locked = getTemplateLockedSettings(template);
   return LOCKED_FIELDS.filter((field) => {
-    const lockedValue = locked[field];
-    const formValue = form[field];
+    const lockedValue = field === 'weightFormat' ? persistedStudioWeightFormat(locked[field]) : locked[field];
+    const formValue = field === 'weightFormat' ? persistedStudioWeightFormat(form[field]) : form[field];
+    if (field === 'weightFormat' && (lockedValue === null || formValue === null)) return true;
     return String(lockedValue) !== String(formValue);
   });
 }
 
 export function isTemplateExactEligible(template: StudioTemplate, form: StudioFormState) {
   return getTemplateModifiedFields(template, form).length === 0;
+}
+
+export function isRetainedVideoPreview(template: StudioTemplate, entry: TemplateGalleryManifestEntry | undefined) {
+  return (
+    entry?.mediaType === 'video' &&
+    entry.verificationStatus === 'reviewed' &&
+    entry.qualityReviewStatus === 'approved_reviewed' &&
+    /^sha256:retained-template-association-v1:[a-f0-9]{64}$/u.test(entry.proofLockHash) &&
+    entry.outputPath.endsWith('.mp4') &&
+    Boolean(entry.decodedAudioHash) === Boolean(entry.audiovisualMediaHash) &&
+    retainedVideoPreviewMatches(template.example?.retainedVideoPreview, entry, template.mode === 'text_to_3d')
+  );
 }
 
 function matchesTemplateMediaContract(template: StudioTemplate, entry: TemplateGalleryManifestEntry) {
@@ -365,11 +411,15 @@ function matchesTemplateMediaContract(template: StudioTemplate, entry: TemplateG
   const durationSeconds = Number(entry.durationSeconds ?? 0);
   const shortEdge = Math.min(width, height);
   const longEdge = Math.max(width, height);
+  const sourceTimingPreserved =
+    template.mode === 'video_to_video' &&
+    sourceVideoTimingMatches(expected.sourceTiming, { frames, durationSeconds }) &&
+    (entry.beforeSourceMediaHash ?? entry.beforeMediaHash) === expected.sourceTiming?.sourceMediaHash;
+  const retainedPreview = isRetainedVideoPreview(template, entry);
   if (
-    durationSeconds < contract.minimumDurationSeconds ||
-    frames < contract.minimumFrames ||
-    shortEdge < contract.minimumShortEdge ||
-    longEdge < contract.minimumLongEdge
+    (!sourceTimingPreserved && !retainedPreview && durationSeconds < contract.minimumDurationSeconds) ||
+    (!sourceTimingPreserved && !retainedPreview && frames < contract.minimumFrames) ||
+    (!retainedPreview && (shortEdge < contract.minimumShortEdge || longEdge < contract.minimumLongEdge))
   ) {
     return false;
   }
@@ -420,8 +470,97 @@ export function findManifestEntry(
       matchesTemplateMediaContract(template, entry) &&
       (entry.mediaType !== 'video' ||
         !requireCardPreview ||
+        isRetainedVideoPreview(template, entry) ||
         (Boolean(entry.cardPreviewPath) && Boolean(entry.cardPreviewSha256))),
   );
+}
+
+function historicalWorkflowSettings(value: unknown, recordedModels: readonly string[]): unknown {
+  if (Array.isArray(value)) return value.map((item) => historicalWorkflowSettings(item, recordedModels));
+  if (!value || typeof value !== 'object') return value;
+  const artifact = value as Record<string, unknown>;
+  // Some old creator locks predate an explicit authoring revision even though
+  // the actual published run already records that exact immutable artifact.
+  // Keep all other artifact metadata in the lock, including its weight hash.
+  const recordedRevision =
+    artifact.source === 'hub' &&
+    typeof artifact.value === 'string' &&
+    !artifact.value.split('/').some((part) => !part || part === '.' || part === '..') &&
+    typeof artifact.revision === 'string' &&
+    /^[a-f0-9]{40}$/u.test(artifact.revision) &&
+    recordedModels.some((identity) => {
+      const [repository, revision] = identity.split('@');
+      return (
+        typeof repository === 'string' &&
+        revision === artifact.revision &&
+        /^[^/@]+\/[^/@]+$/u.test(repository) &&
+        (artifact.value === repository || (artifact.value as string).startsWith(`${repository}/`))
+      );
+    });
+  return Object.fromEntries(
+    Object.entries(artifact).flatMap(([key, item]) =>
+      key === 'revision' && recordedRevision ? [] : [[key, historicalWorkflowSettings(item, recordedModels)]],
+    ),
+  );
+}
+
+/** Approved media from an earlier creator lock. It is display provenance,
+ * never proof of the current graph or execution selection. */
+export function findHistoricalTemplateRecipe(
+  template: StudioTemplate,
+  manifest: TemplateGalleryManifest | null | undefined,
+  options: { requireCardPreview?: boolean } = {},
+) {
+  if (!template.executionSelection || !manifest || manifest.schemaVersion !== 2) return undefined;
+  for (const record of historicalSelectionRecords) {
+    if (record.templateId !== template.id) continue;
+    const entry = manifest.examples.find((candidate) => candidate.templateId === template.id);
+    if (
+      !entry ||
+      entry.modelCommit !== entry.modelRevision ||
+      record.currentTemplateLockHash !== getTemplateLockHash(template, entry.modelRevision) ||
+      record.templateLockHash !== entry.templateLockHash
+    )
+      continue;
+    const candidate: StudioTemplate = {
+      ...template,
+      executionSelection: record.executionSelection as StudioTemplate['executionSelection'],
+    };
+    if (findManifestEntry(candidate, { ...manifest, examples: [entry] }, options)) {
+      return { template: candidate, entry };
+    }
+  }
+  const previous = { ...template, executionSelection: undefined };
+  const historical = findManifestEntry(previous, manifest, options);
+  if (historical) return { template: previous, entry: historical };
+  if (!template.workflowBlockSettings) return undefined;
+  for (const entry of manifest.examples) {
+    if (
+      coerceStudioTemplateId(entry.templateId) !== template.id ||
+      typeof entry.modelCommit !== 'string' ||
+      entry.modelRevision !== entry.modelCommit
+    )
+      continue;
+    const candidate = {
+      ...previous,
+      workflowBlockSettings: historicalWorkflowSettings(
+        template.workflowBlockSettings,
+        entry.modelCommit.split(' | '),
+      ) as StudioTemplate['workflowBlockSettings'],
+    };
+    if (findManifestEntry(candidate, { ...manifest, examples: [entry] }, options)) {
+      return { template: candidate, entry };
+    }
+  }
+  return undefined;
+}
+
+export function findHistoricalTemplateManifestEntry(
+  template: StudioTemplate,
+  manifest: TemplateGalleryManifest | null | undefined,
+  options: { requireCardPreview?: boolean } = {},
+) {
+  return findHistoricalTemplateRecipe(template, manifest, options)?.entry;
 }
 
 export function getTemplateExampleUiState(
@@ -448,6 +587,15 @@ export function getTemplateExampleUiState(
       manifestEntry,
     };
   }
+  const historical = findHistoricalTemplateManifestEntry(template, manifest);
+  if (historical)
+    return {
+      status: 'historical',
+      label: 'Previous recipe example',
+      tone: 'neutral',
+      modifiedFields,
+      manifestEntry: historical,
+    };
 
   if (template.example?.status === 'blocked') {
     return { status: 'blocked', label: 'Blocked', tone: 'error', modifiedFields };
@@ -472,19 +620,25 @@ export type TemplateCardMedia = {
 
 /**
  * Resolves card media through the same exactness gate used to qualify a
- * published example. Card browsing is independent from the active form: a
+ * published example. The browser selects display-only showcases separately.
+ * Card browsing is independent from the active form: a
  * user editing an instantiated workflow must not invalidate the immutable
  * base-template preview. Conversely, a stale, revoked, or mismatched manifest
  * entry must not contribute any generated card media.
  *
- * A template-owned thumbnail remains an editorial fallback for recipes that
- * do not yet have a qualifying generated proof.
+ * The browser sets currentRecipeOnly so historical and editorial artwork cannot
+ * appear as current recipe output. Metadata consumers can still request the legacy fallback.
  */
 export function getTemplateCardMedia(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
+  options: { currentRecipeOnly?: boolean } = {},
 ): TemplateCardMedia {
-  const manifestEntry = findManifestEntry(template, manifest);
+  const manifestEntry =
+    findManifestEntry(template, manifest) ??
+    (!options.currentRecipeOnly ? findHistoricalTemplateManifestEntry(template, manifest) : undefined);
+  if (!manifestEntry && options.currentRecipeOnly) return {};
+  const retainedPreview = isRetainedVideoPreview(template, manifestEntry);
   const bundledSourcePreview =
     template.outputKinds?.[0] === 'audio'
       ? template.inputBindings
@@ -492,18 +646,29 @@ export function getTemplateCardMedia(
           .flatMap((binding) => binding.defaultAssets)
           .find((asset) => asset.previewPath)?.previewPath
       : undefined;
+  const manifestPoster = retainedPreview
+    ? manifestEntry?.posterPath
+    : (manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath);
   const thumbnailPath =
-    templateManifestPath(manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath) ??
-    templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath);
+    templateManifestPath(manifestPoster) ??
+    (!options.currentRecipeOnly
+      ? templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath)
+      : undefined);
   const selectedAudioExample =
-    template.outputKinds?.[0] === 'audio' ? templateManifestPath(template.example?.outputPath) : undefined;
+    !options.currentRecipeOnly && template.outputKinds?.[0] === 'audio'
+      ? templateManifestPath(template.example?.outputPath)
+      : undefined;
   const generatedOutputPath =
     templateManifestPath(manifestEntry?.afterPath ?? manifestEntry?.outputPath) ?? selectedAudioExample;
   const isVideo = template.outputKinds?.[0] === 'video' || manifestEntry?.mediaType === 'video';
 
   return {
     beforePath: templateManifestPath(manifestEntry?.beforePath ?? bundledSourcePreview),
-    mediaPath: isVideo ? templateManifestPath(manifestEntry?.cardPreviewPath) : generatedOutputPath,
+    mediaPath: isVideo
+      ? templateManifestPath(
+          manifestEntry?.cardPreviewPath ?? (retainedPreview ? manifestEntry?.outputPath : undefined),
+        )
+      : generatedOutputPath,
     thumbnailPath,
   };
 }

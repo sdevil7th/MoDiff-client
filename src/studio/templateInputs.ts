@@ -35,6 +35,9 @@ const FORM_FIELD_LABELS: Record<StudioTemplateInputFormField, string> = {
   sourceVideo: 'Source video',
   maskVideo: 'Mask video',
   controlVideo: 'Control video',
+  poseVideo: 'Pose video',
+  faceVideo: 'Face video',
+  backgroundVideo: 'Background video',
   sourceAudio: 'Source audio',
   referenceAudio: 'Reference audio',
 };

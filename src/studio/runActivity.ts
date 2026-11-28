@@ -1,6 +1,7 @@
 import config from '../../app.config';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore, type MediaViewerItem } from '../stores/useSettingsStore';
 import { findStudioRunContext, useStudioStore } from '../stores/useStudioStore';
 import { coerceTask, useTaskStore, type SessionRun, type Task } from '../stores/useTaskStore';
@@ -10,7 +11,8 @@ import { backendWorkflowTab, markBackendWorkflow, markWorkflowTabOpen } from './
 import { enqueueSnackbar } from '../ui/snackbar';
 import { requestJson } from '../utils/requestJson';
 import { runtimeProgressTarget } from './userBlocks';
-import { executionProgressFrom } from './executionProgress';
+import { executionProgressDetail, executionProgressFrom } from './executionProgress';
+import { observedOutputModelLabel } from './observedOutputModel';
 
 export type RunActivityStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -62,6 +64,15 @@ export function runActivityTargetForTask(
 
 export function runActivityLabelForTask(task: Task | SessionRun, fallback = 'Graph execution') {
   return usableWorkflowName(task.workflow_title) || usableWorkflowName(task.name) || fallback;
+}
+
+/** Terminal status takes precedence over progress retained in older receipts. */
+export function runActivityDetailForTask(task: Task | SessionRun, fallbackStatus: RunActivityStatus = 'queued') {
+  const status = task.status ?? fallbackStatus;
+  if (status === 'completed') return 'Completed';
+  if (status === 'cancelled') return task.error || 'Cancelled';
+  if (status === 'failed') return task.error || task.message || 'Failed';
+  return executionProgressDetail(executionProgressFrom(task)) || task.message || status;
 }
 
 function taskForActivity(taskId: string) {
@@ -118,6 +129,7 @@ function inferredMediaKind(
   displayType: StudioOutput['displayType'] | NonNullable<StudioOutput['mediaItems']>[number]['displayType'],
   url: string,
 ): MediaViewerItem['kind'] {
+  if (displayType === 'json') return 'text';
   if (displayType === 'video' || displayType === 'audio' || displayType === 'text') return displayType;
   if (displayType === 'image' || displayType === 'image_collection') return 'image';
   const path = url.split(/[?#]/, 1)[0]?.toLowerCase() ?? '';
@@ -134,6 +146,7 @@ function textValue(value: unknown) {
 export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem[] {
   const items: MediaViewerItem[] = [];
   const seen = new Set<string>();
+  const descriptors = useNodesStore.getState().workflowModelDescriptors;
 
   outputs.forEach((output, outputIndex) => {
     const sourceItems =
@@ -153,7 +166,7 @@ export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem
     sourceItems.forEach((item, itemIndex) => {
       const url = typeof item.url === 'string' ? item.url : '';
       const kind = inferredMediaKind(item.displayType, url);
-      const text = kind === 'text' ? textValue(item.value ?? output.value) : undefined;
+      const text = kind === 'text' ? textValue(item.value === undefined ? output.value : item.value) : undefined;
       if (kind !== 'text' && !url) return;
       const dedupeKey = `${kind}:${kind === 'text' ? text : url}`;
       if (seen.has(dedupeKey)) return;
@@ -161,7 +174,12 @@ export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem
       items.push({
         id: `${output.id}:${item.index ?? itemIndex}`,
         kind,
-        label: item.label || item.role || output.templateLabel || output.modelLabel || `Output ${outputIndex + 1}`,
+        label:
+          item.label ||
+          item.role ||
+          output.templateLabel ||
+          observedOutputModelLabel(output, descriptors) ||
+          `Output ${outputIndex + 1}`,
         ...(kind === 'text' ? { text } : { url }),
         downloadName: item.backendPath?.split(/[\\/]/).pop(),
       });
@@ -393,7 +411,7 @@ async function openRunActivityUnsafe(target: RunActivityTarget): Promise<RunActi
   }
   const openTab = workflowTabId ? studio.workflowTabs.find((tab) => tab.id === workflowTabId) : undefined;
 
-  if (openTab) {
+  if (openTab && (target.status !== 'completed' || target.preferWorkflow)) {
     showWorkflow(openTab.id, nodeId, target, localTask, requestRevision);
     if (target.status === 'failed') {
       const issues = useRunIssueStore.getState();
@@ -510,6 +528,10 @@ async function openRunActivityUnsafe(target: RunActivityTarget): Promise<RunActi
     return complete('preview');
   }
 
+  if (target.status === 'completed' && openTab) {
+    showWorkflow(openTab.id, nodeId, target, localTask, requestRevision);
+    return complete('workflow');
+  }
   if (target.status === 'completed') {
     enqueueSnackbar('Run completed, but no previewable output was generated. Showing its Queue details.', {
       variant: 'info',

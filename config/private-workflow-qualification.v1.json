@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "reviews": [
+    {
+      "workflowId": "AceStepAudioPipeline:text_to_audio:ace_step_chinese_new_year_lora",
+      "sourceTemplateId": "ace_step_chinese_new_year_lora",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:de99a9b5808b8b33fe525f91790fd305a2f103794f7a90999fedc5ba090bc066",
+      "executedGraphHash": "sha256:canonical-graph-v1:ce45c39f7d7609926d49d5d7845cbbb0423bdf053d7defe1035a7323e7344038",
+      "scope": "research_academic_only",
+      "preview": "withheld",
+      "redistributionAuthorized": false,
+      "modelSet": [
+        {
+          "repoId": "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA",
+          "revision": "cb829a12775740c830a6d49795f16913065dc492"
+        },
+        {
+          "repoId": "Runware/acestep-v15-turbo-diffusers",
+          "revision": "be23effe449c5957947f3020fd63bee23c64abe4"
+        }
+      ],
+      "outputSha256": "9a7b0bcceb386399243f4231b33751188355c7612ba6746567dcff159d3a9920",
+      "evidence": {
+        "sha256": "e0072240ea5fb7865453d6a88c8844f70f96cf319abca774107daf97fc3e289d",
+        "bytes": 1031
+      }
+    },
+    {
+      "workflowId": "FluxDevPipeline:text_to_image:flux_lora_ghibli_story",
+      "sourceTemplateId": "flux_lora_ghibli_story",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:96d9f17a0cbfb5a729ebe93de880d465e813fc4741e854ed636fccc37257a5e5",
+      "executedGraphHash": "sha256:canonical-graph-v1:fabb185a7af01004fdb72edba477648345aca64db5a4f1a0aa1b0c022f5d9103",
+      "scope": "personal_noncommercial",
+      "preview": "withheld",
+      "redistributionAuthorized": false,
+      "modelSet": [
+        {
+          "repoId": "alvarobartt/ghibli-characters-flux-lora",
+          "revision": "ed846114c71efc525e7f5a51e274dc976bb970a8"
+        },
+        {
+          "repoId": "black-forest-labs/FLUX.1-dev",
+          "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21"
+        }
+      ],
+      "outputSha256": "b49d874fc7fdb36c8cd15541b7445c7c2143c9242ab04dccc075528ed799b096",
+      "evidence": {
+        "sha256": "d40a76790832e459b3d4fa77246bfbc3da47835223783b467c247e72df293d1d",
+        "bytes": 1017
+      }
+    },
+    {
+      "workflowId": "HunyuanVideoFramepackPipeline:image_to_video",
+      "sourceTemplateId": "task-template:framepack:image-to-video:v1",
+      "canonicalWorkflowHash": "sha256:workflow-graph-v1:3d833891cc2788bb7de7a1ba83b44bcc05d17c4f09f63a4914d4ebeeb9a7f307",
+      "executedGraphHash": "sha256:canonical-graph-v1:fbdf225e544ed8b4c92f5d7185050aa4f6b3a36c08c3ad863346b7f35c351c7e",
+      "scope": "territory_limited_private_evaluation",
+      "preview": "withheld",
+      "redistributionAuthorized": false,
+      "modelSet": [
+        {
+          "repoId": "lllyasviel/FramePackI2V_HY",
+          "revision": "86cef4396041b6002c957852daac4c91aaa47c79"
+        },
+        {
+          "repoId": "hunyuanvideo-community/HunyuanVideo",
+          "revision": "e8c2aaa66fe3742a32c11a6766aecbf07c56e773"
+        },
+        {
+          "repoId": "lllyasviel/flux_redux_bfl",
+          "revision": "45b801affc54ff2af4e5daf1b282e0921901db87"
+        }
+      ],
+      "outputSha256": "f58b6243f20b10c8cf76b71028ef482d44fdf730dee2c846ce7ccde0abf4c6a1",
+      "evidence": {
+        "sha256": "242872854f982b7f01b27bbdbd6e50c68c3632292563a792d6279753005b8baf",
+        "bytes": 1985
+      }
+    }
+  ]
+}

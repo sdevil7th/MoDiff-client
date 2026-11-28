@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2 } from './blockRuntimeV2';
 import { blockMediaFileBoundaryIsCompatibleV2 } from './blockValueTypeCompatibilityV2';
 import type { RunReadinessIssue } from './types';
@@ -104,7 +105,7 @@ export function inspectBlockMediaInputsV2(
       action: 'inspect_node',
       nodeId: leafVisible ? node.id : ownerId,
       fieldId: leafVisible ? field : undefined,
-      message: `${node.data.label || node.data.action} needs a file before running.`,
+      message: `${nodeDisplayLabel(node.data)} needs a file before running.`,
       details:
         'Select a file in the loader or connect an enabled source to its file input. Your other settings are unchanged.',
     });
@@ -178,7 +179,7 @@ export function inspectBlockMediaInputsV2(
         action: 'inspect_node',
         nodeId: leafVisible ? node.id : ownerId,
         fieldId: leafVisible ? port.name : undefined,
-        message: `${node.data.label || node.data.action} needs ${port.name.replace(/_/gu, ' ')} before running.`,
+        message: `${nodeDisplayLabel(node.data)} needs ${port.name.replace(/_/gu, ' ')} before running.`,
         details: `Required media input ${node.id}.${port.name} has no value or enabled compatible source. Expand the Block if needed and connect this input. The saved workflow is unchanged.`,
       });
     }

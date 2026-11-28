@@ -1,8 +1,10 @@
-import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { visualNodeTitle } from '../studio/visualNodeCatalog';
 import { useCallback, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { useFlowStore } from '../stores/useFlowStore';
 import { Pin, PinOff } from 'lucide-react';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import {
   graphNodeControlParams,
   updateGraphNodeControl,
@@ -12,6 +14,7 @@ import {
 import { formatStudioFieldValue } from '../studio/presetDiff';
 import { ModiffDisclosure, StatusLine, StudioButton } from '../ui';
 import { cx } from '../utils/classNames';
+import { EXECUTION_RECIPE_NODE } from '../workflow/gatedNodeControls';
 import NodeContent from './NodeContent';
 import NodeInspectorSections from './NodeInspectorSections';
 
@@ -37,8 +40,24 @@ export function GraphNodeInputs({
   controlIdPrefix?: string;
 }) {
   const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
+  const catalog = useNodesStore((state) => state.visualNodeCatalog);
+  const registry = useNodesStore((state) => state.nodesRegistry);
+  const modelCatalog = useNodesStore(
+    useShallow((state) => ({
+      workflowModelDescriptors: state.workflowModelDescriptors,
+      studioModelCapabilities: state.studioModelCapabilities,
+    })),
+  );
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const controlEdges = useFlowStore(
+    useShallow((state) => {
+      if (!selectedNode) return [];
+      // A recipe depends on each downstream loader and on any wire supplying its model selection.
+      if (`${selectedNode.data.module}.${selectedNode.data.action}` === EXECUTION_RECIPE_NODE) return state.edges;
+      return state.edges.filter((edge) => edge.target === selectedNode.id || edge.source === selectedNode.id);
+    }),
+  );
   const groups = useMemo(() => {
     const byNode = new Map<string, { node: CustomNodeType; params: Record<string, NodeParams> }>();
     pinnedInputs.forEach((input) => {
@@ -49,7 +68,7 @@ export function GraphNodeInputs({
     });
 
     if (selectedNode) {
-      const selectedParams = graphNodeControlParams(selectedNode);
+      const selectedParams = graphNodeControlParams(selectedNode, controlEdges, modelCatalog);
       byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
     }
 
@@ -61,7 +80,7 @@ export function GraphNodeInputs({
       const group = byNode.get(id);
       return group ? [group] : [];
     });
-  }, [nodes, pinnedInputs, selectedNode]);
+  }, [nodes, pinnedInputs, selectedNode, controlEdges, modelCatalog]);
 
   const updateParam = useCallback(
     (nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {
@@ -85,7 +104,7 @@ export function GraphNodeInputs({
           const disclosureKey = `${workflowId ?? 'unscoped'}:${node.id}`;
           const rememberedOpen = disclosureState[disclosureKey] ?? inspectorDisclosureMemory.get(disclosureKey);
           const defaultOpen = selected || (rememberedOpen ?? index === 0);
-          const label = nodeDisplayLabel(node.data);
+          const label = visualNodeTitle(catalog, node.data, registry[node.data.module + '.' + node.data.action]);
           const fieldCount = Object.keys(params).length;
 
           const controls = !nodes.some(({ id }) => id === node.id) ? (
@@ -154,7 +173,16 @@ export function GraphNodeInputs({
               }}
               panelClassName="border-t border-modiff-border-subtle p-3"
             >
-              {selected ? <NodeInspectorSections node={node}>{controls}</NodeInspectorSections> : controls}
+              {selected ? (
+                <NodeInspectorSections
+                  node={node}
+                  updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
+                >
+                  {controls}
+                </NodeInspectorSections>
+              ) : (
+                controls
+              )}
             </ModiffDisclosure>
           );
         })

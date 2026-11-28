@@ -1,5 +1,11 @@
 import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
-import { planVisualSharedInput } from '../workflow/visualOperationGroups';
+import { planVisualSharedInput } from '../workflow/visualOperationGroupProjection';
+import {
+  exposeVisualStageControl,
+  visualStageFieldSource,
+  visualStageRuntimeNode,
+} from '../studio/visualStageFieldActions';
+import { setBlockFieldValuesV1 } from '../studio/blockContainerEditingV1';
 import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -10,8 +16,9 @@ import { NodeData, NodeParams, type NodeParamSignal } from './useNodeStore';
 import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Connection, Viewport } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 
-import type { ApiGraphExport } from '../types/api';
-import { migrateLocalStorageKey } from '../utils/persistMigration';
+import type { ApiGraphExport, NodeMemoryUsage } from '../types/api';
+import { createPageCheckpointStorage } from '../utils/checkpointStorage';
+import { measuredNodeContentSize } from '../workflow/nodeContentSize';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
@@ -19,7 +26,16 @@ import {
   handleReconnect,
   refreshHandleConnectionStatus,
   updateSignalsForEdges,
+  type SignalUpdateOptions,
 } from './flowConnectionMutations';
+import {
+  assertPreparedExecutionScope,
+  hasAncillaryExecutionClaim,
+  recordExecutionScopeExport,
+  type PreparedExecutionScope,
+} from '../workflow/prepareExecutionScope';
+import { canonicalBlockStringifyV2 } from '../studio/blockSchemaV2';
+import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 import { buildApiGraphExport } from './flowGraphExport';
 import {
   addFlowNode,
@@ -65,6 +81,7 @@ import {
 } from '../studio/userBlocks';
 import { useUserBlockStore } from './useUserBlockStore';
 import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import {
   collapseHuggingFaceClusterInstance,
@@ -149,6 +166,7 @@ import {
   setBlockInstanceValueV2 as reduceBlockInstanceValueV2,
   setBlockPreviewStateV2 as reduceBlockPreviewStateV2,
   setBlockPresentationV2 as reduceBlockPresentationV2,
+  storyboardStageKindV2,
   type BlockPreviewPatchV2,
   type BlockPresentationPatchV2,
 } from '../studio/blockRuntimeV2';
@@ -164,7 +182,9 @@ export type ReplaceGraphOptions = FlowGraphReplacementOptions & {
 };
 
 export type ArrangeGraphOptions = {
+  fitNewNodeContents?: boolean;
   history?: boolean;
+  reserveFirstImagePreviewSpace?: boolean;
 };
 
 export type FlowStore = {
@@ -172,6 +192,8 @@ export type FlowStore = {
   edges: Edge[];
   viewport: Viewport;
   lastExecutionTime: number;
+  // Server cache view metadata, never part of a persisted workflow snapshot.
+  runtimeCachedNodeIds: string[] | null;
   historyPast: FlowHistorySnapshot[];
   historyFuture: FlowHistorySnapshot[];
   historyTransaction: FlowHistoryTransaction | null;
@@ -188,6 +210,7 @@ export type FlowStore = {
   addNodeWithConnection: (node: CustomNodeType, connection?: CustomConnection) => void;
   removeNodes: (ids: string | string[]) => void;
   removeEdges: (id: string | string[]) => void;
+  removeElements: (nodeIds: string[], edgeIds: string[]) => void;
   clearWorkflow: () => void;
   replaceGraph: (replacement: FlowGraphReplacement, options?: ReplaceGraphOptions) => void;
   getParam: <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -198,7 +221,12 @@ export type FlowStore = {
     value: NodeParams[K],
     key?: K,
   ) => void;
-  setNodeSize: (id: string, width: number, height: number, options?: { history?: boolean }) => void;
+  setNodeSize: (
+    id: string,
+    width: number,
+    height: number,
+    options?: { history?: boolean; sizeMode?: 'compact' },
+  ) => void;
   getNodeParamsValues: (id: string) => Record<string, unknown>;
   replaceNodeParams: (id: string, params: Record<string, NodeParams>) => void;
   setNodeUiState: (id: string, uiState: Partial<NonNullable<NodeData['uiState']>>) => void;
@@ -208,7 +236,7 @@ export type FlowStore = {
   resetNodeSize: (id: string) => void;
   setAllEdgesType: (edgeType: 'default' | 'smoothstep') => void;
   updateHandleConnectionStatus: () => void;
-  updateSignalValues: (edges: Edge | Edge[]) => void;
+  updateSignalValues: (edges: Edge | Edge[], options?: SignalUpdateOptions) => void;
   getSignalValue: (id: string, param: string) => NodeParamSignal['value'] | undefined;
   groupNodes: (ids: string[]) => void;
   loopNodes: (ids: string[]) => void;
@@ -274,14 +302,19 @@ export type FlowStore = {
   setNodeCached: (
     id: string,
     cached: boolean,
-    memoryUsage?: Record<string, number>,
+    memoryUsage?: NodeMemoryUsage,
     executionTime?: Record<string, number>,
+    runtimeNodeId?: string,
   ) => void;
   updateCacheStatus: (ids: string | string[]) => void;
   exportGraph: (
     sid: string,
     targetNodeId?: string,
-    options?: { randomizeSeeds?: boolean; sourceGraph?: { nodes: CustomNodeType[]; edges: Edge[] } },
+    options?: {
+      randomizeSeeds?: boolean;
+      sourceGraph?: { nodes: CustomNodeType[]; edges: Edge[] };
+      executionScope?: PreparedExecutionScope;
+    },
   ) => APIGraphExport;
   updateProgress: (
     id: string,
@@ -325,7 +358,6 @@ type FlowHistoryTransaction = {
 const FLOW_STORAGE_KEY = 'modiff.flow';
 const FLOW_STORAGE_VERSION = 1;
 const FLOW_HISTORY_LIMIT = 50;
-migrateLocalStorageKey('reactflow', FLOW_STORAGE_KEY);
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -553,6 +585,18 @@ export function normalizePersistedFlowState(value: unknown): FlowHistorySnapshot
   };
 }
 
+export function expandFlowExecutionGraph(nodes: CustomNodeType[], edges: Edge[], targetNodeId?: string) {
+  const durable = withoutBlockCompilationTransientsV2(nodes, edges);
+  const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
+  const boundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
+  const executable = expandBlockGraphV2ForExecution(boundaries.nodes, boundaries.edges, targetNodeId);
+  return lowerReviewedLoopConnectionsV2(executable.nodes, executable.edges);
+}
+
+export function flowExecutionScopeSourceKey(nodes: CustomNodeType[], edges: Edge[]) {
+  return canonicalBlockStringifyV2({ nodes: nodes.map(durableFlowNodeSnapshot), edges });
+}
+
 export function durableFlowNodeSnapshot(node: CustomNodeType) {
   const snapshot = cloneJson(node);
   delete snapshot.selected;
@@ -579,6 +623,10 @@ export function durableFlowNodeSnapshot(node: CustomNodeType) {
         disabled: snapshot.data.uiState.disabled,
       }
     : undefined;
+  // Runtime status may create uiState without any authored UI setting.
+  if (snapshot.data.uiState && Object.values(snapshot.data.uiState).every((value) => value === undefined)) {
+    snapshot.data.uiState = undefined;
+  }
   Object.entries(snapshot.data.params).forEach(([name, param]) => {
     if (param.fieldOptions?.huggingFaceClusterPreviewSourceNodeId) {
       delete snapshot.data.params[name];
@@ -631,7 +679,7 @@ function sameSnapshot(left: FlowHistorySnapshot, right: FlowHistorySnapshot) {
  * connector params are intentionally never copied into `NodeData.params`.
  */
 function projectBlockInstanceV2(
-  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  state: Pick<FlowStore, 'nodes' | 'edges'> & Partial<Pick<FlowStore, 'runtimeCachedNodeIds'>>,
   id: string,
   instance: NonNullable<NodeData['blockInstanceV2']>,
 ) {
@@ -690,7 +738,10 @@ function projectBlockInstanceV2(
     const data = isRecord(edge.data) ? edge.data : {};
     return data.blockProjectionOwnerId !== id;
   });
-  return { nodes, edges: [...retainedEdges, ...projection.edges] };
+  return {
+    nodes: projectFlowCacheStatus(nodes, state.runtimeCachedNodeIds),
+    edges: [...retainedEdges, ...projection.edges],
+  };
 }
 
 function ordinaryBlockGraphNodeV2(node: CustomNodeType): BlockGraphNodeV2 {
@@ -1529,13 +1580,48 @@ function moveProjectedSubtreeOutOfBlockV2(
 }
 
 function updateBlockInstanceV2(
-  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  state: Pick<FlowStore, 'nodes' | 'edges'> & Partial<Pick<FlowStore, 'runtimeCachedNodeIds'>>,
   id: string,
   reducer: (instance: NonNullable<NodeData['blockInstanceV2']>) => NonNullable<NodeData['blockInstanceV2']>,
 ) {
   const root = state.nodes.find((node) => node.id === id);
   if (!root?.data.blockInstanceV2) return null;
   return projectBlockInstanceV2(state, id, reducer(root.data.blockInstanceV2));
+}
+
+/** Normal field metadata writes target the durable native leaf, never a facade.
+ * This is restricted to ordinary visual grouping, not registered sealed Blocks. */
+function writeVisualStageParam(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  id: string,
+  field: string,
+  value: unknown,
+  key: keyof NodeParams,
+) {
+  const runtime = visualStageRuntimeNode(state.nodes, id);
+  if (!runtime || key === 'isConnected') return null;
+  const fieldId = field;
+  const params = runtime.stage.data.params as Record<string, NodeParams>;
+  if (!params[fieldId]) return null;
+  const normalizedValue = value === undefined ? undefined : cloneJson(value);
+  if (deepEqual(params[fieldId][key], normalizedValue)) {
+    const repaired = exposeVisualStageControl(runtime.instance, runtime.stage.nodeId, fieldId);
+    return repaired === runtime.instance ? false : updateBlockInstanceV2(state, runtime.root.id, () => repaired);
+  }
+  return updateBlockInstanceV2(state, runtime.root.id, (instance) => {
+    if (key === 'value')
+      return setBlockFieldValuesV1(
+        instance,
+        [{ nodeId: runtime.stage.nodeId, fieldId }],
+        normalizedValue as BlockJsonValue,
+        { authored: false },
+      );
+    const graph = cloneJson(instance.effectiveGraph);
+    const stage = graph.nodes.find(({ nodeId }) => nodeId === runtime.stage.nodeId)!;
+    const fields = stage.data.params as Record<string, NodeParams>;
+    fields[fieldId] = { ...fields[fieldId], [key]: normalizedValue };
+    return exposeVisualStageControl(replaceBlockEffectiveGraphV2(instance, graph), runtime.stage.nodeId, fieldId);
+  });
 }
 
 function isUndoableNodeChange(change: NodeChange<CustomNodeType>, nodes: CustomNodeType[]) {
@@ -1574,6 +1660,7 @@ export const useFlowStore = create<FlowStore>()(
       historyFuture: [],
       historyTransaction: null,
       layoutRevision: 0,
+      runtimeCachedNodeIds: null,
 
       onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
         const applyChanges = () => {
@@ -1599,15 +1686,11 @@ export const useFlowStore = create<FlowStore>()(
       onReconnect: (oldEdge, conn) => {
         get().withHistory('Reconnect edge', () => handleReconnect(oldEdge, conn, set, get));
       },
-      updateSignalValues: (edges: Edge | Edge[]) => {
-        updateSignalsForEdges(edges, get);
+      updateSignalValues: (edges: Edge | Edge[], options) => {
+        updateSignalsForEdges(edges, get, options);
       },
       getSignalValue: (id: string, param: string) => {
-        const node = get().nodes.find((n) => n.id === id);
-        if (!node) {
-          return undefined;
-        }
-        const signal = node.data.params?.[param]?.signal;
+        const signal = get().getParam(id, param, 'signal');
         return signal ? signal.value : undefined;
       },
       updateHandleConnectionStatus: () => {
@@ -1641,6 +1724,13 @@ export const useFlowStore = create<FlowStore>()(
       removeEdges: (ids: string | string[]) => {
         get().withHistory('Remove edges', () => removeFlowEdges(ids, get));
       },
+      removeElements: (nodeIds, edgeIds) => {
+        get().withHistory('Delete selection', () => {
+          // A rejected Block deletion must also retain the selected wires.
+          if (!removeFlowNodes(nodeIds, set, get)) return;
+          removeFlowEdges(edgeIds, get);
+        });
+      },
       clearWorkflow: () => {
         get().withHistory('Clear workflow', () => clearFlowWorkflow(set, get));
         useHuggingFaceClusterRuntimeStore.getState().clearAuthorities();
@@ -1654,9 +1744,24 @@ export const useFlowStore = create<FlowStore>()(
         }
       },
       getParam: <K extends keyof NodeParams>(id: string, param: string, key: K) => {
+        const runtime = visualStageRuntimeNode(get().nodes, id);
+        if (runtime) {
+          const source = visualStageFieldSource(get().nodes, {
+            nodeId: id,
+            fieldKey: param,
+            module: String(runtime.stage.data.module),
+            action: String(runtime.stage.data.action),
+          });
+          return (source?.param[key] ?? null) as NodeParams[K] | null;
+        }
         return readNodeParam(id, param, key, get);
       },
       setParam: <K extends keyof NodeParams = 'value'>(id: string, param: string, value: NodeParams[K], key?: K) => {
+        const stageGraph = writeVisualStageParam(get(), id, param, value, key ?? 'value');
+        if (stageGraph !== null) {
+          if (stageGraph) set(stageGraph);
+          return;
+        }
         writeNodeParam(id, param, value, key, set);
         if (key === 'type') {
           get().refreshConnectionVisuals();
@@ -1791,7 +1896,7 @@ export const useFlowStore = create<FlowStore>()(
         }
       },
       setNodeSize: (id: string, width: number, height: number, options) => {
-        const resize = () => setFlowNodeSize(id, width, height, set);
+        const resize = () => setFlowNodeSize(id, width, height, set, options?.sizeMode);
         if (options?.history === false) resize();
         else get().withHistory('Resize node', resize);
       },
@@ -1799,6 +1904,24 @@ export const useFlowStore = create<FlowStore>()(
         return getFlowNodeParamValues(id, get);
       },
       replaceNodeParams: (id: string, params: Record<string, NodeParams>) => {
+        const runtime = visualStageRuntimeNode(get().nodes, id);
+        if (runtime) {
+          set(
+            (state) =>
+              updateBlockInstanceV2(state, runtime.root.id, (instance) => {
+                const graph = cloneJson(instance.effectiveGraph);
+                graph.nodes.find(({ nodeId }) => nodeId === runtime.stage.nodeId)!.data.params = cloneJson(
+                  params,
+                ) as BlockJsonValue;
+                let updated = replaceBlockEffectiveGraphV2(instance, graph);
+                for (const field of Object.keys(params))
+                  updated = exposeVisualStageControl(updated, runtime.stage.nodeId, field);
+                return updated;
+              }) ?? state,
+          );
+          get().refreshConnectionVisuals();
+          return;
+        }
         replaceFlowNodeParams(id, params, set, get);
         get().refreshConnectionVisuals();
       },
@@ -2048,6 +2171,7 @@ export const useFlowStore = create<FlowStore>()(
         get().withHistory('Toggle Modular Diffusers container', () => {
           set((state) => {
             const graph = updateBlockInstanceV2(state, id, (instance) => {
+              if (storyboardStageKindV2(instance, semanticNodeId)) return instance;
               const containerIds = new Set(blockModularContainerNodeIdsV2(instance.effectiveGraph));
               if (!containerIds.has(semanticNodeId))
                 throw new Error(`Modular Diffusers container ${semanticNodeId} is unavailable.`);
@@ -2128,14 +2252,25 @@ export const useFlowStore = create<FlowStore>()(
           const ownerId = node.data.blockProjectionOwnerId;
           const semanticNodeId = node.data.blockProjectionNodeId;
           if (!ownerId || !semanticNodeId) return state;
-          const graph = updateBlockInstanceV2(state, ownerId, (instance) =>
-            repositionBlockChildV2(instance, semanticNodeId, {
+          const graph = updateBlockInstanceV2(state, ownerId, (instance) => {
+            // Workflow's drag-stop callback follows the final position event.
+            // Keep the same compact-size protection here: an expanded frame's
+            // measured envelope must not overwrite its durable manual size.
+            const retainCompactSize =
+              instance.presentation.internalLayout[semanticNodeId]?.sizeMode === 'compact' &&
+              node.data.blockProjectionContainer === true &&
+              node.data.blockProjectionContainerExpanded !== false;
+            return repositionBlockChildV2(instance, semanticNodeId, {
               x: node.position.x,
               y: node.position.y,
-              ...((node.measured?.width ?? node.width) ? { width: node.measured?.width ?? node.width } : {}),
-              ...((node.measured?.height ?? node.height) ? { height: node.measured?.height ?? node.height } : {}),
-            }),
-          );
+              ...(!retainCompactSize && (node.measured?.width ?? node.width)
+                ? { width: node.measured?.width ?? node.width }
+                : {}),
+              ...(!retainCompactSize && (node.measured?.height ?? node.height)
+                ? { height: node.measured?.height ?? node.height }
+                : {}),
+            });
+          });
           return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
         });
       },
@@ -2432,14 +2567,41 @@ export const useFlowStore = create<FlowStore>()(
       arrangeGraph: async (options = {}) => {
         const applyLayout = () => {
           set((state) => {
-            const arranged = arrangeGraphNodes(state.nodes, state.edges).map((node) => {
+            const fitted =
+              options.fitNewNodeContents && typeof document !== 'undefined'
+                ? state.nodes.map((node) => {
+                    if (
+                      node.hidden ||
+                      node.data.blockProjectionOwnerId ||
+                      (node.data.blockInstanceV2
+                        ? !isFocusedStageNode(node.data.blockInstanceV2)
+                        : node.height === undefined || !['custom', 'any'].includes(node.data.type))
+                    )
+                      return node;
+                    const size = measuredNodeContentSize(document.getElementById(node.id));
+                    if (!size || node.height === size.height) return node;
+                    return {
+                      ...node,
+                      width: size.width,
+                      height: size.height,
+                      measured: size,
+                      style: { ...node.style, ...size },
+                    };
+                  })
+                : state.nodes;
+            const arranged = arrangeGraphNodes(fitted, state.edges, options).map((node) => {
               const instance = node.data.blockInstanceV2;
               if (!instance) return node;
               return {
                 ...node,
                 data: {
                   ...node.data,
-                  blockInstanceV2: reduceBlockPresentationV2(instance, { position: node.position }),
+                  blockInstanceV2: reduceBlockPresentationV2(instance, {
+                    position: node.position,
+                    ...(options.fitNewNodeContents && isFocusedStageNode(instance) && node.width && node.height
+                      ? { size: { width: node.width, height: node.height } }
+                      : {}),
+                  }),
                 },
               };
             });
@@ -2471,10 +2633,11 @@ export const useFlowStore = create<FlowStore>()(
       setNodeCached: (
         id: string,
         isCached: boolean,
-        memoryUsage?: Record<string, number>,
+        memoryUsage?: NodeMemoryUsage,
         executionTime?: Record<string, number>,
+        runtimeNodeId?: string,
       ) => {
-        setFlowNodeCached(id, isCached, memoryUsage, executionTime, set);
+        setFlowNodeCached(id, isCached, memoryUsage, executionTime, set, runtimeNodeId);
       },
 
       updateCacheStatus: (ids: string | string[]) => {
@@ -2483,22 +2646,38 @@ export const useFlowStore = create<FlowStore>()(
 
       exportGraph: (sid: string, targetNodeId?: string, options = {}) => {
         const { nodes, edges } = options.sourceGraph ?? get();
-        const durable = withoutBlockCompilationTransientsV2(nodes, edges);
-        const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
-        const withClusterBoundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
-        const executable = expandBlockGraphV2ForExecution(
-          withClusterBoundaries.nodes,
-          withClusterBoundaries.edges,
-          targetNodeId,
-        );
-        return buildApiGraphExport({
-          nodes: executable.nodes,
-          edges: executable.edges,
+        const claimed = hasAncillaryExecutionClaim(nodes);
+        const scope = claimed
+          ? assertPreparedExecutionScope(
+              options.executionScope,
+              flowExecutionScopeSourceKey(nodes, edges),
+              targetNodeId,
+            )
+          : undefined;
+        const executable = expandFlowExecutionGraph(nodes, edges, claimed ? undefined : targetNodeId);
+        const included = scope ? new Set(scope.nodeIds) : undefined;
+        const graph = buildApiGraphExport({
+          nodes: included
+            ? executable.nodes.filter(
+                (node) => included.has(node.id) || node.data.type === 'loop' || node.data.type === 'group',
+              )
+            : executable.nodes,
+          edges: included
+            ? executable.edges.filter((edge) => included.has(edge.source) && included.has(edge.target))
+            : executable.edges,
           sid,
-          targetNodeIds: resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
+          targetNodeIds: scope?.targetNodeIds ?? resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
           setParam: get().setParam,
           randomizeSeeds: options.randomizeSeeds,
         });
+        if (scope?.purpose) graph.runtimeHints = { ...graph.runtimeHints, executionPurpose: scope.purpose };
+        if (claimed && options.executionScope)
+          recordExecutionScopeExport(
+            options.executionScope,
+            flowExecutionScopeSourceKey(get().nodes, get().edges),
+            graph,
+          );
+        return graph;
       },
       updateProgress: (id: string, progress: number, metadata) => {
         updateFlowNodeProgress(id, progress, metadata, set);
@@ -2668,7 +2847,7 @@ export const useFlowStore = create<FlowStore>()(
     }),
     {
       name: FLOW_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createPageCheckpointStorage('reactflow')),
       version: FLOW_STORAGE_VERSION,
       migrate: (persisted) => normalizePersistedFlowState(persisted),
       merge: (persisted, current) => ({

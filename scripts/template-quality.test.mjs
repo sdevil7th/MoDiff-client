@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let server;
 let qualityModule;
 let templatesModule;
+let retainedRecipeIds;
 
 before(async () => {
   server = await createServer({
@@ -24,6 +25,8 @@ before(async () => {
   });
   qualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');
   templatesModule = await server.ssrLoadModule('/src/studio/templates.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
+  retainedRecipeIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
 });
 
 after(async () => {
@@ -45,10 +48,125 @@ function sampleTemplate(overrides = {}) {
   };
 }
 
-test('the complete runtime template catalog passes the modality-aware semantic audit', () => {
+test('the contact-sheet identity brief permits the rear-view exit and declares four panels', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'z_image_cinematic_contact_sheet');
+  assert.ok(template);
+  assert.match(template.prompt, /first three frames where his face is visible/i);
+  assert.doesNotMatch(template.prompt, /same face[^.]*all four frames/i);
+  const exit = template.prompt.split('Frame four, lower right:')[1]?.split('Each frame')[0];
+  assert.match(exit, /from directly behind/i);
+  assert.match(exit, /back of his head/i);
+  assert.match(exit, /strides away from camera/i);
+  assert.doesNotMatch(template.description, /3x3/i);
+  assert.equal(template.example.lockedSeed, 4301);
+  assert.equal(template.example.expectedOutput.width, 1344);
+  assert.equal(template.example.expectedOutput.height, 768);
+});
+
+test('the accepted material-transfer revision preserves the bottle and uses an ordered material-only strip', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux_kontext_multi_reference');
+  assert.match(template.prompt, /ASTERMIST and LAVENDER SLEEP SPRAY/);
+  assert.match(template.description, /material-only reference strip/);
+  assert.equal(template.inputBindings.length, 1);
+  const assets = template.inputBindings[0].defaultAssets;
+  assert.equal(assets.length, 2);
+  assert.equal(
+    assets[0].runtimeSha256,
+    'sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b',
+  );
+  assert.equal(
+    assets[1].runtimeSha256,
+    'sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34',
+  );
+  assert.equal(template.example.lockedSeed, 8407);
+});
+
+test('reviewed FLUX3 blank conditioning is scoped to its exact public profile', () => {
+  for (const [id, declaration] of [
+    ['flux3_klein_fp8r512_text_to_image', 'flux3-distilled-no-negative-input'],
+    ['flux3_klein_base_fp8r512_text_to_image', 'flux3-base-empty-negative-recipe'],
+  ]) {
+    const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === id);
+    assert.ok(template);
+    assert.equal(qualityModule.auditTemplateQuality(template).negative.policy.declarationId, declaration);
+    const foreign = {
+      ...template,
+      executionSelection: { ...template.executionSelection, executionProfileId: 'unreviewed-profile' },
+    };
+    assert.ok(
+      qualityModule.auditTemplateQuality(foreign).issues.some((issue) => issue.code === 'blank_negative_not_allowed'),
+    );
+  }
+});
+
+test('the ACE Base source-cover contract keeps blank negative input without claiming distilled CFG', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_audio_variation');
+  assert.equal(template.example.lockedSettings.guidanceScale, 7);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'ace-no-negative-input');
+  assert.doesNotMatch(audit.negative.policy.reason, /guidance-distilled|CFG 1/);
+  assert.equal(
+    qualityModule.getTemplateNegativePolicy({ ...template, modelType: 'StableAudioPipeline' }).requirement,
+    'required',
+  );
+});
+
+test('literal layout prompts require a complete bounded caption, box and visual description', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find(
+    (item) => item.id === 'flux3_klein_fp8r512_raw_coordinate_prompt',
+  );
+  assert.ok(template);
+  assert.equal(template.promptQualityPolicy, 'raw_layout_reference');
+  assert.equal(qualityModule.auditTemplateQuality(template).passed, true);
+  const caption = 'A still life with <apple_1>.';
+  const item = { id: 'apple_1', bbox: [250, 125, 750, 875], desc: 'A red apple, with a green leaf.' };
+  const invalid = [
+    'A still life with <wrong_id>.\n' + JSON.stringify([item]),
+    caption + '\n' + JSON.stringify([{ ...item, bbox: [750, 125, 250, 875] }]),
+    caption + '\n' + JSON.stringify([{ ...item, bbox: [250, 125, 1001, 875] }]),
+    caption + '\n' + JSON.stringify([{ ...item, bbox: [250, 125, 750] }]),
+    caption + '\n' + JSON.stringify([{ ...item, bbox: [250, 125, 750, 875.5] }]),
+    caption + '\n' + JSON.stringify([{ ...item, desc: 'x' }]),
+    caption + '\n' + JSON.stringify([{ ...item, extra: 'undeclared' }]),
+    caption + '\n' + JSON.stringify([item, item]),
+    caption + '\n[]',
+    caption + '\n' + JSON.stringify([item]) + '\ntrailing text',
+  ];
+  for (const prompt of invalid) {
+    assert.equal(qualityModule.auditTemplateQuality({ ...template, prompt }).passed, false, prompt);
+  }
+  const untreated = caption + '\n' + JSON.stringify([{ ...item, desc: 'An apple resting beside a leaf.' }]);
+  const missingTreatment = qualityModule.auditTemplateQuality({ ...template, prompt: untreated });
+  assert.ok(missingTreatment.issues.some((issue) => issue.semanticGroup === 'visual_treatment'));
+});
+
+test('a habitat is concrete focal content without rewriting an accepted prompt', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_lora_style');
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.ok(audit.matchedSemanticGroups.includes('focal_content'));
+  assert.equal(audit.passed, true);
+});
+
+test('the complete catalog audits authored prompts and reports backend defaults as unresolved', () => {
   const audits = qualityModule.auditTemplateCatalog(templatesModule.STUDIO_TEMPLATES);
+  const unresolved = audits.filter((audit) => audit.promptResolution === 'unresolved_backend_default');
+  assert.deepEqual(
+    unresolved.map((audit) => audit.templateId),
+    ['cosmos3_super_text_to_image'],
+  );
+  for (const audit of unresolved) {
+    assert.equal(audit.passed, false);
+    assert.deepEqual(
+      audit.issues.map((issue) => issue.code),
+      ['unresolved_backend_default'],
+    );
+  }
   const failures = audits
-    .filter((audit) => !audit.passed)
+    .filter((audit) => !audit.passed && audit.promptResolution !== 'unresolved_backend_default')
+    // Retained recipes keep the approved conditioning byte for byte. Their
+    // media, prompt and settings bindings are verified by the retained tests.
+    .filter(({ templateId }) => !retainedRecipeIds.has(templateId))
     .map((audit) => `${audit.templateId}: ${audit.issues.map((issue) => issue.message).join(' | ')}`);
 
   assert.deepEqual(failures, []);
@@ -61,10 +179,98 @@ test('the complete runtime template catalog passes the modality-aware semantic a
       'image_outpaint',
       'image_control',
       'image_layers',
+      'image_upscale',
+      'depth_estimation',
+      'text_generation',
+      'speech_recognition',
       'video',
       'audio',
     ]),
   );
+});
+
+test('depth, upscale, and text audits follow the input contracts of their own tasks', () => {
+  const depth = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'marigold_depth_synthetic_ramp');
+  const upscale = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'spandrel_x2_synthetic_gradient');
+  const text = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'smollm2_rain_gauge');
+  assert.equal(qualityModule.auditTemplateQuality(depth).passed, true);
+  assert.equal(qualityModule.auditTemplateQuality(upscale).passed, true);
+  assert.equal(qualityModule.auditTemplateQuality(text).passed, true);
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...depth, prompt: 'Estimate depth.' }).issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...upscale, prompt: 'Upscale this image.' }).issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...text, prompt: '' }).issues.map((issue) => issue.code),
+    ['missing_semantic_group'],
+  );
+});
+
+test('the Whisper Tiny audio-to-text template needs an audio source and no prompt', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'whisper_tiny_blue_cup_transcription');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.kind, 'speech_recognition');
+  assert.deepEqual(audit.requiredSemanticGroups, []);
+  assert.equal(audit.passed, true);
+  assert.deepEqual(
+    qualityModule
+      .auditTemplateQuality({ ...template, prompt: 'Transcribe the uploaded audio.' })
+      .issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+});
+
+test('the LCM Edit audit recognizes a target caption with a bound source and no negative input', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'lcm_dawn_alpine_lake');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'lcm-edit-no-negative-input');
+  assert.deepEqual(audit.matchedSemanticGroups, ['source_role', 'transformation', 'preservation', 'integration']);
+
+  const missingSource = qualityModule.auditTemplateQuality({ ...template, inputBindings: [] });
+  assert.ok(missingSource.issues.some((issue) => issue.semanticGroup === 'source_role'));
+  const noTarget = qualityModule.auditTemplateQuality({
+    ...template,
+    prompt: 'Photograph of this alpine lake. Keep the shoreline, rocky foreground and pine forest composition.',
+  });
+  assert.ok(noTarget.issues.some((issue) => issue.semanticGroup === 'transformation'));
+  const instructionEdit = qualityModule.auditTemplateQuality({
+    ...template,
+    modelType: 'QwenImageEditModularPipeline',
+  });
+  assert.ok(instructionEdit.issues.some((issue) => issue.semanticGroup === 'transformation'));
+  assert.ok(instructionEdit.issues.some((issue) => issue.code === 'blank_negative_not_allowed'));
+  assert.equal(qualityModule.getTemplateNegativePolicy({ ...template, mode: 'text_to_image' }).requirement, 'required');
+});
+
+test('the retained Sana Sprint Edit requires a target caption and exactly one required source', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'sana_sprint_monochrome_tiger');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'sana-sprint-edit-no-negative-input');
+  assert.deepEqual(audit.matchedSemanticGroups, ['source_role', 'focal_content', 'spatial_design', 'visual_treatment']);
+  const noSource = qualityModule.auditTemplateQuality({ ...template, inputBindings: [] });
+  assert.ok(noSource.issues.some((issue) => issue.semanticGroup === 'source_role'));
+  const noCaption = qualityModule.auditTemplateQuality({ ...template, prompt: '' });
+  assert.ok(noCaption.issues.some((issue) => issue.semanticGroup === 'visual_treatment'));
+  assert.equal(qualityModule.getTemplateNegativePolicy({ ...template, mode: 'text_to_image' }).requirement, 'required');
+});
+
+test('the Cosmos publisher blank-negative declaration does not extend to other same-class recipes', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'cosmos3_super_text_to_image');
+  assert.equal(qualityModule.getTemplateNegativePolicy(template).declarationId, 'cosmos3-super-publisher-conditioning');
+  const other = {
+    ...template,
+    executionSelection: { ...template.executionSelection, executionProfileId: 'another-profile' },
+  };
+  assert.equal(qualityModule.getTemplateNegativePolicy(other).requirement, 'required');
 });
 
 test('semantic coverage rejects long but content-free prompt padding', () => {
@@ -150,4 +356,36 @@ test('blank negative prompts are accepted only by a declared model-aware policy'
     explicitCfgOne.issues.some((issue) => issue.code === 'blank_negative_not_allowed'),
     false,
   );
+});
+
+test('backend-owned prompts remain unresolved until their actual default is supplied to the semantic audit', () => {
+  const template = sampleTemplate({ prompt: '', executionSelection: { backendDefaultInputs: ['prompt'] } });
+  const unresolved = qualityModule.auditTemplateQuality(template);
+  assert.equal(unresolved.promptResolution, 'unresolved_backend_default');
+  assert.equal(unresolved.passed, false);
+  assert.deepEqual(
+    unresolved.issues.map((issue) => issue.code),
+    ['unresolved_backend_default'],
+  );
+  const resolved = qualityModule.auditTemplateQuality(template, { prompt: sampleTemplate().prompt });
+  assert.equal(resolved.promptResolution, 'backend_default');
+  assert.equal(resolved.passed, true);
+  const weak = qualityModule.auditTemplateQuality(template, { prompt: 'high quality '.repeat(100) });
+  assert.equal(weak.passed, false);
+  assert.equal(
+    weak.issues.some((issue) => issue.code === 'missing_semantic_group'),
+    true,
+  );
+  const undeclared = qualityModule.auditTemplateQuality(sampleTemplate({ prompt: '' }), {
+    prompt: sampleTemplate().prompt,
+  });
+  assert.equal(undeclared.passed, false, 'A caller cannot replace an undeclared empty template prompt.');
+  const authored = qualityModule.auditTemplateQuality(
+    sampleTemplate({
+      executionSelection: { backendDefaultInputs: ['prompt'] },
+    }),
+    { prompt: 'high quality' },
+  );
+  assert.equal(authored.promptResolution, 'template');
+  assert.equal(authored.passed, true, 'Authored text takes precedence over a fresh backend default.');
 });

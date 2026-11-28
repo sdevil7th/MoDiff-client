@@ -38,8 +38,9 @@ function resolveRandomFieldValue(
   sharedRandomValues: Map<string, number>,
   operationSharedKey?: string,
 ) {
-  const randomValue = isRecord(paramData.value) ? paramData.value : null;
-  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
+  const effectiveValue = paramData.value ?? paramData.default;
+  const randomValue = isRecord(effectiveValue) ? effectiveValue : null;
+  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : effectiveValue;
   const isRandom = randomValue && 'isRandom' in randomValue ? Boolean(randomValue.isRandom) : false;
 
   if (!isRandom) {
@@ -126,6 +127,50 @@ function assertExecutableDeviceOffloadPlan(node: FlowGraphNode) {
   }
 }
 
+/** Existing terminal/ancestry selection, independent of values or model readiness. */
+export function selectFlowGraphExecutionScope({
+  nodes,
+  edges,
+  targetNodeId,
+  targetNodeIds,
+}: Pick<BuildApiGraphExportOptions, 'nodes' | 'edges' | 'targetNodeId' | 'targetNodeIds'>): {
+  nodes: FlowGraphNode[];
+  paths: string[][];
+} {
+  const executableNodes = executableFlowNodes(nodes);
+
+  if (executableNodes.length === 0) return { nodes: [], paths: [] };
+
+  const targets = [...new Set(targetNodeIds ?? (targetNodeId ? [targetNodeId] : []))];
+  if (targetNodeIds && !targets.length) throw new Error('The selected Block has no executable output path.');
+  for (const id of targets)
+    if (!executableNodes.some((node) => node.id === id))
+      throw new Error(`Target node with id ${id} not found in executable nodes`);
+
+  const byId = new Map(executableNodes.map((node) => [node.id, node]));
+  const walkBackwards = (nodeId: string, visited = new Set<string>()): string[] => {
+    if (visited.has(nodeId)) return [];
+    visited.add(nodeId);
+    const incomingNodes = getIncomers(byId.get(nodeId)!, executableNodes, edges);
+    const dependencies: string[] = [];
+    for (const node of incomingNodes) {
+      dependencies.push(...walkBackwards(node.id, visited));
+    }
+
+    dependencies.push(nodeId);
+    return dependencies;
+  };
+
+  let terminals = targets;
+  if (!terminals.length) {
+    const sinks = executableNodes.filter((node) => !getOutgoers(node, executableNodes, edges).length);
+    terminals = (sinks.length ? sinks : executableNodes).map((node) => node.id);
+  }
+  const paths = terminals.map((id) => walkBackwards(id));
+  const included = new Set(paths.flat());
+  return { nodes: executableNodes.filter((node) => included.has(node.id)), paths };
+}
+
 export function buildApiGraphExport({
   randomizeSeeds = true,
   nodes,
@@ -138,71 +183,13 @@ export function buildApiGraphExport({
   ({ nodes, edges } = lowerReviewedLoopConnectionsV2(nodes, edges));
   const sessionId = sid || '';
 
-  const executableNodes = executableFlowNodes(nodes);
-
-  if (executableNodes.length === 0) {
-    return {
-      sid: sessionId,
-      nodes: {},
-      paths: [],
-    };
-  }
-
-  const targets = [...new Set(targetNodeIds ?? (targetNodeId ? [targetNodeId] : []))];
-  if (targetNodeIds && !targets.length) throw new Error('The selected Block has no executable output path.');
-  for (const id of targets)
-    if (!executableNodes.some((node) => node.id === id))
-      throw new Error(`Target node with id ${id} not found in executable nodes`);
-
-  const getIncomingNodes = (nodeId: string): FlowGraphNode[] => {
-    const node = executableNodes.find((n) => n.id === nodeId);
-    if (!node) return [];
-    return getIncomers(node, executableNodes, edges);
-  };
-
-  const getOutgoingNodes = (nodeId: string): FlowGraphNode[] => {
-    const node = executableNodes.find((n) => n.id === nodeId);
-    if (!node) return [];
-    return getOutgoers(node, executableNodes, edges);
-  };
-
-  const walkBackwards = (nodeId: string, visited = new Set<string>()): string[] => {
-    if (visited.has(nodeId)) {
-      return [];
-    }
-
-    visited.add(nodeId);
-    const incomingNodes = getIncomingNodes(nodeId);
-    const dependencies: string[] = [];
-    for (const node of incomingNodes) {
-      dependencies.push(...walkBackwards(node.id, visited));
-    }
-
-    dependencies.push(nodeId);
-    return dependencies;
-  };
-
-  let nodesToInclude: string[] = [];
-
-  if (targets.length) {
-    nodesToInclude = [...new Set(targets.flatMap((id) => walkBackwards(id)))];
-  } else {
-    const outputNodes = executableNodes.filter((node) => {
-      const outgoers = getOutgoingNodes(node.id);
-      return outgoers.length === 0;
-    });
-
-    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
-    const allPathNodes = new Set<string>();
-    endNodes.forEach((node) => {
-      const path = walkBackwards(node.id);
-      path.forEach((nodeId) => allPathNodes.add(nodeId));
-    });
-
-    nodesToInclude = Array.from(allPathNodes);
-  }
-
-  const filteredExecutableNodes = executableNodes.filter((node) => nodesToInclude.includes(node.id));
+  const { nodes: filteredExecutableNodes, paths } = selectFlowGraphExecutionScope({
+    nodes,
+    edges,
+    targetNodeId,
+    targetNodeIds,
+  });
+  if (!filteredExecutableNodes.length) return { sid: sessionId, nodes: {}, paths: [] };
   filteredExecutableNodes.forEach(assertExecutableDeviceOffloadPlan);
   const includedNodeIds = new Set(filteredExecutableNodes.map((node) => node.id));
 
@@ -253,6 +240,16 @@ export function buildApiGraphExport({
         (edge) => edge.target === node.id && edge.targetHandle === paramName && includedNodeIds.has(edge.source),
       );
 
+      // Optional additions keep older recipes byte-compatible. Authored nondefaults
+      // and actual edges are exported even when their editor is hidden.
+      if (
+        !incomingEdge &&
+        paramData.fieldOptions?.omitInactiveDefault === true &&
+        (paramData.hidden || paramData.display === 'input') &&
+        (exportValue ?? null) === (paramData.default ?? null)
+      )
+        return;
+
       if (incomingEdge) {
         param.sourceId = incomingEdge.source;
         param.sourceKey = incomingEdge.sourceHandle || undefined;
@@ -269,28 +266,6 @@ export function buildApiGraphExport({
       params,
     };
   });
-
-  const paths: string[][] = [];
-
-  if (targets.length) {
-    for (const id of targets) {
-      const path = walkBackwards(id);
-      if (path.length > 0) paths.push(path);
-    }
-  } else {
-    const outputNodes = executableNodes.filter((node) => {
-      const outgoers = getOutgoingNodes(node.id);
-      return outgoers.length === 0;
-    });
-
-    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
-    endNodes.forEach((node) => {
-      const path = walkBackwards(node.id);
-      if (path.length > 0) {
-        paths.push(path);
-      }
-    });
-  }
 
   const loops = nodes
     .filter((node) => node.data.type === 'loop' && !isNodeDisabled(node))

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +32,204 @@ before(async () => {
 
 after(async () => {
   await server?.close();
+});
+
+test('LTX long video starts with the exact distilled sampling controls', () => {
+  const model = 'LTXI2VLongMultiPromptPipeline';
+  const defaults = modelProfilesModule.getFormDefaultsForRegisteredRoute('image_to_video', model);
+  assert.equal(defaults.modelType, model);
+  assert.equal(defaults.steps, 8);
+  assert.equal(defaults.guidanceScale, 1);
+  assert.equal(defaults.maxSequenceLength, 128);
+  assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES[model].lowVram.steps, 8);
+});
+
+test('required Diffusers providers are hash-covered and bound to the exact declared overlay profile', async () => {
+  const runtime = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
+  const modelType = 'DDPMPipeline';
+  const mode = 'unconditional_image';
+  const providerId = 'reviewed-diffusers-provider-v1';
+  const profile = {
+    id: 'provider-fixture:direct',
+    modes: [mode],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'diffusers-pipeline',
+    pipeline_class: modelType,
+    default_repo: modelProfilesModule.DDPM_CIFAR10_REPO,
+    optional_runtime_delivery: 'optional_overlay',
+    optional_runtime_profiles: [providerId],
+    required_diffusers_provider: providerId,
+    optionalRuntimeRequirement: {
+      schemaVersion: 1,
+      delivery: 'optional_overlay',
+      requiredNow: true,
+      profileIds: [providerId],
+      executionProfileIds: ['provider-fixture:direct'],
+      state: 'missing',
+      reason: 'optional_runtime_missing',
+    },
+  };
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'provider-fixture:unconditional:v1',
+    modelType,
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: modelType,
+    defaultRepo: profile.default_repo,
+    roles: [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', 0, 0],
+      ['diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate', 400, 0],
+      ['preview', 'modules.Image.Preview', 800, 0],
+    ],
+    edges: [
+      ['diffusersImagePipeline', 'pipeline', 'diffusersUnconditionalGenerate', 'pipeline'],
+      ['diffusersUnconditionalGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [['diffusersImagePipeline', 'quantized_components', 'emptyList']],
+    autoFields: [],
+    actions: [],
+    requiredDiffusersProvider: providerId,
+  };
+  const signed = (value) => ({
+    ...value,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(value))}`,
+  });
+  const parseProfile = (value) =>
+    runtime.parseOptionalRuntimeExecutionProfiles([structuredClone(value)], undefined, (item) => item === mode)[0];
+  const parseSpec = (value, selected = profile) =>
+    executionSpecsModule.parseStudioExecutionSpecs([value], modelType, [mode], [selected]);
+  const parsed = parseProfile(profile);
+  for (const item of [semantic, { ...semantic, auxiliaryTerminalRoles: [] }]) {
+    assert.deepEqual(parseSpec(signed(item), parsed), [signed(item)]);
+  }
+
+  for (const change of [
+    { required_diffusers_provider: null },
+    { required_diffusers_provider: '' },
+    { required_diffusers_provider: 'wrong:runtime' },
+    { optional_runtime_profiles: [] },
+    { optional_runtime_profiles: ['different-provider'] },
+    { optional_runtime_profiles: [providerId, providerId] },
+    { optional_runtime_delivery: 'base' },
+    { optionalRuntimeRequirement: undefined },
+    { optionalRuntimeRequirement: { ...profile.optionalRuntimeRequirement, requiredNow: false } },
+    { optionalRuntimeRequirement: { ...profile.optionalRuntimeRequirement, profileIds: ['different-provider'] } },
+  ]) {
+    assert.throws(() => parseProfile({ ...profile, ...change }), undefined, JSON.stringify(change));
+  }
+  for (const value of [null, '', 'different-provider', 'wrong:runtime', undefined]) {
+    assert.throws(() => parseSpec(signed({ ...semantic, requiredDiffusersProvider: value })));
+  }
+  const { requiredDiffusersProvider: _required, ...legacySemantic } = semantic;
+  assert.throws(() => parseSpec(signed(legacySemantic)), 'A required provider cannot be omitted from its spec');
+  const { required_diffusers_provider: _provider, ...legacyProfile } = profile;
+  assert.throws(() => parseSpec(signed(semantic), legacyProfile), 'The spec cannot introduce undeclared authority');
+  const otherProfile = {
+    ...profile,
+    required_diffusers_provider: 'different-provider',
+    optional_runtime_profiles: ['different-provider'],
+  };
+  assert.throws(
+    () => parseSpec({ ...signed(semantic), requiredDiffusersProvider: 'different-provider' }, otherProfile),
+    'Even a consistently changed profile cannot reuse the old specification hash',
+  );
+  for (const item of [legacySemantic, { ...legacySemantic, auxiliaryTerminalRoles: [] }]) {
+    const old = signed(item);
+    assert.deepEqual(parseSpec(old, legacyProfile), [old], 'Both old key sets retain their original hash and meaning');
+  }
+});
+
+test('empty multiple-choice bindings preserve an empty list while text bindings stay scalar', async () => {
+  const modelType = 'DDPMPipeline';
+  const mode = 'unconditional_image';
+  const profile = {
+    id: 'ddpm-cifar10:direct',
+    modes: [mode],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'diffusers-pipeline',
+    pipeline_class: modelType,
+    default_repo: modelProfilesModule.DDPM_CIFAR10_REPO,
+  };
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'ddpm-empty-component-fixture:v1',
+    modelType,
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: modelType,
+    defaultRepo: profile.default_repo,
+    roles: [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', 0, 0],
+      ['diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate', 400, 0],
+      ['preview', 'modules.Image.Preview', 800, 0],
+    ],
+    edges: [
+      ['diffusersImagePipeline', 'pipeline', 'diffusersUnconditionalGenerate', 'pipeline'],
+      ['diffusersUnconditionalGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [['diffusersImagePipeline', 'quantized_components', 'emptyList']],
+    autoFields: [],
+    actions: [],
+  };
+  const spec = {
+    ...semantic,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], modelType, [mode], [profile]), [spec]);
+  const withWeightFormat = { ...semantic, bindings: [['diffusersImagePipeline', 'weight_format', 'weightFormat']] };
+  const weightSpec = {
+    ...withWeightFormat,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(withWeightFormat))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([weightSpec], modelType, [mode], [profile]), [
+    weightSpec,
+  ]);
+  for (const source of ['weight_format', 'WeightFormat', ['weightFormat'], null]) {
+    const invalid = { ...withWeightFormat, bindings: [['diffusersImagePipeline', 'weight_format', source]] };
+    invalid.contentHash = `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(invalid))}`;
+    assert.throws(() => executionSpecsModule.parseStudioExecutionSpecs([invalid], modelType, [mode], [profile]));
+  }
+  globalThis.window ??= { location: { origin: 'http://127.0.0.1:5191' } };
+  const valuesModule = await server.ssrLoadModule('/src/studio/executionSpecValues.ts');
+  const form = {
+    ...modelProfilesModule.DEFAULT_STUDIO_FORM,
+    ...modelProfilesModule.getFormDefaultsForMode(mode, modelType),
+  };
+  const before = structuredClone(form);
+  assert.equal(
+    valuesModule.resolveStudioExecutionSpecValues(
+      form,
+      weightSpec,
+      modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+    ).weightFormat,
+    'native',
+  );
+  const first = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(first.emptyList, []);
+  assert.equal(first.empty, '');
+  first.emptyList.push('transformer');
+  const second = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(second.emptyList, [], 'Separate drafts must not share mutable component selections');
+  assert.deepEqual(form, before);
 });
 
 test('new outpaint forms fully repaint the extension without changing saved or inpaint settings', () => {
@@ -2370,4 +2569,89 @@ test('task contracts reject a loader or output identity that diverges from its e
       /Invalid Studio task-template contract/,
     );
   }
+});
+test('managed speech authoring uses exact backend timestamp options without rewriting a saved form', async (t) => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  globalThis.window = { location: { origin: 'http://127.0.0.1' }, dispatchEvent: () => true };
+  t.after(() => {
+    if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+    else delete globalThis.window;
+  });
+  const nodes = (await server.ssrLoadModule('/src/stores/useNodeStore.ts')).useNodesStore;
+  const studio = (await server.ssrLoadModule('/src/stores/useStudioStore.ts')).useStudioStore;
+  const originalNodes = nodes.getState();
+  const originalStudio = studio.getState();
+  t.after(() => {
+    nodes.setState(originalNodes, true);
+    studio.setState(originalStudio, true);
+  });
+  const ctc = 'HuggingFaceCTCSpeechRecognitionModel';
+  const whisper = 'HuggingFaceSpeechRecognitionModel';
+  const ctcNodeKey = 'modules.HuggingFaceSpeech.TranscribeCTCAudio';
+  const whisperNodeKey = 'modules.HuggingFaceSpeech.TranscribeAudio';
+  const ctcFixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  const transcribeCtc = ctcFixture.compiledEntry.definition.graph.nodes.find(
+    (node) => node.data.action === 'TranscribeCTCAudio',
+  ).data;
+  const capability = (modelType, nodeKey, modes) => ({
+    modelType,
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: modes,
+    studioExecutionSpecs: modes.map((mode) => ({
+      modelType,
+      mode,
+      roles: [['transcribeAudio', nodeKey, 0, 0]],
+      bindings: [['transcribeAudio', 'timestamps', 'speechTimestamps']],
+    })),
+  });
+  nodes.setState({
+    studioExecutionSpecInvalid: false,
+    studioModelCapabilities: [
+      capability(ctc, ctcNodeKey, ['speech_to_text']),
+      capability(whisper, whisperNodeKey, ['speech_to_text', 'speech_translation']),
+    ],
+    nodesRegistry: {
+      [ctcNodeKey]: transcribeCtc,
+      [whisperNodeKey]: { params: { timestamps: { default: 'segment', options: ['none', 'segment', 'word'] } } },
+    },
+  });
+
+  studio.getState().updateForm(modelProfilesModule.getFormDefaultsForMode('speech_to_text', ctc));
+  assert.equal(studio.getState().form.speechTimestamps, 'word', 'Fresh CTC Studio graph must author the node default');
+  const { studioSpeechTimestampContract } = await server.ssrLoadModule('/src/studio/effectiveControls.ts');
+  const contractForForm = (form) => studioSpeechTimestampContract(form, nodes.getState());
+  assert.deepEqual(contractForForm(studio.getState().form), { options: ['none', 'word'], defaultValue: 'word' });
+
+  for (const value of ['none', 'word']) {
+    studio.getState().updateForm({ speechTimestamps: value });
+    studio.getState().updateForm({ modelType: whisper });
+    assert.equal(studio.getState().form.speechTimestamps, value);
+    studio.getState().updateForm({ modelType: ctc });
+    assert.equal(studio.getState().form.speechTimestamps, value);
+  }
+
+  studio.getState().selectMode('speech_translation');
+  assert.equal(studio.getState().form.modelType, whisper);
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  assert.deepEqual(contractForForm(studio.getState().form), {
+    options: ['none', 'segment', 'word'],
+    defaultValue: 'segment',
+  });
+  studio.getState().selectMode('speech_to_text');
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  studio.getState().updateForm({ modelType: ctc });
+  assert.equal(studio.getState().form.speechTimestamps, 'word');
+
+  const templateFor = (modelType) => ({ id: 'speech-template-fixture', modelType, mode: 'speech_to_text', prompt: '' });
+  studio.getState().applyTemplate(templateFor(ctc), { sourceAudio: ['@data/audio/template-input.wav'] });
+  assert.equal(studio.getState().form.speechTimestamps, 'word', 'Fresh CTC templates must use the CTC node default');
+  assert.deepEqual(studio.getState().form.sourceAudio, ['@data/audio/template-input.wav']);
+  studio.getState().applyTemplate(templateFor(whisper));
+  assert.equal(studio.getState().form.speechTimestamps, 'segment', 'Fresh Whisper templates retain segment timestamps');
+
+  // Loading a persisted draft does not take the explicit task/model authoring path.
+  studio.setState({ form: { ...studio.getState().form, speechTimestamps: 'segment' } });
+  studio.getState().updateForm({ sourceAudio: ['@data/audio/old-input.wav'] });
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  assert.deepEqual(studio.getState().form.sourceAudio, ['@data/audio/old-input.wav']);
 });

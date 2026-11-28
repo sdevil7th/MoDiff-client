@@ -1,4 +1,6 @@
-import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { visualNodeTitle, visualStageForNode } from '../studio/visualNodeCatalog';
+import ImageGuidanceChoice from './ImageGuidanceChoice';
+import StageActionChoice from './StageActionChoice';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { NodeProps, useStoreApi } from '@xyflow/react';
@@ -33,15 +35,17 @@ import {
 } from 'lucide-react';
 
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
-import { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { modiffLayout, sanitizeModiffNodeStyle } from '../theme';
 import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
 import { formatExecutionTime } from '../utils/formatExecutionTime';
 import { formatMemory } from '../utils/formatMemory';
+import { measuredNodeContentSize } from '../workflow/nodeContentSize';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import {
   CustomNodeFrame,
@@ -119,13 +123,18 @@ type NodeSurface = {
   actions?: ReactNode;
   setSize: (width: number, height: number) => void;
   testId?: string;
+  hasAudioPreview?: boolean;
 };
 
 const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurface }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
-  const label = nodeDisplayLabel(node.data);
-  const hasAudioPlayer = Object.values(node.data.params).some((param) => param.display === 'ui_audio');
+  const catalog = useNodesStore((state) => state.visualNodeCatalog);
+  const registered = useNodesStore((state) => state.nodesRegistry[`${node.data.module}.${node.data.action}`]);
+  const stage = node.surface ? null : visualStageForNode(catalog, node.data);
+  const label = visualNodeTitle(catalog, node.data, registered);
+  const hasAudioPlayer =
+    node.surface?.hasAudioPreview || Object.values(node.data.params).some((param) => param.display === 'ui_audio');
   const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
   const setParam = useFlowStore((state) => state.setParamWithHistory);
   const setNodeSize = useFlowStore((state) => state.setNodeSize);
@@ -140,9 +149,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
   // user-authored size. Feeding it back into textarea minima changed natural
   // content height inside React Flow's ResizeObserver delivery (110 -> 160),
   // causing undelivered notifications. Only explicit canvas sizing opts in.
-  const hasTallExplicitSize = useFlowStore(
-    (state) => (state.nodes.find((candidate) => candidate.id === node.id)?.height ?? 0) > 360,
-  );
+  const explicitHeight = useFlowStore((state) => state.nodes.find((candidate) => candidate.id === node.id)?.height);
+  const hasTallExplicitSize = (explicitHeight ?? 0) > 360;
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const [helpAnchor, setHelpAnchor] = useState<PanelAnchor | null>(null);
   const [issueAnchor, setIssueAnchor] = useState<PanelAnchor | null>(null);
@@ -213,7 +221,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
   const handleRecompute = useCallback(async () => {
     try {
       const result = await recomputeNodeOutputs([node.id]);
-      if (result.nodes.length) setNodeCached(node.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -227,11 +235,12 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
 
   const handleClearCache = useCallback(async () => {
     try {
-      await deleteNodeCache([node.id]);
-      setNodeCached(node.id, false);
+      const result = await deleteNodeCache([node.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
-      console.error('Failed to delete cache', error);
+      const message = error instanceof Error ? error.message : String(error);
+      enqueueSnackbar(message, { variant: 'error', autoHideDuration: 2600 });
     }
   }, [node.id, setNodeCached]);
 
@@ -252,32 +261,51 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
 
   const handleRunFromNode = useCallback(async () => {
     closeContextMenu();
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, targetNodeId: node.id });
-    if (!validation.canRun || !sid) return;
-    await coordinateGraphRun({ sid, targetNodeId: node.id });
+    try {
+      const pending = prepareExecutionScope({ targetNodeId: node.id });
+      const executionScope = pending ? await pending : undefined;
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        targetNodeId: node.id,
+        executionScope,
+      });
+      if (!validation.canRun || !sid) return;
+      await coordinateGraphRun({ sid, targetNodeId: node.id, executionScope });
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
   }, [closeContextMenu, isConnected, node.id, sid]);
 
-  const handlePreviewBranch = useCallback(() => {
-    const validation = validateCurrentRun({
-      sid,
-      isConnected,
-      includeStudio: false,
-      showDialog: false,
-      targetNodeId: node.id,
-    });
-    if (!validation.canRun || !sid || !contextMenu) return;
-    const apiGraph = useFlowStore.getState().exportGraph(sid, node.id);
-    const nodeIds = Object.keys(apiGraph.nodes);
-    const cachedNodeIds = useFlowStore
-      .getState()
-      .nodes.filter((item) => nodeIds.includes(item.id) && item.data.isCached)
-      .map((item) => item.id);
-    setBranchPreview({
-      anchor: clampAnchor({ left: contextMenu.mouseX + 180, top: contextMenu.mouseY }, 320, 260),
-      nodeIds,
-      cachedNodeIds,
-    });
-    closeContextMenu();
+  const handlePreviewBranch = useCallback(async () => {
+    try {
+      const pending = prepareExecutionScope({ targetNodeId: node.id });
+      const executionScope = pending ? await pending : undefined;
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        showDialog: false,
+        targetNodeId: node.id,
+        executionScope,
+      });
+      if (!validation.canRun || !sid || !contextMenu) return;
+      const apiGraph = useFlowStore.getState().exportGraph(sid, node.id, { executionScope, randomizeSeeds: false });
+      const nodeIds = Object.keys(apiGraph.nodes);
+      const cachedNodeIds = useFlowStore
+        .getState()
+        .nodes.filter((item) => nodeIds.includes(item.id) && item.data.isCached)
+        .map((item) => item.id);
+      setBranchPreview({
+        anchor: clampAnchor({ left: contextMenu.mouseX + 180, top: contextMenu.mouseY }, 320, 260),
+        nodeIds,
+        cachedNodeIds,
+      });
+      closeContextMenu();
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
   }, [closeContextMenu, contextMenu, isConnected, node.id, sid]);
 
   const handleCopyNodeInfo = useCallback(() => {
@@ -357,6 +385,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
         recentChangeLabel && 'outline-hf-yellow border-hf-yellow shadow-modiff-panel',
       )}
       nodeStyle={style}
+      explicitHeight={explicitHeight}
       maxWidth={MAX_NODE_WIDTH}
       minWidth={minimumNodeWidth}
       isError={isError}
@@ -364,7 +393,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
     >
       <CustomNodeHeaderFrame headerColor={node.data.headerColor}>
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold">{label}</span>
+          <span className="block truncate text-sm font-bold" title={stage ? `${label} · ${stage.mode.label}` : label}>
+            {label}
+          </span>
           {showDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
@@ -402,6 +433,12 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
           {helpAnchor && (
             <NodePopover anchor={helpAnchor} onClose={() => setHelpAnchor(null)} className="max-w-[480px] p-3">
               <div className="text-base font-bold text-modiff-text">{label}</div>
+              {stage && <StageActionChoice nodeId={node.id} />}
+              {stage && (
+                <p className="mt-1 text-sm text-modiff-text">
+                  <b>What this stage does</b> · {stage.mode.label}
+                </p>
+              )}
               {node.data.description && <div className="mt-1 text-sm text-modiff-text">{node.data.description}</div>}
               {Object.entries(node.data.params).map(([key, param]) =>
                 param.description ? (
@@ -427,30 +464,37 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
         <>
           <div
             className={cx(
-              'nowheel flex min-h-0 w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 pb-2 text-modiff-text',
+              'nowheel min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 text-modiff-text',
               hasTallExplicitSize ? '[&_.modiff-textarea-field]:min-h-40' : '[&_.modiff-textarea-field]:min-h-[110px]',
             )}
             data-testid={`node-scroll-body-${node.id}`}
+            data-node-body
           >
-            <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-              {node.surface?.controls ?? (
-                <NodeContent
-                  nodeId={node.id}
-                  params={node.data.params}
-                  updateStore={handleUpdateStore}
-                  updateFieldActionStore={
-                    node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
-                      ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
-                      : undefined
-                  }
-                  module={node.data.module || ''}
-                  action={node.data.action || ''}
-                  mode="controls"
-                  executionStatus={node.data.executionStatus}
-                  progressMessage={node.data.progressMessage}
-                />
-              )}
-            </ErrorBoundary>
+            <div data-node-fields className="grid min-w-0 grid-cols-1 gap-2">
+              <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
+                {stage && !node.surface && stage.mode.label !== label && (
+                  <p className="text-xs text-modiff-subtle-text">{stage.mode.label}</p>
+                )}
+                {stage?.mode.guidance && !node.surface && <ImageGuidanceChoice nodeId={node.id} />}
+                {node.surface?.controls ?? (
+                  <NodeContent
+                    nodeId={node.id}
+                    params={node.data.params}
+                    updateStore={handleUpdateStore}
+                    updateFieldActionStore={
+                      node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                        ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                        : undefined
+                    }
+                    module={node.data.module || ''}
+                    action={node.data.action || ''}
+                    mode="controls"
+                    executionStatus={node.data.executionStatus}
+                    progressMessage={node.data.progressMessage}
+                  />
+                )}
+              </ErrorBoundary>
+            </div>
           </div>
 
           <div className="relative w-full shrink-0 bg-modiff-bg text-modiff-subtle-text">
@@ -491,14 +535,14 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
                 title="Peak node memory usage"
                 onClick={(event) => setMemoryAnchor(anchorBelow(event.currentTarget))}
               >
-                {node.data.memoryUsage?.last ? formatMemory(node.data.memoryUsage.last) : '-'}
+                {formatMemory(node.data.memoryUsage?.last)}
               </FooterMetricButton>
               {memoryAnchor && (
                 <NodePopover anchor={memoryAnchor} onClose={() => setMemoryAnchor(null)} className="p-3">
                   <div className="mb-1 text-sm font-bold text-modiff-text">Peak node VRAM usage</div>
-                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last ?? 0)}</MetricRow>
-                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min ?? 0)}</MetricRow>
-                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max ?? 0)}</MetricRow>
+                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last)}</MetricRow>
+                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min)}</MetricRow>
+                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max)}</MetricRow>
                 </NodePopover>
               )}
               <FooterMetricButton
@@ -618,11 +662,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
             icon={<RefreshCcw size={15} />}
             onClick={() => {
               closeContextMenu();
-              resetNodeSize(node.id);
+              const size = measuredNodeContentSize(nodeRef.current, false);
+              if (size && node.surface) node.surface.setSize(size.width, size.height);
+              else resetNodeSize(node.id);
               scheduleNodeLayoutSync();
             }}
           >
-            Reset size
+            {node.surface ? 'Fit height to controls' : 'Reset size'}
           </ContextMenuItem>
           <ContextMenuItem
             data-testid="node-menu-recompute"

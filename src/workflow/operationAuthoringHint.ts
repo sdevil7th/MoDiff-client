@@ -1,3 +1,4 @@
+import { promptEnhancementParentFromHint } from '../studio/promptEnhancementParent';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { OperationAuthoring } from './operationAuthoring';
 import { parseOperationContracts } from './operationContracts';
@@ -12,8 +13,6 @@ export function operationAuthoring(node: CustomNodeType): OperationAuthoring | n
     typeof hint.defaults !== 'object' ||
     Array.isArray(hint.defaults) ||
     Object.keys(hint.defaults).length > 512 ||
-    !Array.isArray(hint.retained) ||
-    hint.retained.length > 512 ||
     (hint.authored !== undefined &&
       (!Array.isArray(hint.authored) ||
         hint.authored.length > 512 ||
@@ -52,15 +51,22 @@ export function operationAuthoring(node: CustomNodeType): OperationAuthoring | n
   )
     return null;
   try {
+    const retained = Object.getOwnPropertyDescriptor(hint, 'retained');
+    if ((!retained && 'retained' in hint) || (retained && (!retained.enumerable || !('value' in retained))))
+      return null;
+    const entries = retained ? retained.value : [];
+    if (!Array.isArray(entries) || entries.length > 512) return null;
+    promptEnhancementParentFromHint(hint);
     const [operation] = parseOperationContracts([hint.operation], 3);
     if (!operation || operation.nodeKey !== `${node.data.module}.${node.data.action}`) return null;
     if (
-      hint.retained.some(
+      entries.some(
         (v) => !v || typeof v.field !== 'string' || typeof v.reason !== 'string' || typeof v.pipeline !== 'string',
       )
     )
       return null;
-    return hint;
+    // Older schema-one hints omitted this advisory list. Reading is not migration.
+    return retained ? hint : { ...hint, retained: [] };
   } catch {
     return null;
   }

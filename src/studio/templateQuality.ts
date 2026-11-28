@@ -7,6 +7,10 @@ export type TemplateQualityKind =
   | 'image_outpaint'
   | 'image_control'
   | 'image_layers'
+  | 'image_upscale'
+  | 'depth_estimation'
+  | 'text_generation'
+  | 'speech_recognition'
   | 'video'
   | 'audio';
 
@@ -30,12 +34,16 @@ export type TemplateSemanticGroup =
   | 'musical_identity'
   | 'arrangement_or_timbre'
   | 'dynamic_structure'
-  | 'mix_or_finish';
+  | 'mix_or_finish'
+  | 'text_request';
 
 export type TemplateNegativeCategory = 'artifact' | 'structure' | 'task_fidelity' | 'aesthetic';
 
 export type TemplateQualityIssueCode =
+  | 'unresolved_backend_default'
+  | 'invalid_layout_reference'
   | 'missing_semantic_group'
+  | 'unsupported_prompt_input'
   | 'blank_negative_not_allowed'
   | 'too_few_negative_constraints'
   | 'generic_negative_constraints';
@@ -61,6 +69,7 @@ export type TemplateNegativeAnalysis = {
 
 export type TemplateQualityAudit = {
   templateId: string;
+  promptResolution: 'template' | 'backend_default' | 'unresolved_backend_default';
   kind: TemplateQualityKind;
   requiredSemanticGroups: TemplateSemanticGroup[];
   matchedSemanticGroups: TemplateSemanticGroup[];
@@ -77,6 +86,8 @@ type SemanticGroupDefinition = {
 type BlankNegativeDeclaration = {
   id: string;
   modelTypes: readonly StudioModelType[];
+  modes?: readonly StudioMode[];
+  executionProfileId?: string;
   maxGuidanceScale?: number;
   reason: string;
 };
@@ -94,15 +105,18 @@ const VIDEO_MODES = new Set<StudioMode>([
 ]);
 
 const AUDIO_MODES = new Set<StudioMode>(['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint']);
+const SPEECH_RECOGNITION_MODES: readonly StudioMode[] = ['speech_to_text', 'speech_translation'];
 
 const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = {
   focal_content: {
     label: 'a concrete subject, scene, or designed artifact',
     patterns: [
+      /\b(habitat|spacecraft|space station|planet|torus)\b/i,
       /\b(subject|scene|product|device|object|character|portrait|person|building|architecture|interior|exterior)\b/i,
       /\b(worker|keeper|operator|courier|engineer|mechanic|artisan|veterinarian|musician|driver|researcher|watchman)\b/i,
       /\b(bottle|can|radio|camera|poster|logo|packag\w*|lamp|helmet|chair|headphone|observatory|greenhouse)\b/i,
-      /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup)\b/i,
+      /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup|teapot)\b/i,
+      /\b(tiger|lion|leopard|elephant|fox|wolf|bear|deer|owl|eagle|wildlife)\b/i,
     ],
   },
   spatial_design: {
@@ -214,6 +228,10 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     label: 'mix, loudness, ambience, or production finish',
     patterns: [/\b(mix|loudness|ambience|production|reverb|stereo|master|clipping|noise|sibilance|fade)\w*\b/i],
   },
+  text_request: {
+    label: 'a question or instruction for the text model',
+    patterns: [/\p{L}/u],
+  },
 };
 
 const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSemanticGroup[]> = {
@@ -223,11 +241,63 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
   image_outpaint: ['source_role', 'canvas_extension', 'continuity', 'visual_treatment'],
   image_control: ['control_structure', 'control_adherence', 'transformation', 'visual_treatment'],
   image_layers: ['source_role', 'layer_structure', 'layer_editability', 'preservation'],
+  image_upscale: [],
+  depth_estimation: [],
+  text_generation: ['text_request'],
+  speech_recognition: [],
   video: ['temporal_action', 'camera_or_motion', 'continuity', 'visual_treatment'],
   audio: ['musical_identity', 'arrangement_or_timbre', 'dynamic_structure', 'mix_or_finish'],
 };
 
 export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = [
+  {
+    id: 'spandrel-image-upscale-no-negative-input',
+    modelTypes: ['SpandrelImageUpscale'],
+    reason: 'Tiled image upscaling has no negative-prompt input.',
+  },
+  {
+    id: 'depth-and-text-no-negative-input',
+    modelTypes: ['MarigoldDepthPipeline', 'HuggingFaceTextGenerationModel'],
+    reason: 'These depth and text generation contracts have no negative-prompt input.',
+  },
+  {
+    id: 'speech-recognition-no-prompts',
+    modelTypes: ['HuggingFaceSpeechRecognitionModel', 'HuggingFaceCTCSpeechRecognitionModel'],
+    modes: SPEECH_RECOGNITION_MODES,
+    reason: 'Speech recognition uses source audio and recognition controls without prompt fields.',
+  },
+  {
+    id: 'lcm-edit-no-negative-input',
+    modelTypes: ['LatentConsistencyModelPipeline'],
+    modes: ['edit_image'],
+    reason: 'LCM image editing uses a source image and a positive target caption.',
+  },
+  {
+    id: 'sana-sprint-edit-no-negative-input',
+    modelTypes: ['SanaSprintPipeline'],
+    modes: ['edit_image'],
+    reason: 'The reviewed Sana Sprint image edit uses a source image and a positive target caption.',
+  },
+  {
+    id: 'minimax-h3-image-no-negative-input',
+    modelTypes: ['MiniMaxH3ImageModularPipeline'],
+    executionProfileId: 'minimax-h3-image:official-provider:v1',
+    reason: 'The declared H3 Image contract has no negative-prompt input; exclusions stay in the positive brief.',
+  },
+  {
+    id: 'flux3-distilled-no-negative-input',
+    modelTypes: ['Flux3DistilledModularPipeline'],
+    executionProfileId: 'flux3-klein:official-provider:v1',
+    reason: 'The declared Distilled contract has no negative-prompt input; exclusions stay in the positive brief.',
+  },
+  {
+    id: 'flux3-base-empty-negative-recipe',
+    modelTypes: ['Flux3ModularPipeline'],
+    executionProfileId: 'flux3-klein-base:official-provider:v1',
+    maxGuidanceScale: 3.5,
+    reason:
+      'The reviewed Base recipes deliberately retain empty negative conditioning at CFG up to 3.5; the Base negative-prompt input remains supported.',
+  },
   {
     id: 'z-image-turbo-no-negative-input',
     modelTypes: ['ZImageModularPipeline'],
@@ -245,8 +315,16 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
       'FluxCannyPipeline',
       'FluxReduxPipeline',
       'Flux2KleinPipeline',
+      'Flux2ModularPipeline',
     ],
     reason: 'These FLUX recipes may intentionally use native or zeroed negative conditioning.',
+  },
+  {
+    id: 'cosmos3-super-publisher-conditioning',
+    modelTypes: ['Cosmos3OmniModularPipeline'],
+    executionProfileId: 'cosmos3-super-text-to-image:official-modular-workflow',
+    reason:
+      'The original Cosmos 3 Super publisher image recipe uses an empty negative prompt; retain its conditioning unchanged.',
   },
   {
     id: 'explicit-cfg-one-image-recipe',
@@ -260,11 +338,10 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     reason: 'The template explicitly locks CFG to 1, where negative conditioning is inactive for this recipe.',
   },
   {
-    id: 'ace-turbo-no-negative-input',
+    id: 'ace-no-negative-input',
     modelTypes: ['AceStepAudioPipeline'],
-    maxGuidanceScale: 1,
     reason:
-      'The ACE-Step v1.5 Turbo backend has no negative-prompt input and uses guidance-distilled CFG 1; exclusions belong in the production brief.',
+      'The reviewed ACE-Step backend audio contract has no negative-prompt input for its Base or Turbo tasks; exclusions belong in the production brief.',
   },
   {
     id: 'minimax-music3-no-negative-input',
@@ -305,6 +382,10 @@ const NEGATIVE_CATEGORY_PATTERNS: Record<TemplateNegativeCategory, readonly RegE
 };
 
 export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode' | 'modelType'>): TemplateQualityKind {
+  if (template.mode === 'depth_estimation') return 'depth_estimation';
+  if (template.mode === 'image_upscale') return 'image_upscale';
+  if (template.mode === 'text_generation') return 'text_generation';
+  if (SPEECH_RECOGNITION_MODES.includes(template.mode)) return 'speech_recognition';
   if (AUDIO_MODES.has(template.mode) || template.modelType === 'AceStepAudioPipeline') return 'audio';
   if (VIDEO_MODES.has(template.mode) || template.modelType === 'WanVACEPipeline') return 'video';
   if (template.mode === 'inpaint') return 'image_inpaint';
@@ -318,6 +399,9 @@ export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode
 export function getRequiredTemplateSemanticGroups(
   template: Pick<StudioTemplate, 'mode' | 'modelType'>,
 ): TemplateSemanticGroup[] {
+  if (template.modelType === 'SanaSprintPipeline' && template.mode === 'edit_image') {
+    return ['source_role', ...REQUIRED_SEMANTIC_GROUPS.image_generation];
+  }
   return [...REQUIRED_SEMANTIC_GROUPS[classifyTemplateQualityKind(template)]];
 }
 
@@ -325,12 +409,66 @@ export function templatePromptMatchesSemanticGroup(prompt: string, group: Templa
   return SEMANTIC_GROUPS[group].patterns.some((pattern) => pattern.test(prompt));
 }
 
+/** Audit literal prompt text only. This never seeds a layout widget or executes JSON. */
+function rawLayoutSemanticGroups(prompt: string): TemplateSemanticGroup[] | null {
+  if (prompt.length > 16_384) return null;
+  const lines = prompt.split('\n');
+  const [caption, encoded] = lines;
+  if (lines.length !== 2 || typeof caption !== 'string' || typeof encoded !== 'string') return null;
+  if (!caption.trim() || caption.length > 512) return null;
+  let items: unknown;
+  try {
+    items = JSON.parse(encoded);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(items) || items.length < 1 || items.length > 32) return null;
+  const names = new Set<string>();
+  const descriptions: string[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    if (Object.keys(item).sort().join(',') !== 'bbox,desc,id') return null;
+    const { id, bbox, desc } = item as Record<string, unknown>;
+    if (typeof id !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(id) || names.has(id)) return null;
+    if (
+      !Array.isArray(bbox) ||
+      bbox.length !== 4 ||
+      !bbox.every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 1000) ||
+      bbox[0] >= bbox[2] ||
+      bbox[1] >= bbox[3]
+    )
+      return null;
+    if (typeof desc !== 'string' || desc !== desc.trim() || desc.length < 12 || desc.length > 512) return null;
+    names.add(id);
+    descriptions.push(desc);
+  }
+  const placeholders = [...caption.matchAll(/<([A-Za-z][A-Za-z0-9_]{0,63})>/gu)].map((match) => match[1] ?? '');
+  if (
+    placeholders.length !== names.size ||
+    new Set(placeholders).size !== names.size ||
+    placeholders.some((id) => !names.has(id)) ||
+    /[<>]/u.test(caption.replace(/<[A-Za-z][A-Za-z0-9_]{0,63}>/gu, ''))
+  )
+    return null;
+  const groups: TemplateSemanticGroup[] = ['focal_content', 'spatial_design'];
+  const color = /\b(red|orange|yellow|green|blue|purple|pink|brown|black|white|gr[ae]y|gold|silver|cobalt|amber)\b/iu;
+  if (descriptions.every((desc) => color.test(desc) || templatePromptMatchesSemanticGroup(desc, 'visual_treatment')))
+    groups.push('visual_treatment');
+  return groups;
+}
+
 export function getTemplateNegativePolicy(
-  template: Pick<StudioTemplate, 'modelType' | 'example'>,
+  template: Pick<StudioTemplate, 'mode' | 'modelType' | 'example' | 'executionSelection'>,
 ): TemplateNegativePolicy {
   const guidanceScale = template.example?.lockedSettings?.guidanceScale;
   const declaration = BLANK_NEGATIVE_DECLARATIONS.find((candidate) => {
     if (!candidate.modelTypes.includes(template.modelType)) return false;
+    if (candidate.modes && !candidate.modes.includes(template.mode)) return false;
+    if (
+      candidate.executionProfileId !== undefined &&
+      template.executionSelection?.executionProfileId !== candidate.executionProfileId
+    )
+      return false;
     if (candidate.maxGuidanceScale === undefined) return true;
     return guidanceScale !== undefined && guidanceScale <= candidate.maxGuidanceScale;
   });
@@ -350,7 +488,7 @@ export function getTemplateNegativePolicy(
 }
 
 export function analyzeTemplateNegativePrompt(
-  template: Pick<StudioTemplate, 'modelType' | 'example' | 'negativePrompt'>,
+  template: Pick<StudioTemplate, 'mode' | 'modelType' | 'example' | 'negativePrompt' | 'executionSelection'>,
 ): TemplateNegativeAnalysis {
   const policy = getTemplateNegativePolicy(template);
   const negativePrompt = template.negativePrompt?.trim() ?? '';
@@ -398,27 +536,96 @@ export function analyzeTemplateNegativePrompt(
   return { policy, constraints, categories, issues };
 }
 
-export function auditTemplateQuality(template: StudioTemplate): TemplateQualityAudit {
+function imageTargetCaptionGroups(template: StudioTemplate, prompt: string): TemplateSemanticGroup[] {
+  if (template.mode !== 'edit_image') return [];
+  const reference = template.inputBindings?.find(
+    (binding) => binding.origin === 'user' && binding.field === 'referenceImages' && binding.count === 1,
+  );
+  if (!reference) return [];
+  // Sana Sprint takes a positive description of the finished image. The
+  // source's role is established by its explicit required image binding.
+  if (template.modelType === 'SanaSprintPipeline') {
+    return reference.requiredAt === 'workflow_start' ? ['source_role'] : [];
+  }
+  if (template.modelType !== 'LatentConsistencyModelPipeline') return [];
+  // This img2img route describes the desired image. A caption can refer to the
+  // bound source and specify its new look without an instruction verb.
+  const target =
+    /^(?:an? )?(?:photo(?:graph)?|image|portrait|illustration|rendering) of (?:this|the same) ([^.!?]+)/iu.exec(
+      prompt.trim(),
+    )?.[1];
+  if (!target) return [];
+  return templatePromptMatchesSemanticGroup(target, 'visual_treatment')
+    ? ['source_role', 'transformation']
+    : ['source_role'];
+}
+
+export function auditTemplateQuality(
+  template: StudioTemplate,
+  resolvedBackendDefaults?: Pick<StudioTemplate, 'prompt'>,
+): TemplateQualityAudit {
   const kind = classifyTemplateQualityKind(template);
   const requiredSemanticGroups = getRequiredTemplateSemanticGroups(template);
+  const needsBackendPrompt =
+    !template.prompt.trim() && template.executionSelection?.backendDefaultInputs?.includes('prompt');
+  const resolvedPrompt = needsBackendPrompt ? resolvedBackendDefaults?.prompt : template.prompt;
+  const promptResolution = needsBackendPrompt
+    ? resolvedPrompt?.trim()
+      ? 'backend_default'
+      : 'unresolved_backend_default'
+    : 'template';
+  const rawLayout = template.promptQualityPolicy === 'raw_layout_reference';
+  const layoutGroups = rawLayout ? rawLayoutSemanticGroups(resolvedPrompt ?? '') : null;
+  const captionGroups = imageTargetCaptionGroups(template, resolvedPrompt ?? '');
   const matchedSemanticGroups = requiredSemanticGroups.filter((group) =>
-    templatePromptMatchesSemanticGroup(template.prompt, group),
+    rawLayout
+      ? layoutGroups?.includes(group)
+      : captionGroups.includes(group) || templatePromptMatchesSemanticGroup(resolvedPrompt ?? '', group),
   );
   const semanticIssues: TemplateQualityIssue[] =
-    template.promptQualityPolicy === 'adapter_reference'
-      ? []
-      : requiredSemanticGroups
-          .filter((group) => !matchedSemanticGroups.includes(group))
-          .map((group) => ({
-            code: 'missing_semantic_group',
-            semanticGroup: group,
-            message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
-          }));
+    promptResolution === 'unresolved_backend_default'
+      ? [
+          {
+            code: 'unresolved_backend_default',
+            message: 'Audit the resolved backend starter prompt before claiming semantic coverage.',
+          },
+        ]
+      : template.promptQualityPolicy === 'adapter_reference'
+        ? []
+        : requiredSemanticGroups
+            .filter((group) => !matchedSemanticGroups.includes(group))
+            .map((group) => ({
+              code: 'missing_semantic_group',
+              semanticGroup: group,
+              message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
+            }));
   const negative = analyzeTemplateNegativePrompt(template);
-  const issues = [...semanticIssues, ...negative.issues];
+  const layoutIssues: TemplateQualityIssue[] =
+    rawLayout && !layoutGroups
+      ? [
+          {
+            code: 'invalid_layout_reference',
+            message: 'Literal layout prompts require one caption and a bounded, matching id/bbox/desc JSON array.',
+          },
+        ]
+      : [];
+  const issues = [...layoutIssues, ...semanticIssues, ...negative.issues];
+  if (kind === 'depth_estimation' && (resolvedPrompt?.trim() || template.negativePrompt?.trim())) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Depth estimation uses a source image without prompts.' });
+  }
+  if (kind === 'image_upscale' && (resolvedPrompt?.trim() || template.negativePrompt?.trim())) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Image upscaling uses a source image without prompts.' });
+  }
+  if (kind === 'text_generation' && template.negativePrompt?.trim()) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Text generation does not accept a negative prompt.' });
+  }
+  if (kind === 'speech_recognition' && (resolvedPrompt?.trim() || template.negativePrompt?.trim())) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Speech recognition uses source audio without prompts.' });
+  }
 
   return {
     templateId: template.id,
+    promptResolution,
     kind,
     requiredSemanticGroups,
     matchedSemanticGroups,
@@ -429,5 +636,5 @@ export function auditTemplateQuality(template: StudioTemplate): TemplateQualityA
 }
 
 export function auditTemplateCatalog(templates: readonly StudioTemplate[]): TemplateQualityAudit[] {
-  return templates.map(auditTemplateQuality);
+  return templates.map((template) => auditTemplateQuality(template));
 }

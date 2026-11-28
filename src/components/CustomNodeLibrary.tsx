@@ -3,6 +3,7 @@ import { Boxes, ChevronDown } from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { ModiffButton, TreeButtonRow, TreeChildrenPanel } from '../ui';
 import { cx } from '../utils/classNames';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 
 /** Discovery reads files only; loading remains an explicit management action. */
 export default function CustomNodeLibrary({
@@ -40,12 +41,21 @@ export default function CustomNodeLibrary({
   }, [fetchModules]);
   const needle = search.trim().toLowerCase();
   const open = expanded || Boolean(needle);
-  const entries = Object.entries(registry).filter(
-    ([key, node]) =>
-      key.startsWith('custom.') &&
-      modules.some((item) => item.enabled && key.startsWith(item.moduleKey + '.')) &&
-      (!needle || `${node.label} ${key}`.toLowerCase().includes(needle)),
-  );
+  const entries = Object.entries(registry).flatMap(([key, node]) => {
+    if (!key.startsWith('custom.') || !modules.some((item) => item.enabled && key.startsWith(item.moduleKey + '.')))
+      return [];
+    const label = node.label || node.action;
+    const category = (typeof node.category === 'string' && node.category.trim()) || 'Uncategorized';
+    if (!matchesSearchKeywords(search, [label, key, category, node.description, ...(node.searchTerms ?? [])]))
+      return [];
+    return [{ key, label, category }];
+  });
+  const categories = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    const group = categories.get(entry.category);
+    if (group) group.push(entry);
+    else categories.set(entry.category, [entry]);
+  }
   return (
     <section data-testid="node-group-custom-nodes" className="mb-2 rounded-modiff-compact border border-modiff-border">
       <TreeButtonRow
@@ -65,19 +75,26 @@ export default function CustomNodeLibrary({
       </TreeButtonRow>
       {open ? (
         <TreeChildrenPanel level={1}>
-          {entries.map(([key, node]) => (
-            <TreeButtonRow
-              key={key}
-              draggable
-              level={1}
-              onClick={() => insert(key)}
-              onDragStart={(event) => {
-                event.dataTransfer.setData('text/plain', key);
-                event.dataTransfer.effectAllowed = 'move';
-              }}
-            >
-              <span className="min-w-0 break-words">{node.label || node.action}</span>
-            </TreeButtonRow>
+          {[...categories].map(([category, nodes]) => (
+            <div key={category} role="group" aria-label={category} className="flex min-w-0 flex-col gap-1">
+              <p className="break-words px-2 text-xs font-medium text-modiff-subtle-text">{category}</p>
+              <TreeChildrenPanel level={2}>
+                {nodes.map(({ key, label }) => (
+                  <TreeButtonRow
+                    key={key}
+                    draggable
+                    level={2}
+                    onClick={() => insert(key)}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', key);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                  >
+                    <span className="min-w-0 break-words">{label}</span>
+                  </TreeButtonRow>
+                ))}
+              </TreeChildrenPanel>
+            </div>
           ))}
           {modules
             .filter((item) => !item.enabled && (!needle || item.name.toLowerCase().includes(needle)))

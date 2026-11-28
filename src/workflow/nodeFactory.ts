@@ -15,6 +15,7 @@ export function createNodeFromRegistry(
   const registryNode = nodesRegistry[key];
   if (!registryNode) return null;
   const data = cloneNodeData(registryNode);
+  delete data.searchTerms;
 
   return {
     // Ordinary nodes must also have valid semantic IDs when moved into a Block.

@@ -8,6 +8,8 @@ import {
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
+  Field,
+  Label,
   Listbox,
   ListboxButton,
   ListboxOption,
@@ -35,6 +37,7 @@ import { visibleModiffComboboxOptions } from './comboboxOptions';
 import { controlHeightClasses, controlMinHeightClasses, type ModiffControlSize } from './controlStyles';
 import { ModiffFieldControlContext, useModiffFieldControl } from './fieldContext';
 import { ModiffTooltip } from './overlays';
+import { SEARCHABLE_OPTION_COUNT, SearchableSelect } from './SearchableSelect';
 
 const controlBaseClassName =
   'rounded-modiff-compact border border-modiff-border bg-modiff-bg text-modiff-text transition placeholder:text-modiff-subtle-text hover:border-modiff-border-subtle focus:border-modiff-focus focus:outline-none focus-visible:ring-2 focus-visible:ring-modiff-focus/35 read-only:cursor-default read-only:bg-modiff-disabled/10 disabled:cursor-not-allowed disabled:border-modiff-border disabled:bg-modiff-disabled/15 disabled:text-modiff-subtle-text disabled:opacity-60 aria-invalid:border-modiff-invalid aria-invalid:focus-visible:ring-modiff-invalid/35';
@@ -595,6 +598,7 @@ export type ModiffSelectOption = {
 };
 
 export type ModiffSelectProps = {
+  'data-run-recovery-field'?: string;
   'aria-describedby'?: string;
   'aria-errormessage'?: string;
   'aria-label'?: string;
@@ -621,6 +625,7 @@ export type ModiffSelectProps = {
 };
 
 export function ModiffSelect({
+  'data-run-recovery-field': recoveryField,
   'aria-describedby': ariaDescribedBy,
   'aria-errormessage': ariaErrorMessage,
   'aria-label': ariaLabel,
@@ -694,6 +699,37 @@ export function ModiffSelect({
     </>
   );
 
+  if (options.length >= SEARCHABLE_OPTION_COUNT && !field.readOnly) {
+    return (
+      <SearchableSelect
+        button={selectButtonContent}
+        buttonProps={{
+          id: buttonId,
+          title,
+          'aria-describedby': field.ariaDescribedBy,
+          'aria-errormessage': field.ariaErrorMessage,
+          'aria-invalid': field.invalid || undefined,
+          'aria-label': ariaLabel,
+          'aria-labelledby': ariaLabelledBy,
+          'aria-required': field.required || undefined,
+          className: selectButtonClassName,
+          ...{ 'data-testid': testId, 'data-run-recovery-field': recoveryField },
+        }}
+        className={className}
+        optionsClassName={optionsClassName}
+        disabled={field.disabled}
+        invalid={field.invalid}
+        form={form}
+        name={name}
+        layer={layer}
+        options={options}
+        values={[value]}
+        onChange={([next]) => {
+          if (next !== undefined) onValueChange(next);
+        }}
+      />
+    );
+  }
   return (
     <Listbox
       value={value}
@@ -720,6 +756,7 @@ export function ModiffSelect({
             aria-readonly="true"
             aria-required={field.required || undefined}
             data-testid={testId}
+            data-run-recovery-field={recoveryField}
             disabled={field.disabled}
             title={title}
             className={selectButtonClassName}
@@ -736,6 +773,7 @@ export function ModiffSelect({
             aria-labelledby={ariaLabelledBy}
             aria-required={field.required || undefined}
             data-testid={testId}
+            data-run-recovery-field={recoveryField}
             title={title}
             className={selectButtonClassName}
           >
@@ -796,6 +834,7 @@ export function ModiffMultiSelect({
   onValueChange,
   options,
   optionsClassName,
+  layer = 'panel',
   placeholder = 'Select…',
   readOnly,
   renderValue,
@@ -858,6 +897,36 @@ export function ModiffMultiSelect({
     </>
   );
 
+  if (options.length >= SEARCHABLE_OPTION_COUNT && !field.readOnly) {
+    return (
+      <SearchableSelect
+        button={multiSelectButtonContent}
+        buttonProps={{
+          id: buttonId,
+          title,
+          'aria-describedby': field.ariaDescribedBy,
+          'aria-errormessage': field.ariaErrorMessage,
+          'aria-invalid': field.invalid || undefined,
+          'aria-label': ariaLabel,
+          'aria-labelledby': ariaLabelledBy,
+          'aria-required': field.required || undefined,
+          className: multiSelectButtonClassName,
+          ...{ 'data-testid': testId },
+        }}
+        className={className}
+        optionsClassName={optionsClassName}
+        disabled={field.disabled}
+        invalid={field.invalid}
+        form={form}
+        name={name}
+        layer={layer}
+        options={options}
+        values={[...value]}
+        multiple
+        onChange={onValueChange}
+      />
+    );
+  }
   return (
     <Listbox
       multiple
@@ -992,7 +1061,8 @@ export function ModiffCheckbox({
   });
 
   return (
-    <label
+    <Field
+      disabled={field.disabled}
       className={cx(
         'inline-flex min-w-0 items-center gap-2 text-modiff-control text-modiff-text',
         field.disabled ? 'cursor-not-allowed' : field.readOnly ? 'cursor-default' : 'cursor-pointer',
@@ -1032,10 +1102,10 @@ export function ModiffCheckbox({
           aria-hidden="true"
         />
       </Checkbox>
-      <span id={labelId} className="min-w-0">
+      <Label id={labelId} htmlFor={field.id} aria-label={ariaLabel} className="min-w-0">
         {label}
-      </span>
-    </label>
+      </Label>
+    </Field>
   );
 }
 

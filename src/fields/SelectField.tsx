@@ -6,7 +6,8 @@ import fieldAction from '../utils/fieldAction';
 import { LoaderCircle } from 'lucide-react';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 import { FieldFrame, ModiffFieldShell, ModiffMultiSelect, ModiffSelect, type ModiffSelectOption } from '../ui';
-import { runtimeOptionEntries, type RuntimeOptionEntry } from '../studio/runtimeOptions';
+import { useNodesStore } from '../stores/useNodeStore';
+import { runtimeOptionEntries, workflowDeviceLabel, type RuntimeOptionEntry } from '../studio/runtimeOptions';
 
 const OFFLOAD_LABELS: Record<string, string> = {
   none: 'Off',
@@ -17,7 +18,21 @@ const OFFLOAD_LABELS: Record<string, string> = {
 };
 
 function productOptionLabel(fieldKey: string, value: string, fallback: string) {
-  return fieldKey === 'offload_mode' ? (OFFLOAD_LABELS[value] ?? fallback) : fallback;
+  if (fieldKey === 'offload_mode') return OFFLOAD_LABELS[value] ?? fallback;
+  if (fieldKey === 'weight_loading_mode') {
+    if (value === 'cpu') return 'Load in system RAM (CPU)';
+    if (value === 'cuda') return 'Load in GPU memory';
+  }
+  if (fieldKey === 'attention_backend' && fallback === value) {
+    const labels: Record<string, string> = {
+      inherit: 'Use pipeline setting',
+      auto: 'Automatic',
+      native: 'PyTorch native',
+      _native_math: 'PyTorch math fallback',
+    };
+    return labels[value] ?? fallback;
+  }
+  return fallback;
 }
 
 function asString(value: unknown, fallback = '') {
@@ -25,6 +40,18 @@ function asString(value: unknown, fallback = '') {
 }
 
 export default function SelectField(props: FieldProps) {
+  const binding = props.fieldOptions?.blockBindingV2;
+  const fieldKey =
+    binding &&
+    typeof binding === 'object' &&
+    'schemaVersion' in binding &&
+    binding.schemaVersion === 2 &&
+    'fieldOrPortId' in binding &&
+    typeof binding.fieldOrPortId === 'string'
+      ? binding.fieldOrPortId
+      : props.fieldKey;
+  const deviceField = fieldKey === 'device' || fieldKey === 'execution_device';
+  const torch = useNodesStore((state) => (deviceField ? state.runtimeStatus?.packages?.torch : undefined));
   const multiple = Boolean(props.fieldOptions?.multiple);
   const placeholder = asString(props.fieldOptions?.placeholder);
   const currValue = multiple
@@ -33,17 +60,22 @@ export default function SelectField(props: FieldProps) {
         ? [props.value]
         : []
       : props.value
-    : props.fieldKey === 'offload_mode' && props.value === 'auto_cpu'
+    : fieldKey === 'offload_mode' && props.value === 'auto_cpu'
       ? 'model_cpu'
       : props.value;
 
   const entries: RuntimeOptionEntry[] = runtimeOptionEntries(props.options)
     .map((entry) =>
       entry.type === 'option'
-        ? { ...entry, label: productOptionLabel(props.fieldKey, entry.value, entry.label) }
+        ? {
+            ...entry,
+            label: deviceField
+              ? workflowDeviceLabel(entry.value, entry.label, torch)
+              : productOptionLabel(fieldKey, entry.value, entry.label),
+          }
         : entry,
     )
-    .filter((entry) => props.fieldKey !== 'offload_mode' || entry.type === 'header' || entry.value !== 'auto_cpu');
+    .filter((entry) => fieldKey !== 'offload_mode' || entry.type === 'header' || entry.value !== 'auto_cpu');
 
   const configuredOptionEntries = entries.filter(
     (entry): entry is Extract<RuntimeOptionEntry, { type: 'option' }> => entry.type === 'option',

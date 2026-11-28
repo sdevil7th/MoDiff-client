@@ -8,10 +8,12 @@ import { assessWorkflowResourcesV2, buildWorkflowResourceRequestV2 } from '../st
 import { selectedAutoCandidate } from '../studio/autoResource';
 import { formatResourceBytes } from '../studio/runtimeResources';
 import type { WorkflowAutoPlanV2 } from '../studio/workflowAutoExecutionV2';
+import { useRunRecoveryFocus } from '../studio/useRunRecoveryFocus';
 
 type Assessment = Awaited<ReturnType<typeof assessWorkflowResourcesV2>>;
 
 export default function WorkflowResourcePanelV2() {
+  const recoveryFocusRef = useRunRecoveryFocus<HTMLElement>('resources');
   const stableNodes = useMemo(createDurableNodesSelector, []);
   const nodes = useFlowStore((state) => stableNodes(state.nodes));
   const edges = useFlowStore((state) => state.edges);
@@ -84,14 +86,17 @@ export default function WorkflowResourcePanelV2() {
   };
   const visible = result?.request.key === key ? result : null;
   return (
-    <section className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="workflow-resource-assessment">
+    <section
+      ref={recoveryFocusRef}
+      className="grid gap-3 p-3 text-sm text-modiff-text"
+      data-testid="workflow-resource-assessment"
+    >
       <h2 className="flex items-center gap-2 font-semibold">
         <Gauge size={17} />
         Workflow resources
       </h2>
       <p className="text-xs text-modiff-subtle-text">
-        Memory → Automatic chooses supported technical settings. Custom keeps your configured settings. Creator and
-        Developer workspaces can use either memory policy; changing workspace preserves this workflow’s settings.
+        Automatic chooses memory settings for the selected workflow and hardware. Choose Custom to set them yourself.
       </p>
       <p className="text-xs text-modiff-subtle-text">
         A loader’s Auto Offload controls where its weights reside. Repeat/Loop controls repeated runs. They are separate
@@ -156,7 +161,7 @@ export default function WorkflowResourcePanelV2() {
           </p>
           <p>{autoPlan.message}</p>
           <p>
-            {autoPlan.requiresPreparation ? 'Resolved so far: ' : 'Peak planned resources: '}
+            {autoPlan.requiresPreparation ? 'Resolved so far: ' : 'Planned resources: '}
             {autoPlan.loaders.length} model owners · RAM{' '}
             {formatResourceBytes(autoPlan.requirements.systemRamBytes ?? null)} · GPU{' '}
             {formatResourceBytes(autoPlan.requirements.vramBytes ?? null)}

@@ -1,5 +1,6 @@
 import type { ExecutionProgress } from './types';
 import { formatResourceBytes, parseRuntimeResourceSnapshot } from './runtimeResources';
+import { splitRoundedSeconds } from '../utils/formatExecutionTime';
 
 type ProgressLike = {
   status?: ExecutionProgress['status'];
@@ -59,8 +60,7 @@ export function executionProgressFrom(value: ProgressLike): ExecutionProgress {
 function duration(value: number | undefined) {
   if (!finite(value)) return null;
   if (value < 60) return `${Math.round(value)}s`;
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.round(value % 60);
+  const { minutes, seconds } = splitRoundedSeconds(value);
   return `${minutes}m ${seconds}s`;
 }
 

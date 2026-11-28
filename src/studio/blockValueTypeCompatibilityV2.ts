@@ -16,6 +16,12 @@ export function normalizeBlockValueTypeV2(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
   const normalized = value.trim().toLowerCase();
+  // Visual interfaces serialize ordinary finite scalar/media unions as one
+  // valueType string. Preserve every alternative when comparing or rendering
+  // the socket; collection expressions and Python implementation types remain
+  // opaque and must not be split by guessing their syntax.
+  if (/^[a-z_][a-z\d_]*(?:\|[a-z_][a-z\d_]*)+$/iu.test(normalized))
+    return normalized.split('|').map(normalizeBlockValueTypeV2);
   // MiniMax H3's reference workflow deliberately carries the official,
   // ordered Diffusers reference dataclasses across the public Block V2
   // boundary. Keep that collection distinct from an untyped list or media

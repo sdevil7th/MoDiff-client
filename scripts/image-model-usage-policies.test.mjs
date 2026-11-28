@@ -1,0 +1,156 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { after, before, test } from 'node:test';
+import { createServer } from 'vite';
+
+let server, policies, profiles, templates, artifactCatalog, captionProvenance;
+const backend = resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+
+before(async () => {
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.window = { location: { origin: 'http://localhost' }, localStorage: globalThis.localStorage };
+  server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  policies = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
+  profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  templates = await server.ssrLoadModule('/src/studio/templates.ts');
+  artifactCatalog = JSON.parse(await readFile(resolve(backend, 'data/model-artifact-catalog.json'), 'utf8'));
+  captionProvenance = JSON.parse(
+    await readFile(resolve(backend, 'data/cosmos3-super-t2i-publisher-caption-provenance.v1.json'), 'utf8'),
+  );
+});
+
+after(async () => server?.close());
+
+test('Qwen Image 2.1 Turbo requires acknowledgement of its pinned public checkpoint', () => {
+  const repository = 'Qwen/Qwen-Image-2.1-Turbo';
+  const entry = artifactCatalog.models.find(({ modelType }) => modelType === 'QwenImage21TurboPipeline');
+  assert.equal(entry.baseRepo, repository);
+  assert.equal(entry.baseLicense, 'qwen-research');
+  const [policy] = policies.acknowledgementRequiredForRepository(repository, entry.baseRevision);
+  assert.equal(policy.repository, repository);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.access, 'public');
+  assert.equal(policy.reviewedRevision, 'fc13ba1986fcb905854dc8de2f52eee395f49b5b');
+  assert.equal(policy.reviewedRevision, entry.baseRevision);
+  assert.equal(policy.termsUrl, `https://huggingface.co/${repository}/blob/${entry.baseRevision}/LICENSE`);
+  assert.match(policy.shortSummary, /non-commercial research and evaluation/u);
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(repository), false);
+  assert.deepEqual(policies.acknowledgementRequiredForRepository('Qwen/Qwen-Image-2.1'), []);
+  const key = policies.usagePolicyAcknowledgementKey([policy]);
+  assert.ok(key);
+  assert.notEqual(key, policies.usagePolicyAcknowledgementKey([{ ...policy, revision: 'a'.repeat(40) }]));
+});
+
+test('LTX-2.5 Full has separate revision-bound model terms and gated access', () => {
+  const repo = 'Lightricks/LTX-2.5-Diffusers';
+  const policy = policies.usagePolicyForRepository(repo);
+  assert.equal(policy.reviewedRevision, '4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3');
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'huggingface_gated');
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(repo), true);
+  assert.match(policy.termsUrl, /c1b4675863c07c59c92e502446cccdaedbe5889c\/LICENSE-2_x$/);
+  const exact = policies.acknowledgementRequiredForRepository(repo, policy.reviewedRevision);
+  assert.equal(exact.length, 1);
+  assert.notEqual(
+    policies.usagePolicyAcknowledgementKey(exact),
+    policies.usagePolicyAcknowledgementKey([{ ...exact[0], revision: 'a'.repeat(40) }]),
+  );
+});
+
+test('Hunyuan 720p acknowledgements bind each full checkpoint independently of the 480p recipes', () => {
+  for (const [repository, revision] of [
+    ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v', 'f4dbc4a1efa4ac8ea56680cdf79d9f455105e814'],
+    ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v', 'dcf088ef4e420dd54bc25930ee810bb6613dfcb5'],
+  ]) {
+    const policy = policies.usagePolicyForRepository(repository);
+    assert.ok(policy);
+    assert.equal(policy.reviewedRevision, revision);
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.equal(policy.useScope, 'license_review_required');
+    assert.match(policy.shortSummary, /territory exclusions/);
+    assert.match(policy.shortSummary, /100M/);
+    assert.equal(policy.reviewedAt, '2026-11-17');
+    const exact = policies.acknowledgementRequiredForRepository(repository, revision);
+    assert.equal(exact.length, 1);
+    assert.notEqual(
+      policies.usagePolicyAcknowledgementKey(exact),
+      policies.usagePolicyAcknowledgementKey([{ ...exact[0], revision: 'a'.repeat(40) }]),
+    );
+  }
+});
+
+test('full FLUX2 dev terms are distinct from FLUX1 and bind to the reviewed artifact', () => {
+  const policy = policies.usagePolicyForRepository(profiles.FLUX2_DEV_REPO);
+  const pin = artifactCatalog.repositoryPins.find((item) => item.repo === profiles.FLUX2_DEV_REPO);
+  assert.equal(policy.reviewedRevision, pin.revision);
+  assert.equal(pin.license, 'flux-non-commercial-license');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.access, 'huggingface_gated');
+  assert.match(policy.shortSummary, /v2\.1/);
+  assert.match(policy.shortSummary, /non-commercial, non-production/);
+  assert.match(policy.shortSummary, /filtering or manual review/);
+  assert.doesNotMatch(policy.shortSummary, /FLUX\.1/);
+  assert.equal(policy.termsUrl, `https://huggingface.co/${pin.repo}/blob/${pin.revision}/LICENSE.md`);
+  assert.notEqual(policy.id, policies.usagePolicyForRepository(profiles.FLUX_DEV_REPO).id);
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(pin.repo), true);
+});
+
+test('Cosmos Super uses its public OpenMDW terms while mandatory Guardrail keeps separate gated terms', async () => {
+  const policy = policies.usagePolicyForRepository(profiles.COSMOS3_SUPER_T2I_REPO);
+  const pin = artifactCatalog.repositoryPins.find((item) => item.repo === policy.repository);
+  assert.equal(policy.reviewedRevision, pin.revision);
+  assert.equal(policy.reviewedRevision, captionProvenance.revision);
+  assert.equal(pin.license, 'openmdw-1.1');
+  assert.equal(policy.termsUrl, captionProvenance.publisherLicenseUrl);
+  const license = await readFile(resolve(backend, captionProvenance.licenseFile));
+  assert.equal(createHash('sha256').update(license).digest('hex'), captionProvenance.licenseFileSha256);
+  assert.equal(policy.access, 'public');
+  assert.equal(policy.useScope, 'commercial_allowed');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(pin.repo), false);
+  assert.match(policy.shortSummary, /license and applicable origin notices/);
+  assert.match(policy.shortSummary, /no output-use restrictions/);
+  const guardrail = policies.usagePolicyForRepository(profiles.COSMOS3_GUARDRAIL_REPO);
+  assert.equal(guardrail.access, 'huggingface_gated');
+  assert.equal(guardrail.useScope, 'license_review_required');
+  assert.notEqual(policy.id, guardrail.id);
+  assert.notEqual(policy.termsUrl, guardrail.termsUrl);
+});
+
+test('exact full-model template/install acknowledgements match and change on artifact or policy drift', () => {
+  for (const id of ['flux2_dev_text_to_image', 'cosmos3_super_text_to_image']) {
+    const template = templates.STUDIO_TEMPLATES.find((item) => item.id === id);
+    assert.ok(template);
+    assert.equal(template.example.status, 'unverified');
+    assert.equal(
+      templates.STUDIO_TEMPLATES.some((item) => item.id === id),
+      true,
+    );
+    const required = policies.acknowledgementRequiredForTemplate(template);
+    const base = required.find((item) => item.repository === template.modelArtifact.value);
+    assert.ok(base, 'Create must review the exact selected full model, not the static family default.');
+    assert.equal(base.revision, template.modelArtifact.revision);
+    const install = policies.acknowledgementRequiredForRepository(base.repository, base.revision);
+    const key = policies.usagePolicyAcknowledgementKey([base]);
+    assert.equal(key, policies.usagePolicyAcknowledgementKey(install));
+    assert.notEqual(key, policies.usagePolicyAcknowledgementKey([{ ...base, revision: 'f'.repeat(40) }]));
+    assert.notEqual(key, policies.usagePolicyAcknowledgementKey([{ ...base, policyVersion: 'changed' }]));
+    if (id === 'cosmos3_super_text_to_image')
+      assert.ok(required.some((item) => item.repository === profiles.COSMOS3_GUARDRAIL_REPO));
+  }
+  assert.ok(
+    policies
+      .acknowledgementRequiredForModelRun({ modelType: 'Flux2ModularPipeline', mode: 'text_to_image' })
+      .some((item) => item.repository === profiles.FLUX2_DEV_REPO),
+  );
+});

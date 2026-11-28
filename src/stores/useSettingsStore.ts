@@ -6,8 +6,10 @@ import type { TemplateBrowserCategoryId } from '../studio/templateBrowser';
 import type { FocusedModelManagerTarget, WorkspacePanelTab } from '../studio/types';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
+import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
 import type { MediaKind } from '../studio/mediaCapabilities';
 import { unifiedWorkspaceSettings } from '../studio/workspaceMode';
+import type { RunRecoveryFocusRequest } from '../studio/runRecovery';
 
 const LEFT_PANEL_WIDTH_MIN = 240;
 const RIGHT_PANEL_WIDTH_MIN = 320;
@@ -89,6 +91,7 @@ export type MediaExportOpener = {
 } | null;
 
 export type WorkflowFocusRequest = {
+  stageEditor?: 'enter' | 'leave';
   workflowTabId: string;
   nodeId: string | null;
   requestId: number;
@@ -97,6 +100,8 @@ export type WorkflowFocusRequest = {
 
 // values not saved to localStorage. TODO: make this a separate store?
 interface SettingsStateVolatile {
+  activeDrawer: 'left' | 'right' | null;
+  commandPaletteOpen: boolean;
   fileBrowserOpener: fileBrowserParams | null;
   //modelManagerOpener: { nodeId: string, fieldKey: string, fileTypes: string[], path: string } | null;
   modelManagerOpener: { nodeId: string | null; fieldKey: string | null; focus?: FocusedModelManagerTarget } | null;
@@ -113,6 +118,7 @@ interface SettingsStateVolatile {
   mediaViewerOpener: MediaViewerOpener;
   mediaExportOpener: MediaExportOpener;
   workflowFocusRequest: WorkflowFocusRequest;
+  runRecoveryFocusRequest: RunRecoveryFocusRequest | null;
   runActivityPendingTaskId: string | null;
   workflowLibraryView: 'start' | 'examples' | 'saved' | 'drafts';
   templateBrowserOpen: boolean;
@@ -122,6 +128,7 @@ interface SettingsStateVolatile {
 }
 
 interface SettingsActions {
+  setCommandPaletteOpen: (open: boolean) => void;
   setWorkflowLibraryView: (view: SettingsStateVolatile['workflowLibraryView']) => void;
   setLeftPanelOpen: (open: boolean) => void;
   setLeftPanelWidth: (width: number) => void;
@@ -160,6 +167,7 @@ interface SettingsActions {
   setMediaViewerOpener: (opener: MediaViewerOpener) => void;
   setMediaExportOpener: (opener: MediaExportOpener) => void;
   setWorkflowFocusRequest: (request: WorkflowFocusRequest) => void;
+  setRunRecoveryFocusRequest: (request: RunRecoveryFocusRequest | null) => void;
   setRunActivityPendingTaskId: (taskId: string | null) => void;
   setTemplateBrowserOpen: (open: boolean) => void;
   openTemplateBrowser: (category?: TemplateBrowserCategoryId | null) => void;
@@ -186,6 +194,8 @@ const defaultState: SettingsState = {
 };
 
 const defaultVolatileState: SettingsStateVolatile = {
+  activeDrawer: null,
+  commandPaletteOpen: false,
   fileBrowserOpener: null,
   modelManagerOpener: null,
   alertOpener: null,
@@ -194,6 +204,7 @@ const defaultVolatileState: SettingsStateVolatile = {
   mediaViewerOpener: null,
   mediaExportOpener: null,
   workflowFocusRequest: null,
+  runRecoveryFocusRequest: null,
   runActivityPendingTaskId: null,
   workflowLibraryView: 'start',
   templateBrowserOpen: false,
@@ -213,10 +224,19 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
 
       // Actions
       setWorkflowLibraryView: (view) => set({ workflowLibraryView: view }),
-      setLeftPanelOpen: (open: boolean) => set({ isLeftPanelOpen: open }),
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+      setLeftPanelOpen: (open: boolean) =>
+        set((state) => ({
+          isLeftPanelOpen: open,
+          activeDrawer: open ? 'left' : state.activeDrawer === 'left' ? null : state.activeDrawer,
+        })),
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: Math.max(LEFT_PANEL_WIDTH_MIN, width) }),
       setLeftPanelTabIndex: (index: number) => set({ leftPanelTabIndex: index }),
-      setRightPanelOpen: (open: boolean) => set({ isRightPanelOpen: open }),
+      setRightPanelOpen: (open: boolean) =>
+        set((state) => ({
+          isRightPanelOpen: open,
+          activeDrawer: open ? 'right' : state.activeDrawer === 'right' ? null : state.activeDrawer,
+        })),
       setRightPanelWidth: (width: number) => set({ rightPanelWidth: Math.max(RIGHT_PANEL_WIDTH_MIN, width) }),
       setRightPanelTab: (tab: WorkspacePanelTab) => set({ rightPanelTab: tab }),
 
@@ -270,6 +290,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       setMediaViewerOpener: (opener: MediaViewerOpener) => set({ mediaViewerOpener: opener }),
       setMediaExportOpener: (opener: MediaExportOpener) => set({ mediaExportOpener: opener }),
       setWorkflowFocusRequest: (request: WorkflowFocusRequest) => set({ workflowFocusRequest: request }),
+      setRunRecoveryFocusRequest: (request) => set({ runRecoveryFocusRequest: request }),
       setRunActivityPendingTaskId: (taskId: string | null) => set({ runActivityPendingTaskId: taskId }),
       setTemplateBrowserOpen: (open: boolean) => set({ templateBrowserOpen: open }),
       openTemplateBrowser: (category?: TemplateBrowserCategoryId | null) =>
@@ -284,12 +305,13 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
     }),
     {
       name: SETTINGS_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(createResilientCheckpointStorage),
       merge: (persisted, current) => {
         const value = unifiedWorkspaceSettings(persisted) as Partial<SettingsState>;
         return {
           ...(unifiedWorkspaceSettings(current) as unknown as typeof current),
           ...value,
+          runRecoveryFocusRequest: null,
           userBlockGrouping: value.userBlockGrouping === 'workflow' ? 'workflow' : 'source',
           modelTermsAcknowledgements:
             value.modelTermsAcknowledgements && typeof value.modelTermsAcknowledgements === 'object'

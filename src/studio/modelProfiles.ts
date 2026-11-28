@@ -1,5 +1,6 @@
 import type {
   StudioFormState,
+  StudioArtifactSelection,
   StudioInpaintContractStatus,
   StudioMode,
   StudioModelProfile,
@@ -79,6 +80,10 @@ export const FLUX2_KLEIN_BASE_REPO = 'black-forest-labs/FLUX.2-klein-base-4B';
 export const FLUX2_DEV_REPO = 'black-forest-labs/FLUX.2-dev';
 export const FLUX2_DEV_REVISION = '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c';
 export const FLUX2_KLEIN_BASE_REVISION = 'a3b4f4849157f664bdbc776fd7453c2783562f4d';
+export const FLUX3_BASE_REPO = 'black-forest-labs/flux-3-image-klein-base';
+export const FLUX3_BASE_REVISION = '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4';
+export const FLUX3_DISTILLED_REPO = 'black-forest-labs/flux-3-image-klein';
+export const FLUX3_DISTILLED_REVISION = '8454017f9ebaada30c998fccd9f67a80c7580f68';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
@@ -329,6 +334,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Cosmos3-Super 4-Step (Modular Cluster)',
   'Cosmos3-Nano (Modular Cluster)',
   'MiniMax H3 (Modular Cluster)',
+  'Pika H3 Flex (Modular Cluster)',
   'Wan Animate 2 (Modular Cluster)',
   'Wan Animate 2 Distilled (Modular Cluster)',
   'Z-Image Turbo',
@@ -449,6 +455,9 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Built-in Video Operations',
   'Real-ESRGAN x2 Video Upscale',
   'Real-ESRGAN x2 Image Upscale',
+  'FLUX 3 Image Klein Base',
+  'FLUX 3 Image Klein',
+  'MiniMax H3 Image',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -559,6 +568,8 @@ export const HUNYUAN_VIDEO_15_LICENSE_REPO = 'tencent/HunyuanVideo-1.5';
 export const HUNYUAN_VIDEO_15_LICENSE_REVISION = '9b49404b3f5df2a8f0b31df27a0c7ab872e7b038';
 export const COSMOS3_DISTILLED_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image-4Step';
 export const COSMOS3_DISTILLED_T2I_REVISION = 'aa0d5a57b7b045d68daa60fbacd84ec723c7cb7b';
+export const COSMOS3_SUPER_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image';
+export const COSMOS3_SUPER_T2I_REVISION = 'daf3d374804be4c512c2135568a7cb95d4341d79';
 export const COSMOS3_DISTILLED_I2V_REPO = 'nvidia/Cosmos3-Super-Image2Video-4Step';
 export const COSMOS3_DISTILLED_I2V_REVISION = 'cd55ce81bc5cea51a09c37cd7652144e7278f049';
 export const COSMOS3_NANO_REPO = 'nvidia/Cosmos3-Nano';
@@ -567,6 +578,8 @@ export const COSMOS3_GUARDRAIL_REPO = 'nvidia/Cosmos-Guardrail1';
 export const COSMOS3_GUARDRAIL_REVISION = 'd6d4bfa899a71454a700907664f3e88f503950cf';
 export const MINIMAX_H3_REPO = 'MiniMaxAI/MiniMax-H3';
 export const MINIMAX_H3_REVISION = '42ed227ee7df40d41602854ae760620d6eb651fe';
+export const PIKA_H3_FLEX_REPO = 'Pika-Labs/Pika-H3-Flex';
+export const PIKA_H3_FLEX_REVISION = '3ff166447d5edb1406107ab8370c42000ce173e4';
 export const COSMOS3_NANO_FILES = [
   'README.md',
   'SAFETY.md',
@@ -770,7 +783,7 @@ export const ANIMATEDIFF_MOTION_REQUIREMENT: StudioModelRequirement = {
   revision: ANIMATEDIFF_MOTION_REVISION,
   kind: 'adapter',
   requiredForModes: ['text_to_video'],
-  description: 'Pinned fp16 safetensors AnimateDiff motion module.',
+  downloadFiles: ['.gitattributes', 'README.md', 'config.json', 'diffusion_pytorch_model.safetensors'],
 };
 
 export const ANIMATELCM_MOTION_REQUIREMENT: StudioModelRequirement = {
@@ -887,7 +900,10 @@ export function getCatalogModelProfiles(
 
 export function getProfileForArtifactMode(profile: StudioModelProfile, mode: StudioMode): StudioModelProfile {
   const selection = profile.artifactSelections?.find((item) => item.modes.includes(mode));
-  if (!selection) return profile;
+  return selection ? withArtifactSelection(profile, selection) : profile;
+}
+
+function withArtifactSelection(profile: StudioModelProfile, selection: StudioArtifactSelection): StudioModelProfile {
   return {
     ...profile,
     defaultRepo: selection.repo,
@@ -897,10 +913,25 @@ export function getProfileForArtifactMode(profile: StudioModelProfile, mode: Stu
   };
 }
 
+function artifactSurfaceCategory(profile: StudioModelProfile, selection: StudioArtifactSelection) {
+  if (selection.modes.every((mode) => VIDEO_STUDIO_MODES.includes(mode) || mode === 'single_image_to_video'))
+    return 'Video';
+  if (selection.modes.every((mode) => AUDIO_STUDIO_MODES.includes(mode))) return 'Audio';
+  if (selection.modes.every((mode) => ['text_to_image', 'modular_text_to_image', 'unconditional_image'].includes(mode)))
+    return 'Image';
+  return profile.surfaceCategory;
+}
+
+export function modelInventoryRowKey(profile: StudioModelProfile) {
+  // Task selections sharing a class and repository have disjoint mode sets.
+  return JSON.stringify([profile.modelType, profile.defaultRepo, profile.modes, profile.revisionCandidates]);
+}
+
 export function expandArtifactSelectionProfiles(profile: StudioModelProfile): StudioModelProfile[] {
   if (!profile.artifactSelections?.length) return [profile];
   return profile.artifactSelections.map((selection) => ({
-    ...getProfileForArtifactMode(profile, selection.modes[0]!),
+    ...withArtifactSelection(profile, selection),
+    surfaceCategory: artifactSurfaceCategory(profile, selection),
     modes: [...selection.modes],
   }));
 }
@@ -914,8 +945,15 @@ export function isStudioModelDiffusersBacked(profile: StudioModelProfile) {
   return profile.isDiffusersBacked ?? (runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated');
 }
 
+type StudioModelAuthoringDefaults = StudioModelProfile & {
+  outpaintDefaults?: Pick<
+    StudioFormState,
+    'width' | 'height' | 'aspectRatio' | 'outpaintLeft' | 'outpaintRight' | 'outpaintOverlap' | 'outpaintFeather'
+  >;
+};
+
 type StudioModelProfileSource = Omit<
-  StudioModelProfile,
+  StudioModelAuthoringDefaults,
   | 'modelType'
   | 'label'
   | 'displayName'
@@ -956,6 +994,7 @@ function planningVideoProfile(
   modeRequirements: StudioModelProfile['modeRequirements'] = {},
   supportFlags = 1,
   supportsVideoInput = false,
+  sampling?: { steps: number; guidance: number; maxSequenceLength: number },
 ): StudioModelProfileSource {
   return {
     family,
@@ -963,8 +1002,9 @@ function planningVideoProfile(
     catalogVisibility: 'workflowOnly',
     defaultRepo,
     defaultSize: { width: 768, height: 512, aspectRatio: 'custom' },
-    recommendedSteps: 30,
-    recommendedGuidance: 3,
+    recommendedSteps: sampling?.steps ?? 30,
+    recommendedGuidance: sampling?.guidance ?? 3,
+    ...(sampling ? { recommendedMaxSequenceLength: sampling.maxSequenceLength } : {}),
     supportFlags,
     supportsVideoInput,
     outputKind: 'video',
@@ -974,7 +1014,7 @@ function planningVideoProfile(
       dtype: 'bfloat16',
       autoOffload: true,
       offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 20,
+      steps: Math.min(20, sampling?.steps ?? 30),
       width: 768,
       height: 512,
       numFrames: 49,
@@ -1035,6 +1075,47 @@ const EXPERT_WORKFLOW_PENDING = {
   galleryEligible: false,
   liveProof: false,
 } satisfies Partial<StudioModelProfileSource>;
+
+/** Static presentation for reviewed identities, never a runnable or public admission.
+ * Current backend profiles and recipes remain authoritative for ordinary graphs. */
+function contractOnlyImageProfile(
+  defaultRepo: string,
+  revision: string,
+  steps: number,
+  guidance: number,
+  supportsGuidance: boolean,
+): StudioModelProfileSource {
+  return {
+    family: 'FLUX Image',
+    catalogVisibility: 'internal',
+    defaultRepo,
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    recommendedMaxSequenceLength: 8192,
+    supportsNegativePrompt: supportsGuidance,
+    supportFlags: 5,
+    outputKind: 'image',
+    offloadSupport: {
+      modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    lowVram: { dtype: 'bfloat16', autoOffload: false, offloadMode: 'none', steps, width: 1024, height: 1024 },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    revisionCandidates: [revision],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'contract-only-presentation',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: false,
+    galleryEligible: false,
+    liveProof: false,
+  };
+}
 
 function expertVideoProfile(
   source: StudioModelProfileSource,
@@ -1489,6 +1570,34 @@ function miniMaxH3Profile(): StudioModelProfileSource {
   };
 }
 
+/** Presentation fallback only. The backend owns the exact provider, selected
+ * artifacts, mandatory adapter and fixed sampler; this grants no qualification. */
+function pikaH3FlexProfile(): StudioModelProfileSource {
+  const base = miniMaxH3Profile();
+  return {
+    ...base,
+    displayName: 'Pika-H3-Flex',
+    defaultRepo: PIKA_H3_FLEX_REPO,
+    artifactLabel: 'Pinned task-selected transformer and required scale-one model adapter',
+    defaultSize: { width: 832, height: 480, aspectRatio: 'custom' },
+    recommendedSteps: 6,
+    guidanceLabel: 'Package-owned sampler; no guidance control',
+    modeRequirements: {
+      ...base.modeRequirements,
+      reference_to_video_with_audio: {
+        note: 'Requires ordered references with official structured subject labels; audio-only lists are invalid.',
+      },
+    },
+    lowVram: {
+      ...base.lowVram!,
+      steps: 6,
+      width: 832,
+      height: 480,
+    },
+    revisionCandidates: [PIKA_H3_FLEX_REVISION],
+  };
+}
+
 function wanAnimate2Profile(
   defaultRepo: string,
   revision: string,
@@ -1575,6 +1684,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   Cosmos3DistilledModularPipeline: cosmos3DistilledProfile(),
   Cosmos3OmniModularPipeline: cosmos3NanoProfile(),
   MiniMaxH3ModularPipeline: miniMaxH3Profile(),
+  PikaH3FlexModularPipeline: pikaH3FlexProfile(),
   WanAnimate2ModularPipeline: wanAnimate2Profile(WAN_ANIMATE_2_REPO, WAN_ANIMATE_2_REVISION, 'Wan Animate 2', 40, 3),
   WanAnimate2DistilledModularPipeline: wanAnimate2Profile(
     WAN_ANIMATE_2_DISTILLED_REPO,
@@ -1951,9 +2061,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       image_to_video: { requiredImages: ['referenceImages', 'lastImage'] },
     },
   ),
-  LTXI2VLongMultiPromptPipeline: planningVideoProfile('LTX Video', LTX_VIDEO_REPO, ['image_to_video'], {
-    image_to_video: { requiredImages: ['referenceImages'] },
-  }),
+  LTXI2VLongMultiPromptPipeline: planningVideoProfile(
+    'LTX Video',
+    LTX_VIDEO_REPO,
+    ['image_to_video'],
+    { image_to_video: { requiredImages: ['referenceImages'] } },
+    1,
+    false,
+    { steps: 8, guidance: 1, maxSequenceLength: 128 },
+  ),
   LTX2ConditionPipeline: planningVideoProfile(
     'LTX Video',
     LTX2_REPO,
@@ -3429,22 +3545,33 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVramSide: 1024,
     lowVramOffload: 'sequential_cpu',
   }),
-  ChromaInpaintPipeline: expertImageRouteProfile({
-    family: 'Chroma',
-    defaultRepo: CHROMA1_HD_REPO,
-    revision: CHROMA1_HD_REVISION,
-    modes: ['inpaint', 'outpaint'],
-    modeRequirements: {
-      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
-      outpaint: { requiredImages: ['referenceImages'] },
+  ChromaInpaintPipeline: {
+    ...expertImageRouteProfile({
+      family: 'Chroma',
+      defaultRepo: CHROMA1_HD_REPO,
+      revision: CHROMA1_HD_REVISION,
+      modes: ['inpaint', 'outpaint'],
+      modeRequirements: {
+        inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+        outpaint: { requiredImages: ['referenceImages'] },
+      },
+      recommendedSteps: 28,
+      recommendedGuidance: 7,
+      recommendedMaxSequenceLength: 512,
+      supportFlags: 3,
+      lowVramSide: 1024,
+      lowVramOffload: 'sequential_cpu',
+    }),
+    outpaintDefaults: {
+      width: 1024,
+      height: 768,
+      aspectRatio: '4:3',
+      outpaintLeft: 96,
+      outpaintRight: 96,
+      outpaintOverlap: 48,
+      outpaintFeather: 16,
     },
-    recommendedSteps: 28,
-    recommendedGuidance: 7,
-    recommendedMaxSequenceLength: 512,
-    supportFlags: 3,
-    lowVramSide: 1024,
-    lowVramOffload: 'sequential_cpu',
-  }),
+  },
   LTX2Pipeline: {
     ...expertVideoProfile(
       planningVideoProfile('LTX Video', LTX2_REPO, ['text_to_video'], {}, 0),
@@ -3725,6 +3852,41 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: true,
   },
+  Flux3ModularPipeline: contractOnlyImageProfile(FLUX3_BASE_REPO, FLUX3_BASE_REVISION, 50, 3.5, true),
+  Flux3DistilledModularPipeline: contractOnlyImageProfile(FLUX3_DISTILLED_REPO, FLUX3_DISTILLED_REVISION, 16, 1, false),
+  MiniMaxH3ImageModularPipeline: {
+    family: 'MiniMax Image',
+    catalogVisibility: 'internal',
+    defaultRepo: 'MiniMaxAI/MiniMax-H3-Image',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 2048, height: 2048, aspectRatio: '1:1' },
+    recommendedSteps: 6,
+    recommendedGuidance: 1,
+    guidanceLabel: 'Fixed six-head sampler',
+    supportsNegativePrompt: false,
+    supportFlags: 5,
+    outputKind: 'image',
+    offloadSupport: {
+      default: 'group_disk',
+      lowVram: 'group_disk',
+      emergency: 'group_disk',
+      modes: ['none', 'group_disk'],
+    },
+    lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: 'group_disk', steps: 6, width: 2048, height: 2048 },
+    modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'] },
+      multi_image_reference_edit: { requiredImages: ['referenceImages'] },
+    },
+    revisionCandidates: ['492fd8c4eca666f1085f57e30738c1e0d86b3439'],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'runtime-required',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: false,
+    galleryEligible: false,
+    liveProof: false,
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 if (STUDIO_MODEL_LABEL_VALUES.length !== Object.keys(STUDIO_MODEL_PROFILE_SOURCES).length) {
@@ -3759,7 +3921,7 @@ export const STUDIO_MODEL_PROFILES = Object.fromEntries(
       },
     ];
   }),
-) as Record<StudioModelType, StudioModelProfile>;
+) as Record<StudioModelType, StudioModelAuthoringDefaults>;
 
 export const STUDIO_MODEL_LABELS = Object.fromEntries(
   Object.entries(STUDIO_MODEL_PROFILES).map(([modelType, profile]) => [modelType, profile.label]),
@@ -3808,6 +3970,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   Cosmos3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Cosmos3DistilledModularPipeline'),
   Cosmos3OmniModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Cosmos3OmniModularPipeline'),
   MiniMaxH3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('MiniMaxH3ModularPipeline'),
+  PikaH3FlexModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('PikaH3FlexModularPipeline'),
   WanAnimate2ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('WanAnimate2ModularPipeline'),
   WanAnimate2DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement(
     'WanAnimate2DistilledModularPipeline',
@@ -4332,7 +4495,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceTextGenerationModel',
     supportedModes: TRANSFORMERS_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed SmolLM2 135M Instruct float32 profile with bounded token controls.',
     qualityDefaults: 'Deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLLM2_135M_INSTRUCT_REPO],
@@ -4343,7 +4507,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceImageTextToTextModel',
     supportedModes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed SmolVLM 256M Instruct float32 profile with one bounded local image.',
     qualityDefaults: 'One image, deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
@@ -4354,7 +4519,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceAnyToAnyModel',
     supportedModes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'Expert-only execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum: 'Expert-only execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Janus Pro 1B bfloat16 profile after acknowledging the pinned model terms.',
     qualityDefaults: 'Bounded text generation or native 384x384 image generation.',
     artifacts: [JANUS_PRO_1B_REPO],
@@ -4365,7 +4530,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceSpeechRecognitionModel',
     supportedModes: SPEECH_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Whisper Tiny float32 profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, segment timestamps.',
     artifacts: [WHISPER_TINY_REPO],
@@ -4376,7 +4542,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceCTCSpeechRecognitionModel',
     supportedModes: ['speech_to_text'],
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Wav2Vec2 Base 960h float32 CTC profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, word timestamps.',
     artifacts: [WAV2VEC2_BASE_960H_REPO],
@@ -4489,6 +4656,19 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     artifacts: [SPANDREL_IMAGE_UPSCALE_REPO],
     notes: 'Uses the generic Spandrel image upscaler and preserves the model-reported native scale.',
     manualOnlyReason: 'One exact ROCm run is qualified; broader platform coverage remains pending.',
+  },
+  Flux3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3ModularPipeline'),
+  Flux3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3DistilledModularPipeline'),
+  MiniMaxH3ImageModularPipeline: {
+    modelType: 'MiniMaxH3ImageModularPipeline',
+    supportedModes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    autoStatus: 'manual_only',
+    minimum: 'The exact optional runtime, full model files and Custom resource checks.',
+    recommended: 'A high-memory system with SSD offload; check each device separately.',
+    qualityDefaults: 'Native BF16, 2048 square and the model-owned sampling schedule.',
+    artifacts: ['MiniMaxAI/MiniMax-H3-Image'],
+    notes: 'Linux execution evidence is separate from general hardware and Gallery qualification.',
+    manualOnlyReason: 'Auto qualification is pending.',
   },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
@@ -4680,7 +4860,7 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
   const modeDefaults = profile.modeDefaults?.[mode];
   const size =
     mode === 'outpaint'
-      ? { aspectRatio: '16:9' as const, width: 1344, height: 768 }
+      ? (profile.outpaintDefaults ?? { aspectRatio: '16:9' as const, width: 1344, height: 768 })
       : {
           ...profile.defaultSize,
           width: modeDefaults?.width ?? profile.defaultSize.width,
@@ -4689,11 +4869,9 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
 
   return {
     ...DEFAULT_STUDIO_FORM,
+    ...size,
     mode,
     modelType,
-    aspectRatio: size.aspectRatio,
-    width: size.width,
-    height: size.height,
     dtype: profile.defaultDtype,
     steps: mode === 'outpaint' ? 32 : (modeDefaults?.steps ?? profile.recommendedSteps),
     guidanceScale: modeDefaults?.guidanceScale ?? profile.recommendedGuidance,

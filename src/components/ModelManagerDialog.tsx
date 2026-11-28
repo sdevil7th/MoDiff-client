@@ -18,8 +18,10 @@ import {
 } from 'lucide-react';
 
 import config from '../../app.config';
+import { formatResourceBytes } from '../studio/runtimeResources';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { studioWeightFormatProfile, hasNonNativeStudioWeightFormat } from '../studio/weightFormat';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -30,6 +32,7 @@ import {
   autoResourceInstallTarget,
   fetchAutoResourcePlans,
   modelInstallIsReady,
+  modelInstallReadyReason,
   type StudioAutoResourceInstallTarget,
   type StudioAutoResourcePlan,
 } from '../studio/autoResource';
@@ -44,6 +47,7 @@ import {
 } from '../studio/modelInstall';
 import {
   getCatalogModelProfiles,
+  modelInventoryRowKey,
   expandArtifactSelectionProfiles,
   getFormDefaultsForMode,
   getPrimaryModeForProfile,
@@ -79,6 +83,8 @@ import {
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
+import { matchingWorkflowModelArtifactRows } from '../workflow/workflowModelInventory';
+import WorkflowModelInventoryRow from './WorkflowModelInventoryRow';
 
 interface Revision {
   hash: string;
@@ -97,15 +103,17 @@ interface HFModel {
   installed?: boolean;
   complete?: boolean;
   repair_required?: boolean;
+  metadata_only?: boolean;
   install_reason?: string;
   active_files?: string[];
+  observed_selections?: { complete: boolean }[];
 }
 
 const fullHfCacheGate = createLatestRequestGate<'fullCache'>();
 
 const inventoryViews = [
   { value: 'all', label: 'All models' },
-  { value: 'installed', label: 'Installed' },
+  { value: 'installed', label: 'Local files' },
   { value: 'supported', label: 'Supported' },
   { value: 'downloads', label: 'Downloads' },
 ] as const;
@@ -126,7 +134,10 @@ function parseFullHfCache(value: unknown) {
     if (item.revisions.some((revision) => !isRecord(revision) || typeof revision.hash !== 'string')) {
       throw new Error(`Hugging Face cache entry ${index + 1} has an invalid revision.`);
     }
-    return item as unknown as HFModel;
+    const classNames = Array.isArray(item.class_names)
+      ? item.class_names.filter((name) => typeof name === 'string')
+      : [];
+    return { ...item, class_names: classNames } as unknown as HFModel;
   });
 }
 
@@ -203,6 +214,21 @@ function isHfModel(value: unknown): value is HFModel {
   return Boolean(value && typeof value === 'object' && 'id' in value && 'revisions' in value);
 }
 
+function cacheEntryStatus(item: HFModel) {
+  if (
+    item.metadata_only === true ||
+    (item.metadata_only === undefined && item.install_reason === 'No local weight files were found in the snapshot.')
+  )
+    return 'Metadata only';
+  if (item.repair_required || item.installed === false || item.complete === false) return 'Incomplete';
+  if (
+    Array.isArray(item.observed_selections) &&
+    item.observed_selections.some((selection) => selection?.complete === true)
+  )
+    return 'Verified selection';
+  return item.installed === true ? 'Cached weights' : 'Cached files';
+}
+
 function uniqueModelItems(items: Array<{ source: 'HF' | 'Local'; item: unknown }>) {
   const seen = new Set<string>();
   return items.filter(({ item, source }) => {
@@ -267,7 +293,7 @@ function compactHealthBadge(label: string) {
   if (label === 'Not suitable locally' || label === 'Will not work on this machine') return 'Blocked';
   if (label === 'Repair required') return 'Repair';
   if (label === 'Failed here before') return 'Failed';
-  if (label === 'Expert only') return 'Custom memory';
+  if (label === 'Expert only') return 'Custom memory required';
   if (label === 'Needs setup') return 'Install';
   if (label === 'Install model' || label === 'Install Auto artifact') return 'Install';
   return label;
@@ -397,7 +423,7 @@ function SupportedProfileRow({
       ? progress.error
       : 'This gated Hugging Face repository needs an accepted license and a configured read token.'
     : ready
-      ? status.reason
+      ? (modelInstallReadyReason(status.runnable, status.reason, autoPlan, form) ?? status.reason)
       : failed && progress?.error
         ? progress.error
         : (installTarget?.reason ?? compatibility.detail);
@@ -457,6 +483,9 @@ function SupportedProfileRow({
           {actionLabel}
         </StatusPill>
       </div>
+      {!ready && !tokenRequired && !installing && !installTarget && (
+        <div className="mt-1 text-xs text-modiff-subtle-text">{actionTitle}</div>
+      )}
     </article>
   );
 }
@@ -476,6 +505,8 @@ function ModelManagerDialog({
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
   const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRegistry = useNodesStore((state) => state.fetchRegistry);
@@ -522,6 +553,7 @@ function ModelManagerDialog({
     return !nodesRegistry[key];
   });
 
+  const cacheDestination = useNodesStore((state) => state.runtimeResources?.storage.destinations?.modelCache);
   const installedItems = useMemo(
     () =>
       uniqueModelItems(
@@ -535,22 +567,24 @@ function ModelManagerDialog({
       ),
     [cacheSearch, hfCache, localModels],
   );
-  const installedGroups = useMemo(
-    () => groupedItems(installedItems, ({ item }) => installedModelGroup(item)),
-    [installedItems],
-  );
-  const visibleInstalledGroups = useMemo(
-    () => (expertMode ? installedGroups : installedGroups.filter(([group]) => group !== 'Components')),
-    [expertMode, installedGroups],
-  );
   const allSupportedProfiles = useMemo(() => {
     const profiles = getCatalogModelProfiles({
       currentModelType: focus?.modelType ?? studioForm.modelType,
       includeWorkflowOnly: expertMode,
     }).flatMap((profile) => {
-      if (!studioModelCapabilitiesAuthoritative) return [profile];
+      if (profile.modelType === studioForm.modelType && hasNonNativeStudioWeightFormat(studioForm)) {
+        const selected = studioWeightFormatProfile(
+          studioForm,
+          profile,
+          studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+        );
+        return selected ? [selected] : [];
+      }
+      if (!studioModelCapabilitiesAuthoritative) return expandArtifactSelectionProfiles(profile);
       const capability = studioModelCapabilities.find((item) => item.modelType === profile.modelType);
-      if (!capability) return [profile];
+      if (!capability) return expandArtifactSelectionProfiles(profile);
       const merged = {
         ...profile,
         defaultRepo: capability.defaultRepo ?? profile.defaultRepo,
@@ -563,27 +597,51 @@ function ModelManagerDialog({
       };
       return expandArtifactSelectionProfiles(merged);
     });
-    return profiles.sort((left, right) => {
-      if (focus?.modelType === left.modelType) return -1;
-      if (focus?.modelType === right.modelType) return 1;
-      if (focus?.repo === left.defaultRepo) return -1;
-      if (focus?.repo === right.defaultRepo) return 1;
-      const leftLabel = String(left.label ?? left.modelType ?? left.defaultRepo ?? '');
-      const rightLabel = String(right.label ?? right.modelType ?? right.defaultRepo ?? '');
-      return leftLabel.localeCompare(rightLabel);
-    });
+    const priority = (profile: (typeof profiles)[number]) =>
+      focus?.repo === profile.defaultRepo ? 2 : focus?.modelType === profile.modelType ? 1 : 0;
+    return profiles.sort(
+      (left, right) =>
+        priority(right) - priority(left) ||
+        (left.artifactLabel ?? left.label).localeCompare(right.artifactLabel ?? right.label),
+    );
   }, [
     expertMode,
     focus?.modelType,
     focus?.repo,
-    studioForm.modelType,
+    studioForm,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid,
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
   ]);
+  const catalogGroupsByRepo = useMemo(() => {
+    const groups = new Map<string, Set<ModelGroup>>();
+    for (const profile of allSupportedProfiles) {
+      const repo = profile.defaultRepo.toLowerCase();
+      const categories = groups.get(repo) ?? new Set<ModelGroup>();
+      categories.add(supportedModelGroup(profile.surfaceCategory));
+      groups.set(repo, categories);
+    }
+    return groups;
+  }, [allSupportedProfiles]);
+  const installedGroups = useMemo(
+    () =>
+      groupedItems(installedItems, ({ item }) => {
+        const declared = catalogGroupsByRepo.get(modelItemText(item).toLowerCase());
+        if (declared?.size === 1) return Array.from(declared)[0]!;
+        return installedModelGroup(item);
+      }),
+    [installedItems, catalogGroupsByRepo],
+  );
+  const visibleInstalledGroups = useMemo(
+    () => (expertMode ? installedGroups : installedGroups.filter(([group]) => group !== 'Components')),
+    [expertMode, installedGroups],
+  );
+  const localEntryCount = visibleInstalledGroups.reduce((count, [, items]) => count + items.length, 0);
   const supportedProfiles = useMemo(() => {
     const query = cacheSearch.trim().toLowerCase();
     return allSupportedProfiles.filter((profile) =>
-      `${profile.label} ${profile.defaultRepo} ${profile.family} ${profile.surfaceCategory ?? ''}`
+      `${profile.label} ${profile.artifactLabel ?? ''} ${profile.defaultRepo} ${profile.family} ${profile.surfaceCategory ?? ''} ${profile.modes.join(' ')}`
         .toLowerCase()
         .includes(query),
     );
@@ -600,6 +658,10 @@ function ModelManagerDialog({
     () => groupedItems(supportedProfiles, (profile) => supportedModelGroup(profile.surfaceCategory)),
     [supportedProfiles],
   );
+  const supportedWorkflowModels = workflowModelDescriptors.flatMap((descriptor) => {
+    const rows = matchingWorkflowModelArtifactRows(descriptor, cacheSearch);
+    return rows.length ? [{ descriptor, rows }] : [];
+  });
 
   useEffect(() => {
     if (!focus) return;
@@ -626,6 +688,9 @@ function ModelManagerDialog({
             form: studioForm,
             hfCache: compactHfCache,
             includePipeline: false,
+            backendCapabilities: studioModelCapabilities,
+            workflowModelDescriptors,
+            studioExecutionSpecInvalid: studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
             localModels,
             modelCacheDiagnostics,
           })
@@ -636,9 +701,17 @@ function ModelManagerDialog({
       hasWorkflowModelContext,
       localModels,
       modelCacheDiagnostics,
+      studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative,
+      workflowModelDescriptors,
+      studioExecutionSpecInvalid,
       studioForm,
       workflowPlanKey,
     ],
+  );
+
+  const matchingRequirements = workflowRequirements.filter(({ label, repo, role }) =>
+    `${label} ${repo} ${role}`.toLowerCase().includes(cacheSearch.trim().toLowerCase()),
   );
 
   const beginLoading = useCallback(() => {
@@ -1058,7 +1131,7 @@ function ModelManagerDialog({
             >
               {isLoading
                 ? 'Refreshing model inventory…'
-                : `${installedItems.length} installed · ${supportedProfiles.length} supported${cacheSearch ? ' matches' : ''}`}
+                : `${localEntryCount} local entries · ${supportedProfiles.length + supportedWorkflowModels.length} supported${cacheSearch ? ' matches' : ''}`}
             </span>
             <ModiffButton data-testid="model-manager-close" onClick={handleOnClose}>
               Close
@@ -1066,6 +1139,18 @@ function ModelManagerDialog({
           </>
         }
       >
+        {hasNonNativeStudioWeightFormat(studioForm) &&
+        !studioWeightFormatProfile(
+          studioForm,
+          STUDIO_MODEL_PROFILES[studioForm.modelType],
+          studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+        ) ? (
+          <p role="status" className="m-3 text-xs text-hf-orange">
+            {getStudioModelCacheStatus(null, compactHfCache, localModels, modelCacheDiagnostics).reason}
+          </p>
+        ) : null}
         {hfTokenEditorOpen ? (
           <div
             id="model-manager-token-editor"
@@ -1158,6 +1243,12 @@ function ModelManagerDialog({
             </div>
           ) : null}
 
+          {(inventoryView === 'all' || inventoryView === 'downloads') && cacheDestination ? (
+            <div className="min-w-0 text-xs text-modiff-subtle-text">
+              Model download cache · {formatResourceBytes(cacheDestination.freeBytes)} free
+              <div className="break-all">{cacheDestination.path}</div>
+            </div>
+          ) : null}
           {(inventoryView === 'all' || inventoryView === 'downloads') && visibleDownloads.length > 0 ? (
             <section className="mb-3 grid gap-2" data-testid="model-manager-downloads">
               <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-modiff-subtle-text">
@@ -1194,14 +1285,14 @@ function ModelManagerDialog({
           ) : null}
 
           <div className="grid gap-4">
-            {inventoryView === 'all' && hasWorkflowModelContext && workflowRequirements.length > 0 ? (
+            {inventoryView === 'all' && hasWorkflowModelContext && matchingRequirements.length > 0 ? (
               <InventorySection
-                count={workflowRequirements.length}
+                count={matchingRequirements.length}
                 testId="model-manager-requirements"
                 title="Current workflow"
               >
                 <div className="grid gap-1">
-                  {workflowRequirements.map((requirement) => (
+                  {matchingRequirements.map((requirement) => (
                     <WorkflowArtifactRequirementRow
                       key={requirement.id}
                       activeInstallCount={activeInstallCount}
@@ -1219,11 +1310,11 @@ function ModelManagerDialog({
             ) : null}
 
             {inventoryView === 'all' || inventoryView === 'installed' ? (
-              <InventorySection count={installedItems.length} testId="model-manager-installed" title="Installed">
+              <InventorySection count={localEntryCount} testId="model-manager-installed" title="Local files">
                 {visibleInstalledGroups.length === 0 ? (
                   <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
                     {cacheSearch
-                      ? 'No installed models match this search.'
+                      ? 'No local files match this search.'
                       : isLoading
                         ? 'Reading the model inventory…'
                         : 'No visible model artifacts indexed yet.'}
@@ -1255,7 +1346,15 @@ function ModelManagerDialog({
                                 {formatFileSize(item.size)}
                               </StatusPill>
                             ) : null}
-                            <StatusPill tone="success">{source}</StatusPill>
+                            {isHfModel(item) ? (
+                              <StatusPill
+                                tone={item.repair_required || item.installed === false ? 'warning' : 'default'}
+                                title={item.install_reason}
+                              >
+                                {cacheEntryStatus(item)}
+                              </StatusPill>
+                            ) : null}
+                            <StatusPill tone="default">{source}</StatusPill>
                           </div>
                         </article>
                       ))}
@@ -1266,8 +1365,12 @@ function ModelManagerDialog({
             ) : null}
 
             {inventoryView === 'all' || inventoryView === 'supported' ? (
-              <InventorySection count={supportedProfiles.length} testId="model-manager-supported" title="Supported">
-                {supportedGroups.length === 0 ? (
+              <InventorySection
+                count={supportedProfiles.length + supportedWorkflowModels.length}
+                testId="model-manager-supported"
+                title="Supported"
+              >
+                {supportedGroups.length === 0 && supportedWorkflowModels.length === 0 ? (
                   <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
                     No supported models match the current filter.
                     {cacheSearch ? (
@@ -1281,13 +1384,19 @@ function ModelManagerDialog({
                     <div key={group} className="grid gap-1">
                       <div className="px-1 text-xs font-semibold text-modiff-subtle-text">{group}</div>
                       {profiles.map((profile) => {
-                        const rowForm = getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType);
+                        const rowForm =
+                          profile.modelType === studioForm.modelType && hasNonNativeStudioWeightFormat(studioForm)
+                            ? studioForm
+                            : getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType);
                         const planKey = autoPlanKeyForForm(rowForm);
                         const rowPlan = autoResourcePlans[planKey];
-                        const rowInstallTarget = autoResourceInstallTarget(rowPlan);
+                        const rowInstallTarget = autoResourceInstallTarget(
+                          rowPlan,
+                          hasNonNativeStudioWeightFormat(rowForm) ? rowForm : undefined,
+                        );
                         return (
                           <SupportedProfileRow
-                            key={`${profile.modelType}:${profile.defaultRepo}`}
+                            key={modelInventoryRowKey(profile)}
                             activeInstallCount={activeInstallCount}
                             autoPlan={rowPlan}
                             expertMode={expertMode}
@@ -1317,6 +1426,24 @@ function ModelManagerDialog({
                     </div>
                   ))
                 )}
+                {supportedWorkflowModels.map(({ descriptor, rows }) => (
+                  <WorkflowModelInventoryRow
+                    key={JSON.stringify([descriptor.profileId, descriptor.repo, descriptor.pipeline])}
+                    descriptor={descriptor}
+                    visibleRows={rows}
+                    cache={compactHfCache}
+                    local={localModels}
+                    diagnostics={modelCacheDiagnostics}
+                    installProgress={hfDownloadProgress}
+                    activeInstallCount={activeInstallCount}
+                    hfTokenConfigured={Boolean(runtimeStatus?.config?.hf_token_configured)}
+                    onConfigureHfToken={(repo) => {
+                      setHfAccessRepo(repo);
+                      setHfTokenEditorOpen(true);
+                    }}
+                    onInstall={handleInstall}
+                  />
+                ))}
               </InventorySection>
             ) : null}
 

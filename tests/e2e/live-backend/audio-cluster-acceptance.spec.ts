@@ -1,3 +1,4 @@
+import { clickCanvasBackground } from '../canvasBackground';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -77,7 +78,7 @@ const AUDIO_CASE = soundModel
 
 async function ready(page: Page) {
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 180_000 });
-  const advanced = page.getByRole('button', { name: /Advanced workflow/u });
+  const advanced = page.getByTestId('launcher-mode-advanced_workflow');
   if (await advanced.isVisible().catch(() => false)) await advanced.click();
 }
 
@@ -162,7 +163,7 @@ async function reconnectExportThroughCanvas(page: Page, rootId: string) {
     // At fit-to-view a short export wire can sit entirely under its handles.
     // Move the output through the ordinary header gesture, not a forced click
     // through an occluding element or an injected edge selection.
-    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await clickCanvasBackground(page);
     const header = page.locator(`.react-flow__node[data-id="${fixture.target}"] header`).first();
     await header.click();
     const bounds = await header.boundingBox();
@@ -466,6 +467,7 @@ test('Audio Block preserves full-setting native edits and generates audio when a
   await page.addInitScript(() => {
     if (sessionStorage.getItem('audio-acceptance-initialized')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('audio-acceptance-initialized', 'yes');
   });
   // Start only after the intentionally restarted backend has loaded its registry.
@@ -485,9 +487,6 @@ test('Audio Block preserves full-setting native edits and generates audio when a
   await ready(page);
   await page.getByTestId('workflow-tab-new').click();
   await ready(page);
-  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
-  if ((await auto.getAttribute('aria-checked')) !== 'false')
-    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible())) await page.getByTestId('left-tab-nodes').click();
   await search.fill(AUDIO_CASE.search);

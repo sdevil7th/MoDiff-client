@@ -1,11 +1,30 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
-import { dirname, extname, join, resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+  copyFileSync,
+} from 'node:fs';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'vite';
 import { compareRunProvenance, runtimeLockFromProvenance } from './live-proof-provenance.mjs';
 import templateGalleryContract from '../src/studio/templateGalleryContract.json' with { type: 'json' };
+import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
+import {
+  RETAINED_GALLERY_PROVENANCE_FORMAT,
+  decodedAudiovisualMediaHash,
+  retainedGalleryFileLimit,
+  validateRetainedGalleryProvenance,
+} from './retained-gallery-provenance.mjs';
+import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
+import { sourceVideoTimingMatches } from '../src/studio/sourceVideoTiming.ts';
+import { retainedVideoPreviewMatches } from '../src/studio/retainedVideoPreview.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_GALLERY_DIR = join(ROOT, 'public', 'template-gallery');
@@ -243,6 +262,11 @@ function parseArgs(argv) {
       args.publish = true;
       continue;
     }
+    if (entry === '--reviewed-history') {
+      if (args.mode !== 'verify') throw new Error('--reviewed-history only applies to Gallery verification.');
+      args.reviewedHistory = true;
+      continue;
+    }
     if (entry.startsWith('--')) {
       const [key, inlineValue] = entry.slice(2).split('=');
       const value = inlineValue ?? argv[index + 1];
@@ -284,21 +308,60 @@ export function canonicalJsonHash(value) {
   return `sha256:canonical-json:${sha256(Buffer.from(stableStringify(value)))}`;
 }
 
-export function decodedAudiovisualMediaHash(decodedMediaHash, decodedAudioHash) {
-  if (!decodedMediaHash || !decodedAudioHash) return null;
-  return `sha256:decoded-av-v1:${sha256(
-    Buffer.from(
-      stableStringify({
-        decodedAudioHash,
-        decodedMediaHash,
-      }),
-    ),
-  )}`;
+export { decodedAudiovisualMediaHash };
+
+// Published v1 frame hashes include the muxer's software comment. These two
+// reviewed producers emit identical frame records but different banner bytes.
+// Retain the actual digest and reconstruct only this nonsemantic header for
+// compatibility; all stream metadata, timestamps and frame checksums stay exact.
+const REVIEWED_FRAMEMD5_MUXERS = ['Lavf61.1.100', 'Lavf61.7.100'];
+
+export function decodedVideoFrameHashCompatibility(bytes) {
+  const rawHash = `sha256:decoded-video-framemd5:${sha256(bytes)}`;
+  const text = bytes.toString('utf8');
+  const software = [...text.matchAll(/^#software: (Lavf\d+\.\d+\.\d+)(?=\r?$)/gm)];
+  const rows = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith('#'));
+  const valid =
+    /^#format: frame checksums\r?$/m.test(text) &&
+    /^#version: 2\r?$/m.test(text) &&
+    /^#hash: MD5\r?$/m.test(text) &&
+    software.length === 1 &&
+    rows.length > 0 &&
+    rows.every((line) => {
+      const fields = line.split(',');
+      return fields.length === 6 && /^[a-f0-9]{32}$/i.test(fields[5].trim());
+    });
+  return {
+    scheme: 'framemd5-software-header-v1',
+    rawHash,
+    observedMuxer: software.length === 1 ? software[0][1] : null,
+    variants: valid
+      ? [...new Set([software[0][1], ...REVIEWED_FRAMEMD5_MUXERS])].map((muxer) => ({
+          muxer,
+          hash: `sha256:decoded-video-framemd5:${sha256(
+            Buffer.from(text.replace(software[0][0], `#software: ${muxer}`)),
+          )}`,
+        }))
+      : [],
+  };
+}
+
+export function decodedMediaHashMatches(decoded, expected) {
+  if (typeof expected !== 'string' || !decoded) return false;
+  if (decoded.hash === expected) return true;
+  const compatibility = decoded.frameHashCompatibility;
+  return (
+    /^sha256:decoded-video-framemd5:[a-f0-9]{64}$/.test(decoded.hash ?? '') &&
+    compatibility?.scheme === 'framemd5-software-header-v1' &&
+    compatibility.rawHash === decoded.hash &&
+    Array.isArray(compatibility.variants) &&
+    compatibility.variants.some((variant) => variant.hash === expected)
+  );
 }
 
 function redactLocalPath(value) {
   const isWindowsPath = /^[a-z]:[\\/]/i.test(value);
-  const isUserScopedPosixPath = /^\/(?:Users|home|tmp|private\/tmp|var\/tmp)\//.test(value);
+  const isUserScopedPosixPath = /^\/(?:Users|home|tmp|private\/tmp|var\/tmp|run\/media|media|mnt)\//.test(value);
   if (!isWindowsPath && !isUserScopedPosixPath) return value;
   const fileName = value.split(/[\\/]/).filter(Boolean).at(-1) ?? 'path';
   return `<local-path>/${fileName}`;
@@ -482,6 +545,29 @@ export function validateReviewedDerivative(provenance, derivative, expected) {
 
   if (derivativeKind === 'layered_contact_sheet') {
     validateProcessor();
+    if (derivative.losslessExports !== undefined) {
+      const exports = derivative.losslessExports;
+      const originals = provenance?.output?.items ?? [];
+      const valid =
+        exports?.schemaVersion === 1 &&
+        exports.verification === 'native-webp-quality-100-byte-reproduction' &&
+        Array.isArray(exports.items) &&
+        exports.items.length === originals.length &&
+        derivative.processor?.role === 'byte-identical-retained-sheet-reproduction' &&
+        derivative.processor?.path === 'scripts/template-gallery-retained-layer-sheet.py' &&
+        derivative.creationTimeReviewCaptionPreserved === true &&
+        exports.items.every(
+          (item, index) =>
+            item.index === index &&
+            item.mode === 'RGBA' &&
+            /^sha256:bytes:[a-f0-9]{64}$/u.test(item.encodedSha256 ?? '') &&
+            /^[a-f0-9]{64}$/u.test(item.rgbaPixelSha256 ?? '') &&
+            item.nativeEncodedSha256 === originals[index].encodedSha256 &&
+            item.width === originals[index].width &&
+            item.height === originals[index].height,
+        );
+      if (!valid) errors.push('reviewed derivative lossless exports must reproduce every original native image');
+    }
     const expectedItemHashes = (provenance?.output?.items ?? []).map((item) => item.decodedSha256);
     if (stableStringify(derivative.sourceItemHashes ?? []) !== stableStringify(expectedItemHashes)) {
       errors.push('reviewed derivative sourceItemHashes mismatch');
@@ -613,7 +699,7 @@ export function validateReviewedDerivative(provenance, derivative, expected) {
   return errors;
 }
 
-function validateSingleProvenance(provenance, expected, derivative = null) {
+export function validateSingleProvenance(provenance, expected, derivative = null) {
   const errors = [];
   const audioDerivative =
     ['audio_remux', 'audio_caption_timeline_replacement'].includes(derivative?.kind) ||
@@ -689,11 +775,97 @@ function loadSingleProvenance(args, template, expected) {
   }
 }
 
-export function validateQualityReview(review, expected, requiredStatus = EXACT_QUALITY_REVIEW_STATUS) {
+function validateMaintainerAcceptance(review) {
+  const acceptance = review.maintainerAcceptance;
+  if (acceptance === undefined) return { accepted: false, errors: [] };
+  const invalid = {
+    accepted: false,
+    errors: ['quality review maintainerAcceptance must bind the exact accepted review'],
+  };
+  if (!acceptance || typeof acceptance !== 'object' || Array.isArray(acceptance)) return invalid;
+  const fields = [
+    'schemaVersion',
+    'decision',
+    'reviewer',
+    'acceptedAt',
+    'statement',
+    'acceptedReviewHash',
+    ...(acceptance.acceptedFindings === undefined ? [] : ['acceptedFindings']),
+  ];
+  if (
+    Object.keys(acceptance).length !== fields.length ||
+    fields.some((key) => !Object.hasOwn(acceptance, key)) ||
+    acceptance.schemaVersion !== 1 ||
+    acceptance.decision !== 'accepted_with_disclosed_limitations' ||
+    acceptance.reviewer !== review.reviewer ||
+    acceptance.acceptedAt !== review.reviewedAt ||
+    typeof acceptance.statement !== 'string' ||
+    acceptance.statement.trim().length < 20 ||
+    acceptance.statement.length > 4096 ||
+    !Array.isArray(review.knownLimitations) ||
+    !review.knownLimitations.some((line) => typeof line === 'string' && line.trim().length >= 10)
+  )
+    return invalid;
+  if (
+    acceptance.acceptedFindings !== undefined &&
+    (!Array.isArray(acceptance.acceptedFindings) ||
+      acceptance.acceptedFindings.length > 20 ||
+      new Set(acceptance.acceptedFindings).size !== acceptance.acceptedFindings.length ||
+      acceptance.acceptedFindings.some((finding) => !ACCEPTABLE_VISUAL_FINDINGS.has(finding)))
+  )
+    return invalid;
+  const acceptedReview = { ...review };
+  delete acceptedReview.maintainerAcceptance;
+  try {
+    if (acceptance.acceptedReviewHash !== canonicalJsonHash(acceptedReview)) return invalid;
+  } catch {
+    return invalid;
+  }
+  return { accepted: true, errors: [], acceptedFindings: acceptance.acceptedFindings ?? [] };
+}
+
+const ACCEPTABLE_VISUAL_FINDINGS = new Set([
+  'dynamic video review motionReview.status must be pass',
+  'dynamic video review temporalDefects must be an empty array',
+  'dynamic video review requires passing temporal geometry review',
+  ...['subjectMorphing', 'scaleDrift', 'contactSliding', 'frameGlitches'].map(
+    (field) => `dynamic video temporalGeometryReview.${field} must be none`,
+  ),
+  'source-conditioned video requires passing source preservation review',
+  ...['subjectIdentity', 'unmaskedRegions'].map(
+    (field) => `source-conditioned video sourcePreservationReview.${field} must be preserved`,
+  ),
+  'photoreal video requires passing photographic-realism review',
+  'photoreal video requires plausible lighting, materials, and dynamics',
+]);
+
+export function qualityReviewContractForTemplate(template) {
+  const lrc = template.workflowBlockSettings?.lyricVideo?.lrc;
+  return {
+    expectedDurationSeconds: template.example?.expectedOutput?.durationSeconds,
+    ...(template.id === 'ace_step_lyric_music_video' && typeof lrc === 'string'
+      ? { lyricOverlayEnabled: Boolean(lrc.trim()) }
+      : {}),
+  };
+}
+
+export function validateQualityReview(
+  review,
+  expected,
+  requiredStatus = EXACT_QUALITY_REVIEW_STATUS,
+  sourceTiming,
+  reviewContract = {},
+) {
   const errors = [];
   if (!review || typeof review !== 'object' || Array.isArray(review)) {
     return ['Quality review must be a JSON object.'];
   }
+  const acceptance =
+    requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS
+      ? validateMaintainerAcceptance(review)
+      : { accepted: false, errors: [] };
+  errors.push(...acceptance.errors);
+  const qualitativeAcceptance = acceptance.accepted && review.ratingMethod === 'maintainer_qualitative_acceptance';
   const strictVisualReview =
     requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS &&
     (STRICT_VISUAL_REVIEW_TEMPLATES.has(expected.templateId) ||
@@ -748,6 +920,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
   } else {
     for (const requiredScore of ['taskAdherence', 'artifactControl', 'modalityQuality']) {
       const score = review.rubric[requiredScore];
+      if (qualitativeAcceptance && score === null) continue;
       if (!Number.isFinite(score) || score < 1 || score > 5) {
         errors.push(`quality review rubric.${requiredScore} must be between 1 and 5`);
       }
@@ -760,10 +933,12 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
     errors.push('quality review knownLimitations must be an array when supplied');
   }
   if (requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS) {
+    const minimumScore = acceptance.accepted ? 1 : 4;
     for (const field of ['promptAdherence', 'composition', 'technicalExecution', 'templateUsefulness']) {
       const score = review.scores?.[field];
-      if (!Number.isFinite(score) || score < 4 || score > 5) {
-        errors.push(`reviewed quality review scores.${field} must be between 4 and 5`);
+      if (qualitativeAcceptance && score === null) continue;
+      if (!Number.isFinite(score) || score < minimumScore || score > 5) {
+        errors.push(`reviewed quality review scores.${field} must be between ${minimumScore} and 5`);
       }
     }
     if (!Array.isArray(review.hardFailures) || review.hardFailures.length > 0) {
@@ -818,21 +993,42 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
         if (review.motionReview?.fullPlaybackReviewed !== true) {
           errors.push('dynamic video review must confirm full playback review');
         }
-        if (!Number.isFinite(review.motionReview?.frameCount) || review.motionReview.frameCount < 81) {
+        const sourceTimingPreserved =
+          acceptance.accepted &&
+          stableStringify(review.sourceTimingReview) === stableStringify(sourceTiming) &&
+          sourceVideoTimingMatches(sourceTiming, {
+            frames: review.motionReview?.frameCount,
+            durationSeconds: review.motionReview?.durationSeconds,
+          });
+        if (
+          !Number.isFinite(review.motionReview?.frameCount) ||
+          (!sourceTimingPreserved && review.motionReview.frameCount < 81)
+        ) {
           errors.push('dynamic video review requires at least 81 reviewed frames');
         }
         if (
           !Number.isFinite(review.motionReview?.durationSeconds) ||
-          review.motionReview.durationSeconds < MINIMUM_TEMPLATE_VIDEO_SECONDS
+          (!sourceTimingPreserved && review.motionReview.durationSeconds < MINIMUM_TEMPLATE_VIDEO_SECONDS)
         ) {
           errors.push('dynamic video review requires at least five seconds of reviewed output');
         }
         if (
           LONG_VIDEO_REVIEW_TEMPLATES.has(expected.templateId) &&
+          reviewContract.expectedDurationSeconds === undefined &&
           (review.motionReview?.durationSeconds < 20 || review.motionReview?.durationSeconds > 35)
         ) {
           errors.push('long-form video review requires a duration between 20 and 35 seconds');
         }
+        if (
+          reviewContract.expectedDurationSeconds !== undefined &&
+          (!Number.isFinite(reviewContract.expectedDurationSeconds) ||
+            reviewContract.expectedDurationSeconds <= 0 ||
+            !Number.isFinite(review.motionReview?.durationSeconds) ||
+            Math.abs(review.motionReview.durationSeconds - reviewContract.expectedDurationSeconds) > 0.2)
+        )
+          errors.push(
+            `video review must match the declared ${reviewContract.expectedDurationSeconds}-second recipe duration`,
+          );
         if (
           !Number.isFinite(review.motionReview?.sceneMotionCoveragePercent) ||
           review.motionReview.sceneMotionCoveragePercent < 50
@@ -916,7 +1112,14 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
         } else {
           errors.push('dynamic video review visualIntent must be photoreal or animation');
         }
-        if (expected.templateId === 'ace_step_lyric_music_video') {
+        if (expected.templateId === 'ace_step_lyric_music_video' && reviewContract.lyricOverlayEnabled === false) {
+          if (
+            review.lyricSyncReview?.status !== 'not_applicable' ||
+            review.lyricSyncReview.overlayEnabled !== false ||
+            review.lyricSyncReview.emptyLrc !== true
+          )
+            errors.push('disabled lyric overlay requires an explicit not-applicable caption review');
+        } else if (expected.templateId === 'ace_step_lyric_music_video') {
           if (review.lyricSyncReview?.status !== 'pass' || review.lyricSyncReview?.fullPlaybackReviewed !== true) {
             errors.push('lyric music video requires a passing full-playback lyric sync review');
           }
@@ -1009,7 +1212,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
       }
     }
   }
-  return errors;
+  return acceptance.accepted ? errors.filter((error) => !acceptance.acceptedFindings.includes(error)) : errors;
 }
 
 function loadQualityReview(args, template, expected, requiredStatus = EXACT_QUALITY_REVIEW_STATUS) {
@@ -1022,7 +1225,13 @@ function loadQualityReview(args, template, expected, requiredStatus = EXACT_QUAL
   if (!existsSync(filePath)) return { errors: [`Quality review file is missing: ${filePath}`] };
   try {
     const review = JSON.parse(readFileSync(filePath, 'utf8'));
-    const errors = validateQualityReview(review, expected, requiredStatus);
+    const errors = validateQualityReview(
+      review,
+      expected,
+      requiredStatus,
+      galleryExpectedOutput(template).sourceTiming,
+      qualityReviewContractForTemplate(template),
+    );
     return { filePath, review, errors, hash: canonicalJsonHash(review) };
   } catch (error) {
     return { errors: [`Could not read quality review ${filePath}: ${error instanceof Error ? error.message : error}`] };
@@ -1123,6 +1332,8 @@ export async function loadTemplateRuntime(root = ROOT, { includePlanning = false
         return exactnessModule.getPromptSettingsHash(exactnessModule.getTemplateLockedSettings(template));
       },
       findManifestEntry: exactnessModule.findManifestEntry,
+      findHistoricalTemplateRecipe: exactnessModule.findHistoricalTemplateRecipe,
+      isRetainedVideoPreview: exactnessModule.isRetainedVideoPreview,
     };
   } finally {
     await server.close();
@@ -1216,57 +1427,81 @@ export function selectPrimaryRunFile(files, templateId, runIndex, extensions = M
   });
 }
 
-async function decodedImageHash(imagePath) {
+async function decodedImageHash(imagePath, { measureImageFrames = false } = {}) {
   const { chromium } = await import('playwright');
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
+    // ImageDecoder needs a secure context. Serve the decoding page wholly in Chromium.
+    if (measureImageFrames) {
+      const decoderPage = 'https://modiff-gallery.invalid/';
+      await page.route(decoderPage, (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Gallery image decoding</title>' }),
+      );
+      await page.goto(decoderPage);
+    }
     const bytes = readFileSync(imagePath);
     const extension = extname(imagePath).toLowerCase().replace('.', '');
     const mime =
       extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : extension === 'webp' ? 'image/webp' : 'image/png';
     const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
-    const result = await page.evaluate(async (src) => {
-      const image = new Image();
-      image.decoding = 'sync';
-      image.src = src;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) throw new Error('Could not create canvas context for decoded image hash.');
-      context.drawImage(image, 0, 0);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      let lumaSum = 0;
-      let lumaSquaredSum = 0;
-      let nearBlackPixels = 0;
-      const pixelCount = imageData.data.length / 4;
-      for (let offset = 0; offset < imageData.data.length; offset += 4) {
-        const luma =
-          0.2126 * imageData.data[offset] + 0.7152 * imageData.data[offset + 1] + 0.0722 * imageData.data[offset + 2];
-        lumaSum += luma;
-        lumaSquaredSum += luma * luma;
-        if (luma < 4) nearBlackPixels += 1;
-      }
-      const meanLuma = pixelCount > 0 ? lumaSum / pixelCount : 0;
-      let binary = '';
-      const chunkSize = 32768;
-      for (let offset = 0; offset < imageData.data.length; offset += chunkSize) {
-        binary += String.fromCharCode(...imageData.data.slice(offset, offset + chunkSize));
-      }
-      return {
-        width: canvas.width,
-        height: canvas.height,
-        meanLuma,
-        lumaStdDev: Math.sqrt(Math.max(0, lumaSquaredSum / pixelCount - meanLuma * meanLuma)),
-        nearBlackRatio: pixelCount > 0 ? nearBlackPixels / pixelCount : 1,
-        rgbaBase64: btoa(binary),
-      };
-    }, dataUrl);
+    const result = await page.evaluate(
+      async ({ src, type, measureImageFrames }) => {
+        const image = new Image();
+        image.decoding = 'sync';
+        image.src = src;
+        await image.decode();
+        let frames;
+        if (measureImageFrames) {
+          const data = await (await fetch(src)).arrayBuffer();
+          const decoder = new globalThis.ImageDecoder({ data, type, preferAnimation: true });
+          try {
+            await decoder.tracks.ready;
+            frames = decoder.tracks.selectedTrack.frameCount;
+          } finally {
+            decoder.close();
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Could not create canvas context for decoded image hash.');
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        let lumaSum = 0;
+        let lumaSquaredSum = 0;
+        let nearBlackPixels = 0;
+        const pixelCount = imageData.data.length / 4;
+        for (let offset = 0; offset < imageData.data.length; offset += 4) {
+          const luma =
+            0.2126 * imageData.data[offset] + 0.7152 * imageData.data[offset + 1] + 0.0722 * imageData.data[offset + 2];
+          lumaSum += luma;
+          lumaSquaredSum += luma * luma;
+          if (luma < 4) nearBlackPixels += 1;
+        }
+        const meanLuma = pixelCount > 0 ? lumaSum / pixelCount : 0;
+        let binary = '';
+        const chunkSize = 32768;
+        for (let offset = 0; offset < imageData.data.length; offset += chunkSize) {
+          binary += String.fromCharCode(...imageData.data.slice(offset, offset + chunkSize));
+        }
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          frames,
+          meanLuma,
+          lumaStdDev: Math.sqrt(Math.max(0, lumaSquaredSum / pixelCount - meanLuma * meanLuma)),
+          nearBlackRatio: pixelCount > 0 ? nearBlackPixels / pixelCount : 1,
+          rgbaBase64: btoa(binary),
+        };
+      },
+      { src: dataUrl, type: mime, measureImageFrames },
+    );
     return {
       width: result.width,
       height: result.height,
+      ...(measureImageFrames && { frames: result.frames }),
       meanLuma: result.meanLuma,
       lumaStdDev: result.lumaStdDev,
       nearBlackRatio: result.nearBlackRatio,
@@ -1441,7 +1676,8 @@ function decodedVideoHash(videoPath, args) {
       isolatedLumaFlashes += 1;
     }
   }
-  const decodedMediaHash = `sha256:decoded-video-framemd5:${sha256(frameMd5)}`;
+  const frameHashCompatibility = decodedVideoFrameHashCompatibility(frameMd5);
+  const decodedMediaHash = frameHashCompatibility.rawHash;
   return {
     width: metadata.width,
     height: metadata.height,
@@ -1449,6 +1685,7 @@ function decodedVideoHash(videoPath, args) {
     pixelFormat: metadata.pixelFormat,
     frames: frameCount,
     durationSeconds: metadata.durationSeconds || (metadata.fps > 0 ? frameCount / metadata.fps : 0),
+    fps: metadata.fps,
     hasAudio: metadata.hasAudio,
     embeddedAudio,
     uniqueFrameRatio: new Set(frameHashes).size / frameCount,
@@ -1469,6 +1706,7 @@ function decodedVideoHash(videoPath, args) {
       nearBlackFrameRatios.filter((ratio) => ratio > 0.35).length / nearBlackFrameRatios.length,
     isolatedLumaFlashRatio: frameCount > 2 ? isolatedLumaFlashes / (frameCount - 2) : 0,
     hash: decodedMediaHash,
+    frameHashCompatibility,
     audiovisualMediaHash: decodedAudiovisualMediaHash(decodedMediaHash, embeddedAudio?.hash),
   };
 }
@@ -1541,7 +1779,7 @@ export async function decodedMediaHash(mediaPath, mediaType, args = {}) {
   if (mediaType === 'video') return decodedVideoHash(mediaPath, args);
   if (mediaType === 'audio') return decodedAudioHash(mediaPath, args);
   if (mediaType === 'json') return decodedJsonHash(mediaPath);
-  return decodedImageHash(mediaPath);
+  return decodedImageHash(mediaPath, args);
 }
 
 export async function finalizeReviewedDerivative(recordPath, mediaPath, mediaType = 'image', args = {}) {
@@ -1595,11 +1833,21 @@ export function beforePreviewContractErrors(decoded, contract = templateGalleryC
   return errors;
 }
 
-export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image') {
+export function technicalMediaErrors(
+  decoded,
+  expected = {},
+  mediaType = 'image',
+  retainedVideoPreview,
+  nativeTurntable = false,
+) {
   const errors = [];
   for (const field of ['width', 'height', 'frames', 'sampleRate']) {
-    if (expected[field] !== undefined && Number(decoded[field]) !== Number(expected[field])) {
-      errors.push(`${field} must be ${expected[field]}, got ${decoded[field] ?? 'missing'}`);
+    const measured =
+      field === 'sampleRate' && mediaType === 'audio'
+        ? (decoded.sourceSampleRate ?? decoded.sampleRate)
+        : decoded[field];
+    if (expected[field] !== undefined && Number(measured) !== Number(expected[field])) {
+      errors.push(`${field} must be ${expected[field]}, got ${measured ?? 'missing'}`);
     }
   }
   if (expected.durationSeconds !== undefined) {
@@ -1615,6 +1863,17 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
     if (Number(decoded.lumaStdDev ?? 0) < 0.75) errors.push('decoded media has near-zero visual variance');
   }
   if (mediaType === 'video') {
+    const retainedClip = retainedVideoPreviewMatches(
+      retainedVideoPreview,
+      {
+        ...decoded,
+        decodedAudioHash: decoded.embeddedAudio?.hash,
+        mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash)
+          ? retainedVideoPreview.mediaHash
+          : decoded.hash,
+      },
+      nativeTurntable,
+    );
     const requestedMotionProfile = expected.motionReviewProfile ?? DEFAULT_MOTION_REVIEW_PROFILE;
     const hasKnownMotionProfile = Object.hasOwn(MOTION_REVIEW_PROFILES, requestedMotionProfile);
     if (!hasKnownMotionProfile) {
@@ -1648,17 +1907,33 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
         }
       }
     }
-    if (Number(decoded.durationSeconds ?? 0) < MINIMUM_TEMPLATE_VIDEO_SECONDS) {
+    if (
+      Number(decoded.durationSeconds ?? 0) < MINIMUM_TEMPLATE_VIDEO_SECONDS &&
+      !retainedClip &&
+      !sourceVideoTimingMatches(expected.sourceTiming, decoded)
+    ) {
       errors.push(`video duration must be at least ${MINIMUM_TEMPLATE_VIDEO_SECONDS} seconds`);
     }
     const shortEdge = Math.min(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
     const longEdge = Math.max(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
-    if (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE) {
+    if (
+      !retainedClip &&
+      (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE)
+    ) {
       errors.push(
         `video delivery resolution must be at least ${MINIMUM_TEMPLATE_VIDEO_LONG_EDGE}x${MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE}`,
       );
     }
     if (Number(decoded.uniqueFrameRatio ?? 0) < 0.1) errors.push('video has fewer than 10% unique decoded frames');
+    if (retainedVideoPreview && !retainedClip) errors.push('video differs from the reviewed retained preview');
+    if (retainedClip) {
+      errors.push(
+        ...beforePreviewContractErrors(decoded, {
+          ...templateGalleryContract.video.beforePreview,
+          muted: !retainedVideoPreview.decodedAudioHash,
+        }),
+      );
+    }
     if (Number(decoded.isolatedLumaFlashRatio ?? 0) > 0) {
       errors.push('video contains one or more isolated full-frame luminance flashes');
     }
@@ -1776,11 +2051,11 @@ function writeBrowserSafeBeforePreview(videoPath, previewPath, args) {
   );
 }
 
-function readManifest() {
-  if (!existsSync(PUBLIC_MANIFEST)) {
+function readManifest(manifestPath = PUBLIC_MANIFEST) {
+  if (!existsSync(manifestPath)) {
     return { schemaVersion: 2, generatedAt: new Date(0).toISOString(), runtimeFingerprint: 'unverified', examples: [] };
   }
-  return JSON.parse(readFileSync(PUBLIC_MANIFEST, 'utf8'));
+  return JSON.parse(readFileSync(manifestPath, 'utf8'));
 }
 
 function validateManifestShape(manifest) {
@@ -1884,9 +2159,10 @@ async function generate(args, artifactDir) {
       });
       continue;
     }
-    const left = await decodedMediaHash(media.run1, mediaType, args);
-    const right = exactPublication ? await decodedMediaHash(media.run2, mediaType, args) : left;
     const expectedOutput = galleryExpectedOutput(template);
+    const decodeOptions = expectedOutput.frames === undefined ? args : { ...args, measureImageFrames: true };
+    const left = await decodedMediaHash(media.run1, mediaType, decodeOptions);
+    const right = exactPublication ? await decodedMediaHash(media.run2, mediaType, decodeOptions) : left;
     const technicalErrors = technicalMediaErrors(left, expectedOutput, mediaType);
     if (exactPublication) technicalErrors.push(...technicalMediaErrors(right, expectedOutput, mediaType));
     if (technicalErrors.length > 0) {
@@ -2178,43 +2454,236 @@ async function generate(args, artifactDir) {
   };
 }
 
-async function verify(args, artifactDir) {
-  const runtime = await loadTemplateRuntime();
+// This is a local verification of the checked-in immutable publication scope,
+// not a rights approval or an anonymous verification of the remote Dataset.
+function canonicalGalleryAssetPath(path) {
+  return (
+    typeof path === 'string' &&
+    path.startsWith('template-gallery/') &&
+    !path.includes('\\') &&
+    !path.split('/').some((part) => !part || part === '.' || part === '..' || part.includes(':'))
+  );
+}
+
+export function galleryVerificationScope(root) {
+  const read = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
+  const source = validateTemplateAssetSource(read('src/studio/templateAssetSource.json'));
+  if (source.mode === 'local') return { source, assets: [], withheld: [] };
+  const manifest = read('config/template-assets.v1.json');
+  validateTemplateAssetRelease(source, manifest);
+  const rights = read('config/template-asset-rights.v1.json');
+  const assets = manifest.assets;
+  const paths = Array.isArray(assets) ? assets.map((asset) => asset?.path) : [];
+  const identity = (rows) =>
+    `sha256:canonical-json:${storageJsonHash({ schemaVersion: 1, assetVersion: manifest.assetVersion, assets: rows })}`;
+  if (
+    !Array.isArray(assets) ||
+    !assets.length ||
+    paths.some((path) => !canonicalGalleryAssetPath(path)) ||
+    new Set(paths.map((path) => path.toLowerCase())).size !== paths.length ||
+    paths.join('\n') !== [...paths].sort().join('\n') ||
+    assets.some(
+      (asset) =>
+        !Number.isSafeInteger(asset.size) || asset.size < 0 || !/^sha256:bytes:[a-f0-9]{64}$/.test(asset.sha256),
+    ) ||
+    manifest.assetCount !== assets.length ||
+    manifest.totalBytes !== assets.reduce((sum, asset) => sum + asset.size, 0) ||
+    !Array.isArray(manifest.missingAssets) ||
+    manifest.missingAssets.length ||
+    manifest.assetSetId !== identity(assets)
+  ) {
+    throw new Error('Gallery verification requires the exact complete storage manifest.');
+  }
+  if (
+    rights.schemaVersion !== 1 ||
+    rights.assetSetId !== manifest.assetSetId ||
+    !Array.isArray(rights.records) ||
+    rights.records.length !== assets.length ||
+    new Set(rights.records.map((row) => row.path)).size !== assets.length
+  ) {
+    throw new Error('Gallery verification rights ledger does not cover the exact storage manifest.');
+  }
+  const rightsByPath = new Map(rights.records.map((row) => [row.path, row]));
+  const unavailable = new Set(source.unavailableAssets ?? []);
+  const withheld = [];
+  for (const asset of assets) {
+    const row = rightsByPath.get(asset.path);
+    if (
+      !row ||
+      row.sha256 !== asset.sha256 ||
+      (unavailable.has(asset.path)
+        ? row.publishDecision !== 'hold' || typeof row.holdReason !== 'string' || !row.holdReason.trim()
+        : row.publishDecision !== 'approved')
+    ) {
+      throw new Error(`Gallery verification rights/source mismatch: ${asset.path}`);
+    }
+    if (unavailable.has(asset.path)) withheld.push({ path: asset.path, sha256: asset.sha256, reason: row.holdReason });
+  }
+  const available = assets.filter((asset) => !unavailable.has(asset.path));
+  if (!available.length || withheld.length !== unavailable.size || source.assetSetId !== identity(available)) {
+    throw new Error('Gallery verification source is not the exact nonempty approved asset subset.');
+  }
+  return { source, assets: available, withheld };
+}
+
+export async function verifyGallery(
+  args,
+  artifactDir,
+  { root = ROOT, runtime: suppliedRuntime, decodeMedia = decodedMediaHash, templateIds } = {},
+) {
+  const runtime = suppliedRuntime ?? (await loadTemplateRuntime(root));
   const templatesById = new Map(runtime.templates.map((template) => [template.id, template]));
-  const manifest = readManifest();
-  const errors = validateManifestShape(manifest);
+  const completeManifest = readManifest(join(root, 'public', 'template-gallery', 'manifest.json'));
+  const errors = validateManifestShape(completeManifest);
+  if (
+    templateIds !== undefined &&
+    (!Array.isArray(templateIds) ||
+      !templateIds.length ||
+      new Set(templateIds).size !== templateIds.length ||
+      templateIds.some(
+        (id) => typeof id !== 'string' || !completeManifest.examples.some((entry) => entry.templateId === id),
+      ))
+  ) {
+    throw new Error('Gallery verification scope must name distinct existing examples and cannot be empty.');
+  }
+  const manifest =
+    templateIds === undefined
+      ? completeManifest
+      : {
+          ...completeManifest,
+          examples: completeManifest.examples.filter((entry) => templateIds.includes(entry.templateId)),
+        };
+  const scope = galleryVerificationScope(root);
+  const historicalById = new Map();
+  if (args.reviewedHistory === true) {
+    const { verifyTemplateRecipeRecords } = await import('./template-recipe-records.mjs');
+    const history = JSON.parse(readFileSync(join(root, 'config/template-recipe-history.v1.json'), 'utf8'));
+    if (scope.source.mode === 'huggingface' && history.source?.repository !== scope.source.repoId) {
+      throw new Error('Reviewed Gallery history belongs to a different Dataset.');
+    }
+    for (const record of verifyTemplateRecipeRecords(history, { root, runtime, manifest: completeManifest })) {
+      historicalById.set(record.templateId, record.template);
+    }
+  }
+  const decodedHashCompatibilityMatches = [];
+  const unavailable = new Set(scope.withheld.map((asset) => asset.path));
+  const isWithheld = (path) => typeof path === 'string' && unavailable.has(path.replace(/^\//, ''));
+  const withheldExamples = [];
+  const publicRoot = join(realpathSync(root), 'public');
+  if (lstatSync(publicRoot).isSymbolicLink()) throw new Error('Gallery public root must not be a link.');
+  const assertContainedFile = (filename, label) => {
+    if (!existsSync(filename)) return;
+    const stat = lstatSync(filename);
+    const resolved = relative(publicRoot, realpathSync(filename));
+    if (
+      !stat.isFile() ||
+      stat.isSymbolicLink() ||
+      isAbsolute(resolved) ||
+      resolved === '..' ||
+      resolved.startsWith('..\\') ||
+      resolved.startsWith('../')
+    ) {
+      throw new Error(`Gallery asset is not a contained regular file: ${label}`);
+    }
+  };
+  const publishedPaths = new Set(scope.assets.map((asset) => asset.path));
+  const storagePaths = new Set([...publishedPaths, ...unavailable]);
+  for (const entry of manifest.examples ?? []) {
+    for (const field of [
+      'outputPath',
+      'thumbnailPath',
+      'beforePath',
+      'afterPath',
+      'cardPreviewPath',
+      'provenancePath',
+      'qualityReviewPath',
+    ]) {
+      const path = entry[field];
+      if (path == null && ['beforePath', 'afterPath', 'cardPreviewPath'].includes(field)) continue;
+      if (typeof path !== 'string' || !path.startsWith('/') || !canonicalGalleryAssetPath(path.slice(1))) {
+        throw new Error(`${entry.templateId} ${field} must be a canonical Gallery path.`);
+      }
+      if (scope.source.mode === 'huggingface') {
+        if (!storagePaths.has(path.slice(1)))
+          throw new Error(`${entry.templateId} ${field} is not listed in the complete storage manifest.`);
+        if (['provenancePath', 'qualityReviewPath'].includes(field) && !publishedPaths.has(path.slice(1))) {
+          throw new Error(`${entry.templateId} ${field} sidecar must be available in the approved subset.`);
+        }
+      }
+      assertContainedFile(join(publicRoot, path.slice(1)), `${entry.templateId} ${field}`);
+    }
+  }
+  for (const asset of scope.assets) {
+    const filename = join(publicRoot, asset.path);
+    if (!existsSync(filename)) {
+      errors.push(`Published asset missing: ${asset.path}`);
+      continue;
+    }
+    assertContainedFile(filename, asset.path);
+    if (lstatSync(filename).size !== asset.size || `sha256:bytes:${sha256(readFileSync(filename))}` !== asset.sha256) {
+      errors.push(`Published asset byte identity mismatch: ${asset.path}`);
+    }
+  }
   if ((manifest.examples?.length ?? 0) === 0) {
     errors.push('Gallery manifest is vacuous: at least one reviewed or exact runtime-generated example is required.');
   }
   for (const entry of manifest.examples ?? []) {
+    const withheldPaths = [
+      ...new Set(
+        ['outputPath', 'thumbnailPath', 'beforePath', 'afterPath', 'cardPreviewPath']
+          .map((field) => entry[field])
+          .filter(isWithheld)
+          .map((path) => path.replace(/^\//, '')),
+      ),
+    ].sort();
+    if (withheldPaths.length) withheldExamples.push({ templateId: entry.templateId, assets: withheldPaths });
     const verificationStatus =
       entry.verificationStatus ?? (entry.qualityReviewStatus === EXACT_QUALITY_REVIEW_STATUS ? 'exact' : 'reviewed');
     const exactPublication = verificationStatus === 'exact';
     const requiredReviewStatus = exactPublication ? EXACT_QUALITY_REVIEW_STATUS : REVIEWED_QUALITY_REVIEW_STATUS;
-    const outputPath = join(ROOT, 'public', entry.outputPath.replace(/^\//, ''));
-    if (!existsSync(outputPath)) {
+    const outputPath = join(root, 'public', entry.outputPath.replace(/^\//, ''));
+    if (!isWithheld(entry.outputPath) && !existsSync(outputPath)) {
       errors.push(`${entry.templateId} media file missing: ${entry.outputPath}`);
       continue;
     }
-    const thumbnailPath = join(ROOT, 'public', entry.thumbnailPath.replace(/^\//, ''));
-    if (!existsSync(thumbnailPath)) {
+    const thumbnailPath = join(root, 'public', entry.thumbnailPath.replace(/^\//, ''));
+    if (!isWithheld(entry.thumbnailPath) && !existsSync(thumbnailPath)) {
       errors.push(`${entry.templateId} thumbnail file missing: ${entry.thumbnailPath}`);
     }
-    const decoded = await decodedMediaHash(outputPath, entry.mediaType ?? 'image', args);
-    if (decoded.hash !== entry.mediaHash) {
+    const template = historicalById.get(entry.templateId) ?? templatesById.get(entry.templateId);
+    const decodeOptions =
+      galleryExpectedOutput(template).frames === undefined ? args : { ...args, measureImageFrames: true };
+    const decoded = isWithheld(entry.outputPath)
+      ? null
+      : await decodeMedia(outputPath, entry.mediaType ?? 'image', decodeOptions);
+    const decodedIdentityMatches = decodedMediaHashMatches(decoded, entry.mediaHash);
+    if (decoded && !decodedIdentityMatches) {
       errors.push(`${entry.templateId} decoded hash mismatch: expected ${entry.mediaHash}, got ${decoded.hash}`);
     }
-    if (entry.decodedAudioHash && decoded.embeddedAudio?.hash !== entry.decodedAudioHash) {
+    if (decodedIdentityMatches && decoded.hash !== entry.mediaHash) {
+      decodedHashCompatibilityMatches.push({
+        templateId: entry.templateId,
+        expected: entry.mediaHash,
+        actualRawHash: decoded.hash,
+        observedMuxer: decoded.frameHashCompatibility.observedMuxer,
+        matchingHistoricalMuxer: decoded.frameHashCompatibility.variants.find(
+          (variant) => variant.hash === entry.mediaHash,
+        ).muxer,
+      });
+    }
+    if (decoded && entry.decodedAudioHash && decoded.embeddedAudio?.hash !== entry.decodedAudioHash) {
       errors.push(
         `${entry.templateId} decoded audio hash mismatch: expected ${entry.decodedAudioHash}, got ${decoded.embeddedAudio?.hash ?? 'missing'}`,
       );
     }
-    if (entry.audiovisualMediaHash && decoded.audiovisualMediaHash !== entry.audiovisualMediaHash) {
+    const audiovisualMediaHash = decodedIdentityMatches
+      ? decodedAudiovisualMediaHash(entry.mediaHash, decoded?.embeddedAudio?.hash)
+      : decoded?.audiovisualMediaHash;
+    if (decoded && entry.audiovisualMediaHash && audiovisualMediaHash !== entry.audiovisualMediaHash) {
       errors.push(
-        `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${decoded.audiovisualMediaHash ?? 'missing'}`,
+        `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${audiovisualMediaHash ?? 'missing'}`,
       );
     }
-    const template = templatesById.get(entry.templateId);
     if (!template) {
       errors.push(`${entry.templateId} is not present in the current template runtime`);
     } else {
@@ -2228,7 +2697,10 @@ async function verify(args, artifactDir) {
         entry.mediaType === 'video'
           ? runtime.findManifestEntry(template, { ...manifest, examples: [entry] }, { requireCardPreview: false })
           : undefined;
-      if (currentVideoEntry && (!entry.cardPreviewPath || !entry.cardPreviewSha256)) {
+      const retainedPreview = runtime.isRetainedVideoPreview?.(template, currentVideoEntry)
+        ? template.example.retainedVideoPreview
+        : undefined;
+      if (currentVideoEntry && !retainedPreview && (!entry.cardPreviewPath || !entry.cardPreviewSha256)) {
         errors.push(`${entry.templateId} current video entry requires cardPreviewPath and cardPreviewSha256`);
       }
       const currentPromptSettingsHash = runtime.promptSettingsHash(template);
@@ -2244,18 +2716,33 @@ async function verify(args, artifactDir) {
         errors.push(`${entry.templateId} manifest template input contract is stale for the current bundled defaults`);
       }
       errors.push(
-        ...technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image').map(
-          (error) => `${entry.templateId} technical media gate: ${error}`,
-        ),
+        ...(decoded
+          ? technicalMediaErrors(
+              decoded,
+              galleryExpectedOutput(template),
+              entry.mediaType ?? 'image',
+              retainedPreview,
+              template.mode === 'text_to_3d',
+            )
+          : []
+        ).map((error) => `${entry.templateId} technical media gate: ${error}`),
       );
+      const sourceTiming = galleryExpectedOutput(template).sourceTiming;
+      if (
+        sourceTiming &&
+        (template.mode !== 'video_to_video' ||
+          (entry.beforeSourceMediaHash ?? entry.beforeMediaHash) !== sourceTiming.sourceMediaHash)
+      ) {
+        errors.push(`${entry.templateId} short-source timing requires its exact published source input`);
+      }
       if (requiresBeforeMedia(template) && (!entry.beforePath || !entry.afterPath || !entry.beforeMediaHash)) {
         errors.push(
           `${entry.templateId} comparison publication requires genuine beforePath, afterPath and beforeMediaHash`,
         );
       }
     }
-    if (entry.beforePath) {
-      const beforePath = join(ROOT, 'public', entry.beforePath.replace(/^\//, ''));
+    if (entry.beforePath && !isWithheld(entry.beforePath)) {
+      const beforePath = join(root, 'public', entry.beforePath.replace(/^\//, ''));
       if (!existsSync(beforePath)) {
         errors.push(`${entry.templateId} before media file missing: ${entry.beforePath}`);
       } else {
@@ -2266,15 +2753,15 @@ async function verify(args, artifactDir) {
           );
         }
         if (MEDIA_EXTENSIONS.video.has(extname(entry.beforePath).toLowerCase())) {
-          const decodedBeforePreview = await decodedMediaHash(beforePath, 'video', args);
+          const decodedBeforePreview = await decodeMedia(beforePath, 'video', args);
           errors.push(
             ...beforePreviewContractErrors(decodedBeforePreview).map((error) => `${entry.templateId} ${error}`),
           );
         }
       }
     }
-    if (entry.mediaType === 'video' && entry.cardPreviewPath) {
-      const cardPreviewPath = join(ROOT, 'public', entry.cardPreviewPath.replace(/^\//, ''));
+    if (entry.mediaType === 'video' && entry.cardPreviewPath && !isWithheld(entry.cardPreviewPath)) {
+      const cardPreviewPath = join(root, 'public', entry.cardPreviewPath.replace(/^\//, ''));
       if (!existsSync(cardPreviewPath)) {
         errors.push(`${entry.templateId} card preview file missing: ${entry.cardPreviewPath}`);
       } else {
@@ -2284,25 +2771,29 @@ async function verify(args, artifactDir) {
             `${entry.templateId} card preview hash mismatch: expected ${entry.cardPreviewSha256}, got ${cardPreviewSha256}`,
           );
         }
-        const decodedCardPreview = await decodedMediaHash(cardPreviewPath, 'video', args);
+        const decodedCardPreview = await decodeMedia(cardPreviewPath, 'video', args);
         errors.push(...cardPreviewContractErrors(decodedCardPreview).map((error) => `${entry.templateId} ${error}`));
       }
     }
-    const provenancePath = join(ROOT, 'public', String(entry.provenancePath ?? '').replace(/^\//, ''));
+    const provenancePath = join(root, 'public', String(entry.provenancePath ?? '').replace(/^\//, ''));
+    let retainedProvenance = false;
     if (!existsSync(provenancePath)) {
       errors.push(`${entry.templateId} provenance missing: ${entry.provenancePath}`);
     } else {
       try {
         const bundle = JSON.parse(readFileSync(provenancePath, 'utf8'));
+        retainedProvenance = bundle.format === RETAINED_GALLERY_PROVENANCE_FORMAT;
         const provenanceHash = canonicalJsonHash(bundle);
         if (provenanceHash !== entry.provenanceHash) {
           errors.push(
             `${entry.templateId} provenance hash mismatch: expected ${entry.provenanceHash}, got ${provenanceHash}`,
           );
         }
-        const expectedFormat = exactPublication
-          ? 'modiff.gallery.duplicate-provenance.v1'
-          : 'modiff.gallery.reviewed-provenance.v1';
+        const expectedFormat = retainedProvenance
+          ? RETAINED_GALLERY_PROVENANCE_FORMAT
+          : exactPublication
+            ? 'modiff.gallery.duplicate-provenance.v1'
+            : 'modiff.gallery.reviewed-provenance.v1';
         if (bundle.schemaVersion !== 1 || bundle.format !== expectedFormat) {
           errors.push(`${entry.templateId} provenance bundle schema/format is invalid for ${verificationStatus}`);
         }
@@ -2335,36 +2826,58 @@ async function verify(args, artifactDir) {
           }
         }
         const { runtimeFingerprint: _redactedRuntimeFingerprint, ...publiclyRecomputableBindings } = expectedBindings;
-        const pinnedRun = exactPublication ? bundle.run2 : bundle.run;
-        const provenanceErrors = exactPublication
-          ? validateDuplicateProvenance(bundle.run1, bundle.run2, publiclyRecomputableBindings).errors
-          : validateSingleProvenance(bundle.run, publiclyRecomputableBindings, bundle.derivative);
-        errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
-        if (entry.beforeMediaHash) {
-          const inputHashes = (pinnedRun?.inputs?.items ?? []).map((item) => item?.contentHash);
-          const sourceMediaHash = entry.beforeSourceMediaHash ?? entry.beforeMediaHash;
-          if (!inputHashes.includes(sourceMediaHash)) {
-            errors.push(`${entry.templateId} before source media hash does not match pinned provenance inputs`);
+        if (retainedProvenance) {
+          const retainedBefore = entry.beforePath && join(publicRoot, entry.beforePath.slice(1));
+          const readAvailable = (filename, assetPath) => {
+            if (!filename || isWithheld(assetPath) || !existsSync(filename)) return undefined;
+            const stat = lstatSync(filename);
+            return stat.isFile() && stat.size <= retainedGalleryFileLimit(assetPath)
+              ? readFileSync(filename)
+              : undefined;
+          };
+          const provenanceErrors = validateRetainedGalleryProvenance(bundle, entry, {
+            templateRevisionHash:
+              template &&
+              storageJsonHash({
+                template,
+                settings: runtime.lockedSettingsForTemplate(template),
+              }),
+            outputBytes: readAvailable(outputPath, entry.outputPath),
+            beforeBytes: readAvailable(retainedBefore, entry.beforePath),
+          });
+          errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
+        } else {
+          const pinnedRun = exactPublication ? bundle.run2 : bundle.run;
+          const provenanceErrors = exactPublication
+            ? validateDuplicateProvenance(bundle.run1, bundle.run2, publiclyRecomputableBindings).errors
+            : validateSingleProvenance(bundle.run, publiclyRecomputableBindings, bundle.derivative);
+          errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
+          if (entry.beforeMediaHash) {
+            const inputHashes = (pinnedRun?.inputs?.items ?? []).map((item) => item?.contentHash);
+            const sourceMediaHash = entry.beforeSourceMediaHash ?? entry.beforeMediaHash;
+            if (!inputHashes.includes(sourceMediaHash)) {
+              errors.push(`${entry.templateId} before source media hash does not match pinned provenance inputs`);
+            }
           }
-        }
-        for (const field of [
-          'graphHash',
-          'proofLockHash',
-          'backendSourceFingerprint',
-          'backendContractFingerprint',
-          'modelCommit',
-          'templateRevisionHash',
-          ...(entry.modelSetHash ? ['modelSetHash'] : []),
-          ...(entry.inputArtifactsHash ? ['inputArtifactsHash'] : []),
-        ]) {
-          const provenanceValue =
-            field === 'modelSetHash'
-              ? pinnedRun?.models?.hash
-              : field === 'inputArtifactsHash'
-                ? pinnedRun?.inputArtifactsHash
-                : pinnedRun?.[field];
-          if (provenanceValue !== entry[field]) {
-            errors.push(`${entry.templateId} manifest ${field} does not match pinned provenance`);
+          for (const field of [
+            'graphHash',
+            'proofLockHash',
+            'backendSourceFingerprint',
+            'backendContractFingerprint',
+            'modelCommit',
+            'templateRevisionHash',
+            ...(entry.modelSetHash ? ['modelSetHash'] : []),
+            ...(entry.inputArtifactsHash ? ['inputArtifactsHash'] : []),
+          ]) {
+            const provenanceValue =
+              field === 'modelSetHash'
+                ? pinnedRun?.models?.hash
+                : field === 'inputArtifactsHash'
+                  ? pinnedRun?.inputArtifactsHash
+                  : pinnedRun?.[field];
+            if (provenanceValue !== entry[field]) {
+              errors.push(`${entry.templateId} manifest ${field} does not match pinned provenance`);
+            }
           }
         }
       } catch (error) {
@@ -2373,7 +2886,7 @@ async function verify(args, artifactDir) {
         );
       }
     }
-    const qualityReviewPath = join(ROOT, 'public', String(entry.qualityReviewPath ?? '').replace(/^\//, ''));
+    const qualityReviewPath = join(root, 'public', String(entry.qualityReviewPath ?? '').replace(/^\//, ''));
     if (!existsSync(qualityReviewPath)) {
       errors.push(`${entry.templateId} quality review missing: ${entry.qualityReviewPath}`);
       continue;
@@ -2399,10 +2912,13 @@ async function verify(args, artifactDir) {
           ...(entry.modelSetHash ? { modelSetHash: entry.modelSetHash } : {}),
           ...(entry.inputArtifactsHash ? { inputArtifactsHash: entry.inputArtifactsHash } : {}),
           decodedMediaHash: entry.mediaHash,
+          ...(retainedProvenance ? { reviewer: entry.reviewer, reviewedAt: entry.reviewedAt } : {}),
           ...(entry.decodedAudioHash ? { decodedAudioHash: entry.decodedAudioHash } : {}),
           ...(entry.audiovisualMediaHash ? { audiovisualMediaHash: entry.audiovisualMediaHash } : {}),
         },
         requiredReviewStatus,
+        galleryExpectedOutput(template).sourceTiming,
+        qualityReviewContractForTemplate(template),
       );
       errors.push(...reviewErrors.map((error) => `${entry.templateId} ${error}`));
     } catch (error) {
@@ -2412,10 +2928,37 @@ async function verify(args, artifactDir) {
     }
   }
 
+  const availableExamples = (manifest.examples?.length ?? 0) - withheldExamples.length;
+  if (availableExamples === 0) errors.push('Gallery verification has no available published examples.');
+  const historicalEntries = (manifest.examples ?? [])
+    .filter(({ templateId }) => historicalById.has(templateId))
+    .map(({ templateId }) => ({ templateId, withheld: withheldExamples.some((row) => row.templateId === templateId) }));
+  const availableHistorical = historicalEntries.filter(({ withheld }) => !withheld).length;
   return {
     mode: 'verify',
     artifactDir,
     examples: manifest.examples?.length ?? 0,
+    verificationScope:
+      scope.source.mode === 'huggingface' ? 'pinned-remote-assets-materialized-locally' : 'complete-local',
+    verifiedExamples: errors.length === 0 ? availableExamples : 0,
+    ...(args.reviewedHistory === true
+      ? {
+          historicalRecipeRecords: historicalEntries,
+          verifiedCurrentExamples: errors.length === 0 ? availableExamples - availableHistorical : 0,
+          verifiedHistoricalExamples: errors.length === 0 ? availableHistorical : 0,
+        }
+      : {}),
+    ...(templateIds === undefined
+      ? {}
+      : {
+          explicitlyScoped: true,
+          excludedExamples: completeManifest.examples
+            .filter((entry) => !templateIds.includes(entry.templateId))
+            .map((entry) => entry.templateId),
+        }),
+    withheldExamples,
+    withheldAssets: scope.withheld,
+    decodedHashCompatibilityMatches,
     errors,
     ok: errors.length === 0,
   };
@@ -2425,7 +2968,7 @@ async function main() {
   const args = parseArgs(process.argv);
   const artifactDir = artifactDirFor(args.mode);
   mkdirSync(PUBLIC_GALLERY_DIR, { recursive: true });
-  const result = args.mode === 'generate' ? await generate(args, artifactDir) : await verify(args, artifactDir);
+  const result = args.mode === 'generate' ? await generate(args, artifactDir) : await verifyGallery(args, artifactDir);
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   if (result.errors?.length) {

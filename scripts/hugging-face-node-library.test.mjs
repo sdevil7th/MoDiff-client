@@ -85,16 +85,31 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
   const entry = (module, action, extra = {}) =>
     nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
   const matches = nodeCatalogModule.nodeCatalogEntryMatchesView;
-  for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'ImageEncode']) {
+  for (const action of ['ModelsLoader', 'ImageEncode']) {
     for (const view of ['common', 'advanced', 'experimental', 'all'])
       assert.equal(matches(entry('modules.ModularDiffusers', action), view), true, action);
   }
-  for (const action of ['ReviewedModularWorkflowStep', 'WorkflowKrea2Denoise', 'DynamicBlockNode']) {
+  for (const action of ['EncodePrompt', 'Denoise', 'DecodeLatents', 'Scheduler']) {
+    const item = entry('modules.ModularDiffusers', action);
+    assert.equal(matches(item, 'common'), false);
+    assert.equal(matches(item, 'common', true), true);
+    assert.equal(matches(item, 'advanced'), true);
+  }
+  for (const [module, action] of [
+    ['modules.ImageOperations', 'ProcessImage'],
+    ['modules.Audio', 'ProcessAudio'],
+    ['modules.Video', 'ProcessVideo'],
+    ['modules.Text', 'ProcessText'],
+  ])
+    assert.ok(matches(entry(module, action), 'common'));
+  for (const action of ['WorkflowKrea2Denoise', 'DynamicBlockNode']) {
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'common'), false);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'experimental'), false);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'advanced'), true);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'all'), true);
   }
+  for (const view of ['common', 'advanced', 'experimental', 'all'])
+    assert.equal(matches(entry('modules.ModularDiffusers', 'ReviewedModularWorkflowStep'), view), false);
   for (const module of ['modules.Primitive', 'modules.Text', 'custom.my_nodes'])
     assert.equal(matches(entry(module, 'TextValue'), 'common'), true);
   assert.equal(matches(entry('modules.Image', 'Preview'), 'common'), true);
@@ -104,7 +119,7 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
     assert.equal(matches(entry('modules.Image', action, { type: 'group' }), 'common'), false);
   }
   for (const [module, actions] of [
-    ['modules.ImageFilters', ['Canny', 'UnsharpMask', 'GuidedBlur', 'AdaptiveSharpening', 'GaussianBlur']],
+    ['modules.ImageFilters', ['Canny']],
     ['modules.Color', ['Invert']],
     ['modules.DiffusersImage', ['OutpaintCanvas']],
   ]) {
@@ -113,6 +128,11 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
         assert.equal(matches(entry(module, action), view), true, `${module}.${action} in ${view}`);
       assert.equal(matches(entry(module, action, { type: 'group' }), 'common'), false);
     }
+  }
+  for (const action of ['UnsharpMask', 'GuidedBlur', 'AdaptiveSharpening', 'GaussianBlur']) {
+    assert.equal(matches(entry('modules.ImageFilters', action), 'common'), false);
+    assert.ok(matches(entry('modules.ImageFilters', action), 'common', true));
+    assert.ok(matches(entry('modules.ImageFilters', action), 'advanced'));
   }
   assert.equal(matches(entry('modules.ImageFiltersExperimental', 'Canny'), 'common'), false);
   assert.equal(matches(entry('modules.DiffusersImage', 'UnreviewedInternal'), 'common'), false);
@@ -197,10 +217,11 @@ test('runtime node search requires every keyword and preserves exact registry ke
     'custom.registry.ImageLoader',
     'legacy.Image.Open',
     'picture',
+    'disk image',
   ]) {
     assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), true, query);
   }
-  for (const query of ['image audio', 'disk image', 'missing', '---']) {
+  for (const query of ['image audio', 'disk audio', 'missing', '---']) {
     assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), false, query);
   }
   assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, ''), true);
@@ -452,6 +473,18 @@ test('model capability discovery accepts only versioned app-owned built-in repos
       }),
     /Invalid model-capabilities response/u,
   );
+});
+
+test('required VAE tiling accepts only an explicit boolean in a model capability', () => {
+  const parse = (fields) =>
+    nodeStoreModule.parseStudioModelCapabilities({
+      schemaVersion: 2,
+      capabilities: [{ modelType: 'MochiPipeline', modes: ['text_to_video'], ...fields }],
+    }).capabilities[0];
+  assert.equal(parse({}).requiresVaeTiling, undefined);
+  for (const value of [true, false]) assert.equal(parse({ requiresVaeTiling: value }).requiresVaeTiling, value);
+  for (const value of ['false', 1, null])
+    assert.throws(() => parse({ requiresVaeTiling: value }), /Invalid model-capabilities response/u);
 });
 
 test('model capability discovery remains bounded while admitting catalogs beyond the legacy 128-entry limit', () => {
@@ -1299,10 +1332,10 @@ function payloadWithTransformersTextCluster() {
     stateKeys: [],
     components: [
       {
-        name: 'optional_runtime',
-        type: `huggingface-transformers-peft-5.14.1-0.20.0@sha256:${'9'.repeat(64)}`,
-        creationMethod: 'explicit_app_setup',
-        reuseKey: ['optional_runtime'],
+        name: 'model_runtime',
+        type: 'modiff.base-model-runtime@sha256:111b6c7b46b8e674c8f5abf2c24b90494ab16c511064b9c3286704de5ba87d95',
+        creationMethod: 'base_installation',
+        reuseKey: ['model_runtime'],
       },
       {
         name: 'model',
@@ -1334,7 +1367,7 @@ function payloadWithTransformersTextCluster() {
         url: '',
       },
     },
-    contentHash: 'sha256:32f78d82f1912997b1eaaf43a749627d7ccd07b8805bd66e8abaf21b27c6385a',
+    contentHash: 'sha256:7df9c6510eb0a7d779a662a9907f318a1a08956d6a094681060e9a23ebb4aff1',
   };
   body.providers = ['diffusers', 'transformers'];
   body.definitions.push(transformerDefinition);
@@ -3465,6 +3498,52 @@ test('Transformers Blocks insert and materialize their exact generic task graph'
   assert.equal(transformersSection.entries[0].readiness, 'graph_qualified');
   assert.equal(transformersSection.entries[0].readinessLabel, 'Graph qualified');
   assert.equal(transformersSection.entries[0].insertable, true);
+  assert.deepEqual(definition.components[0], {
+    name: 'model_runtime',
+    type: 'modiff.base-model-runtime@sha256:111b6c7b46b8e674c8f5abf2c24b90494ab16c511064b9c3286704de5ba87d95',
+    creationMethod: 'base_installation',
+    reuseKey: ['model_runtime'],
+  });
+  for (const [runtimeDigest, definitionHash] of [
+    [
+      'sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c',
+      'sha256:e982d1206b2cc0b6154de3e90bedcb8fb012cb9c010406f79c7fe49fd56c8e88',
+    ],
+    [
+      'sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db',
+      'sha256:ec00d85eae98ff645e1ead4726c55904a9360513b5e21bdc2473fa1a2720a310',
+    ],
+    [
+      'sha256:98449d8d9faca739ce5914f6c5ce25cf75b3fabde10c90a1c2818574f362adeb',
+      'sha256:af0665a30de76d2a10de99d3fc64ede348efcde4620eb7972e6696673722ed33',
+    ],
+  ]) {
+    const historicalBaseBody = structuredClone(body);
+    const historicalBaseDefinition = historicalBaseBody.definitions.find(
+      (candidate) => candidate.id === rawDefinition.id,
+    );
+    historicalBaseDefinition.components[0].type = `modiff.base-model-runtime@${runtimeDigest}`;
+    historicalBaseDefinition.contentHash = definitionHash;
+    const historicalBaseEntry = libraryCatalogModule
+      .buildHuggingFaceCatalogSections(libraryModule.parseHuggingFaceNodeLibrary(historicalBaseBody))
+      .find((section) => section.id === 'transformers_cluster_nodes').entries[0];
+    assert.equal(historicalBaseEntry.readiness, 'catalog_only', runtimeDigest);
+    assert.equal(historicalBaseEntry.insertable, false, runtimeDigest);
+  }
+  const staleBody = structuredClone(body);
+  const staleDefinition = staleBody.definitions.find((candidate) => candidate.id === rawDefinition.id);
+  staleDefinition.components[0] = {
+    name: 'optional_runtime',
+    type: `huggingface-transformers-peft-5.14.1-0.20.0@sha256:${'9'.repeat(64)}`,
+    creationMethod: 'explicit_app_setup',
+    reuseKey: ['optional_runtime'],
+  };
+  staleDefinition.contentHash = 'sha256:32f78d82f1912997b1eaaf43a749627d7ccd07b8805bd66e8abaf21b27c6385a';
+  const staleEntry = libraryCatalogModule
+    .buildHuggingFaceCatalogSections(libraryModule.parseHuggingFaceNodeLibrary(staleBody))
+    .find((section) => section.id === 'transformers_cluster_nodes').entries[0];
+  assert.equal(staleEntry.readiness, 'catalog_only');
+  assert.equal(staleEntry.insertable, false);
 
   const root = clusterGraphModule.createHuggingFaceClusterNode(
     definition,

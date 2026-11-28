@@ -22,7 +22,7 @@ function canonical(value: unknown): unknown {
  * field/default contract. Similar labels or signatures are insufficient. */
 export function runtimeNodeIdentityV2(node: NodeData) {
   const contract = Object.fromEntries(
-    Object.entries(node).filter(([key]) => !['label', 'description', 'category'].includes(key)),
+    Object.entries(node).filter(([key]) => !['label', 'description', 'category', 'searchTerms'].includes(key)),
   );
   return JSON.stringify(canonical(contract));
 }

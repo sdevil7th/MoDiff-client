@@ -23,15 +23,21 @@ import {
   Upload,
 } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useNodesStore } from '../stores/useNodeStore';
+import { observedOutputModelLabel } from '../studio/observedOutputModel';
 import {
   captureWorkflowOperationContext,
   isWorkflowOperationCancelled,
   useStudioStore,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { STUDIO_MODE_LABELS } from '../studio/modelProfiles';
+import { outputWorkflowTitle } from '../studio/outputContracts';
+import { ModiffMenuRoot, ModiffMenuTrigger, ModiffMenuSurface, ModiffMenuAction } from '../ui/menus';
+import { outputTaskDisplay } from '../studio/outputTaskDisplay';
 import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
-import { validateCurrentRun } from '../studio/runReadiness';
+import { outputText, outputTextType, textOutputViewerOpener } from '../studio/outputText';
+import { exportMedia } from '../studio/mediaCapabilities';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { StudioImportedAsset, StudioOutput } from '../studio/types';
@@ -41,9 +47,18 @@ import {
   downloadPngWithWorkflowMetadata,
   readWorkflowPackageFile,
 } from '../studio/workflowPackage';
-import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
+import {
+  ImageFrame,
+  ModiffBadge,
+  ModiffButton,
+  ModiffDisclosure,
+  ModiffChip,
+  ModiffFileInput,
+  ModiffIconButton,
+} from '../ui';
+import { PreviewMediaFrame } from '../ui/PreviewFrame';
 import { cx } from '../utils/classNames';
-import { imageUrlLightboxOpener } from '../utils/mediaViewer';
+import { imageUrlLightboxOpener, outputImageLightboxOpener } from '../utils/mediaViewer';
 
 type GalleryView = 'grid' | 'inspect' | 'compare' | 'lineage';
 type GalleryAssetKind = 'generated' | 'imported';
@@ -54,38 +69,50 @@ function copyMetadata(output: StudioOutput) {
 }
 
 function downloadOutputPackage(output: StudioOutput) {
-  downloadJson(`modiff-${output.modelType}-${output.id}-workflow.json`, buildOutputWorkflowPackage(output));
+  downloadJson(`modiff-${outputModelKey(output)}-${output.id}-workflow.json`, buildOutputWorkflowPackage(output));
 }
 
 async function downloadOutputPngPackage(output: StudioOutput) {
   await downloadPngWithWorkflowMetadata(
-    `modiff-${output.modelType}-${output.id}-workflow.png`,
+    `modiff-${outputModelKey(output)}-${output.id}-workflow.png`,
     output.url,
     buildOutputWorkflowPackage(output),
   );
 }
 
-function outputSubtitle(output: StudioOutput) {
+function outputSubtitle(output: StudioOutput, modelLabel: string) {
   const template = output.templateLabel ? ` | ${output.templateLabel}` : '';
   const audioDuration =
     output.mediaItems?.find((item) => item.durationSeconds)?.durationSeconds ??
     (output.resolvedExecutionInputs ? undefined : output.formSnapshot.audioDuration);
   const size = outputMediaSizeLabel(output);
   const seed = outputNumericInputValue(output, 'seed');
-  const media = isAudioOutput(output)
-    ? ` | ${audioDuration ? `${audioDuration.toFixed(1)} sec` : 'audio'}`
-    : isVideoOutput(output)
-      ? ` | ${videoOutputSummary(output)}`
-      : ` | ${size || 'image'}`;
-  return `${output.modelLabel}${template} | ${STUDIO_MODE_LABELS[output.mode]}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
+  const textType = outputTextType(output);
+  const media = textType
+    ? ` | ${textType === 'json' ? 'JSON' : 'Text'}`
+    : isAudioOutput(output)
+      ? ` | ${audioDuration ? `${audioDuration.toFixed(1)} sec` : 'audio'}`
+      : isVideoOutput(output)
+        ? ` | ${videoOutputSummary(output)}`
+        : ` | ${size || 'image'}`;
+  return `${modelLabel}${template} | ${outputTaskDisplay(output)}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
 }
 
 function isAudioOutput(output: StudioOutput) {
-  return output.displayType === 'audio' || /\.(wav|mp3|flac|ogg|m4a|aac)(\?.*)?$/i.test(output.url);
+  return (
+    !outputTextType(output) &&
+    (output.displayType === 'audio' || /\.(wav|mp3|flac|ogg|m4a|aac)(\?.*)?$/i.test(output.url))
+  );
 }
 
 function isVideoOutput(output: StudioOutput) {
-  return output.displayType === 'video' || /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i.test(output.url);
+  return (
+    !outputTextType(output) && (output.displayType === 'video' || /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i.test(output.url))
+  );
+}
+
+function isImageOutput(output: StudioOutput) {
+  return !outputTextType(output) && !isAudioOutput(output) && !isVideoOutput(output);
 }
 
 function GalleryMedia({
@@ -99,6 +126,20 @@ function GalleryMedia({
   maxHeight?: number;
   onImageClick?: () => void;
 }) {
+  if (outputTextType(output)) {
+    return (
+      <PreviewMediaFrame kind="text" testId="gallery-output-text">
+        <pre
+          className={cx(
+            'w-full overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs text-modiff-text',
+            maxHeight === 210 && 'max-h-[210px]',
+          )}
+        >
+          <code>{outputText(output)}</code>
+        </pre>
+      </PreviewMediaFrame>
+    );
+  }
   if (isAudioOutput(output)) {
     return (
       <div
@@ -121,7 +162,8 @@ function GalleryMedia({
           controlsList="nodownload noremoteplayback"
           className={cx(
             'block h-full w-full bg-modiff-media-backdrop object-contain',
-            maxHeight ? 'max-h-[460px]' : false,
+            maxHeight === 210 && 'max-h-[210px]',
+            maxHeight === 460 && 'max-h-[460px]',
           )}
         />
       </div>
@@ -160,11 +202,13 @@ function GalleryMedia({
 
 export default function OutputGalleryPanel({ modalView = false }: { modalView?: boolean }) {
   const [assetKind, setAssetKind] = useState<GalleryAssetKind>('generated');
+  const tabs = useStudioStore((state) => state.workflowTabs);
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState<GalleryView>('grid');
   const [selectedOutputIds, setSelectedOutputIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
   const outputs = useStudioStore((state) => state.outputs);
+  const modelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const importedAssets = useStudioStore((state) => state.importedAssets);
   const galleryBackendStatus = useStudioStore((state) => state.galleryBackendStatus);
   const galleryBackendError = useStudioStore((state) => state.galleryBackendError);
@@ -180,15 +224,27 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
   const setLightboxOpener = useSettingsStore((state) => state.setLightboxOpener);
+  const setMediaViewerOpener = useSettingsStore((state) => state.setMediaViewerOpener);
   const setMediaExportOpener = useSettingsStore((state) => state.setMediaExportOpener);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
 
+  const modelLabels = useMemo(
+    () => new Map(outputs.map((output) => [output.id, observedOutputModelLabel(output, modelDescriptors)])),
+    [outputs, modelDescriptors],
+  );
+  const modelLabelFor = (output: StudioOutput) => modelLabels.get(output.id) ?? output.modelLabel;
   const modelFilters = useMemo(() => {
     const byModel = new Map<string, string>();
-    outputs.forEach((output) => byModel.set(outputModelKey(output), output.modelLabel));
+    for (const output of outputs) {
+      const key = outputModelKey(output);
+      const label = modelLabels.get(output.id) ?? output.modelLabel;
+      const previous = byModel.get(key);
+      const fallback = key === 'uncaptured-model' ? 'Model not captured' : key;
+      byModel.set(key, previous !== undefined && previous !== label ? fallback : label);
+    }
     return Array.from(byModel.entries());
-  }, [outputs]);
+  }, [outputs, modelLabels]);
 
   const filteredOutputs = useMemo(() => {
     if (filter === 'favorites') return outputs.filter((output) => output.favorite);
@@ -212,6 +268,24 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
     });
   };
 
+  const openOutput = (output: StudioOutput) => {
+    const textType = outputTextType(output);
+    if (textType) {
+      setMediaViewerOpener(
+        textOutputViewerOpener(
+          output,
+          `Gallery ${textType} output`,
+          `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
+        ),
+      );
+    } else if (isVideoOutput(output) || isAudioOutput(output)) {
+      setSelectedOutputIds([output.id]);
+      setView('inspect');
+    } else {
+      setLightboxOpener(outputImageLightboxOpener(output));
+    }
+  };
+
   const handleRestore = (output: StudioOutput) => {
     restoreWorkflowFromOutput(output);
     setRightPanelTab('studio');
@@ -228,7 +302,6 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
       setRightPanelTab('studio');
       setGalleryLibraryOpen(false);
       enqueueSnackbar('Workflow package imported', { variant: 'success', autoHideDuration: 2200 });
-      window.setTimeout(() => validateCurrentRun({ sid, isConnected, includeStudio: true, showDialog: true }), 0);
     } catch (error) {
       enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 });
     }
@@ -267,9 +340,16 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
     restoreWorkflowFromOutput(output);
     const context = captureWorkflowOperationContext();
     try {
-      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
-      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      await coordinateGraphRun({
+        sid,
+        studioContext: executionScope ? undefined : {},
+        workflowContext: context,
+        executionScope,
+      });
       setGalleryLibraryOpen(false);
       setRightPanelOpen(true);
       setRightPanelTab('queue');
@@ -448,15 +528,17 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
       ) : filteredOutputs.length === 0 ? (
         <p className="text-xs text-modiff-subtle-text">No gallery items match this filter.</p>
       ) : view === 'inspect' && inspectedOutput ? (
-        <GalleryInspect output={inspectedOutput} />
+        <GalleryInspect output={inspectedOutput} modelLabel={modelLabelFor(inspectedOutput)} />
       ) : view === 'compare' ? (
         <div data-testid="gallery-compare-view" className="grid gap-2">
           <div className="grid gap-2 sm:grid-cols-2">
             {selectedOutputs.slice(0, 2).map((output) => (
-              <GalleryCompareCard key={`compare-${output.id}`} output={output} />
+              <GalleryCompareCard key={`compare-${output.id}`} output={output} modelLabel={modelLabelFor(output)} />
             ))}
           </div>
-          {compareLeft && compareRight && <GallerySettingsDiff left={compareLeft} right={compareRight} />}
+          {compareLeft && compareRight && (
+            <GallerySettingsDiff left={compareLeft} right={compareRight} modelLabelFor={modelLabelFor} />
+          )}
         </div>
       ) : view === 'lineage' ? (
         <div data-testid="gallery-lineage-view" className="grid gap-2">
@@ -464,6 +546,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
             <LineageButton
               key={`lineage-full-${output.id}`}
               output={output}
+              modelLabel={modelLabelFor(output)}
               onClick={() => {
                 setSelectedOutputIds([output.id]);
                 setView('inspect');
@@ -472,7 +555,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           ))}
         </div>
       ) : (
-        <div className="grid gap-2">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] items-start gap-3">
           {filteredOutputs.map((output, index) => {
             const previous = filteredOutputs[index + 1];
             const selected = selectedOutputIds.includes(output.id);
@@ -484,53 +567,51 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
               >
                 <GalleryMedia
                   output={output}
-                  maxHeight={420}
+                  maxHeight={210}
                   onImageClick={() => {
                     setSelectedOutputIds([output.id]);
                     setView('inspect');
                   }}
                 />
                 <div className="p-2">
-                  <GalleryMeta output={output} />
-                  <p className="mt-1 max-h-10 overflow-hidden text-sm text-modiff-text">
-                    {output.prompt || 'No prompt recorded'}
+                  <h3 className="break-words text-sm font-bold">
+                    {outputWorkflowTitle(output, tabs.find((tab) => tab.id === output.workflowTabId)?.title)}
+                  </h3>
+                  <p className="text-xs text-modiff-subtle-text">
+                    {new Date(output.createdAt).toLocaleString()} · {modelLabelFor(output)}
                   </p>
+                  {output.prompt && <p className="mt-1 line-clamp-2 text-sm text-modiff-text">{output.prompt}</p>}
+                  <ModiffDisclosure className="mt-1 text-xs text-modiff-subtle-text" label="Result details">
+                    <GalleryMeta output={output} modelLabel={modelLabelFor(output)} />
+                  </ModiffDisclosure>
                   <div className="mt-2 flex flex-wrap gap-1">
                     <GalleryIconButton
                       title={
-                        isAudioOutput(output)
-                          ? 'Inspect audio'
-                          : isVideoOutput(output)
-                            ? 'Inspect video'
-                            : 'Open full size'
+                        outputTextType(output)
+                          ? `Open ${outputTextType(output) === 'json' ? 'JSON' : 'text'} preview`
+                          : isAudioOutput(output)
+                            ? 'Inspect audio'
+                            : isVideoOutput(output)
+                              ? 'Inspect video'
+                              : 'Open full size'
                       }
                       data-testid={`gallery-open-${index}`}
-                      onClick={() => {
-                        if (isVideoOutput(output) || isAudioOutput(output)) {
-                          setSelectedOutputIds([output.id]);
-                          setView('inspect');
-                        } else {
-                          setLightboxOpener(imageUrlLightboxOpener([output.url]));
+                      onClick={() => openOutput(output)}
+                    >
+                      <Search size={15} />
+                    </GalleryIconButton>
+                    {isImageOutput(output) && (
+                      <GalleryIconButton
+                        title="Compare with previous visible item"
+                        disabled={!previous || !isImageOutput(previous)}
+                        data-testid={`gallery-compare-${index}`}
+                        onClick={() =>
+                          previous && setLightboxOpener(imageUrlLightboxOpener([previous.url, output.url], 1))
                         }
-                      }}
-                    >
-                      <Search size={15} />
-                    </GalleryIconButton>
-                    <GalleryIconButton
-                      title="Compare with previous visible item"
-                      disabled={
-                        !previous ||
-                        isVideoOutput(output) ||
-                        isAudioOutput(output) ||
-                        (previous ? isVideoOutput(previous) || isAudioOutput(previous) : false)
-                      }
-                      data-testid={`gallery-compare-${index}`}
-                      onClick={() =>
-                        previous && setLightboxOpener(imageUrlLightboxOpener([previous.url, output.url], 1))
-                      }
-                    >
-                      <Search size={15} />
-                    </GalleryIconButton>
+                      >
+                        <Search size={15} />
+                      </GalleryIconButton>
+                    )}
                     <ModiffButton
                       className="h-7 px-2 text-xs"
                       tone={selected ? 'primary' : 'secondary'}
@@ -545,54 +626,86 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     >
                       <Heart size={15} className={output.favorite ? 'fill-hf-yellow text-hf-yellow' : undefined} />
                     </GalleryIconButton>
-                    <GalleryIconButton
-                      title={
-                        isAudioOutput(output)
-                          ? 'Download audio'
-                          : isVideoOutput(output)
-                            ? 'Download video'
-                            : 'Download image'
-                      }
-                      data-testid={`gallery-download-image-${index}`}
-                      onClick={() => {
-                        const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
-                        setMediaExportOpener({
-                          source: output.url,
-                          filename: `modiff-${output.modelType}-${output.id}${
-                            kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
-                          }`,
-                          kind,
-                          defaultFormat: kind === 'audio' ? 'wav' : kind === 'video' ? 'mp4' : 'png',
-                          title: `Download ${kind}`,
-                        });
-                      }}
-                    >
-                      <Download size={15} />
-                    </GalleryIconButton>
-                    <GalleryIconButton
-                      title="Download metadata package"
-                      data-testid={`gallery-download-package-${index}`}
-                      onClick={() => downloadOutputPackage(output)}
-                    >
-                      <Download size={15} />
-                    </GalleryIconButton>
-                    {!isVideoOutput(output) && !isAudioOutput(output) && (
-                      <GalleryIconButton
-                        title="Download PNG package"
-                        data-testid={`gallery-download-png-package-${index}`}
-                        onClick={() => {
-                          void downloadOutputPngPackage(output)
-                            .then(() =>
-                              enqueueSnackbar('PNG package exported', { variant: 'success', autoHideDuration: 1800 }),
-                            )
-                            .catch((error) =>
-                              enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
-                            );
-                        }}
-                      >
-                        <Download size={15} />
-                      </GalleryIconButton>
-                    )}
+                    <ModiffMenuRoot>
+                      <ModiffMenuTrigger>
+                        <ModiffButton
+                          size="compact"
+                          icon={<Download size={14} />}
+                          data-testid={`gallery-download-menu-${index}`}
+                        >
+                          Download
+                        </ModiffButton>
+                      </ModiffMenuTrigger>
+                      <ModiffMenuSurface anchor="bottom start">
+                        {' '}
+                        <ModiffMenuAction
+                          title={
+                            outputTextType(output)
+                              ? `Download ${outputTextType(output)}`
+                              : isAudioOutput(output)
+                                ? 'Download audio'
+                                : isVideoOutput(output)
+                                  ? 'Download video'
+                                  : 'Download image'
+                          }
+                          data-testid={`gallery-download-image-${index}`}
+                          onClick={() => {
+                            const textType = outputTextType(output);
+                            if (textType) {
+                              void exportMedia(
+                                output.url,
+                                `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
+                                'text',
+                                null,
+                                { format: 'original' },
+                              ).catch((error) =>
+                                enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
+                              );
+                              return;
+                            }
+                            const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
+                            setMediaExportOpener({
+                              source: output.url,
+                              filename: `modiff-${outputModelKey(output)}-${output.id}${
+                                kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
+                              }`,
+                              kind,
+                              defaultFormat: kind === 'audio' ? 'wav' : kind === 'video' ? 'mp4' : 'png',
+                              title: `Download ${kind}`,
+                            });
+                          }}
+                        >
+                          {outputTextType(output) ? 'Original text or JSON' : 'Media file…'}
+                        </ModiffMenuAction>
+                        <ModiffMenuAction
+                          title="Download metadata package"
+                          data-testid={`gallery-download-package-${index}`}
+                          onClick={() => downloadOutputPackage(output)}
+                        >
+                          Workflow metadata (JSON)
+                        </ModiffMenuAction>
+                        {isImageOutput(output) && (
+                          <ModiffMenuAction
+                            title="Download PNG package"
+                            data-testid={`gallery-download-png-package-${index}`}
+                            onClick={() => {
+                              void downloadOutputPngPackage(output)
+                                .then(() =>
+                                  enqueueSnackbar('PNG package exported', {
+                                    variant: 'success',
+                                    autoHideDuration: 1800,
+                                  }),
+                                )
+                                .catch((error) =>
+                                  enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 }),
+                                );
+                            }}
+                          >
+                            Image with workflow (PNG)
+                          </ModiffMenuAction>
+                        )}
+                      </ModiffMenuSurface>
+                    </ModiffMenuRoot>
                     <GalleryIconButton
                       title="Restore workflow"
                       data-testid={`gallery-restore-${index}`}
@@ -609,17 +722,19 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     >
                       <Play size={15} />
                     </GalleryIconButton>
-                    <GalleryIconButton
-                      title="Send to edit"
-                      data-testid={`gallery-send-edit-${index}`}
-                      onClick={() => {
-                        sendOutputToReference(output);
-                        setRightPanelTab('studio');
-                        setGalleryLibraryOpen(false);
-                      }}
-                    >
-                      <Pencil size={15} />
-                    </GalleryIconButton>
+                    {!outputTextType(output) && (
+                      <GalleryIconButton
+                        title="Send to edit"
+                        data-testid={`gallery-send-edit-${index}`}
+                        onClick={() => {
+                          sendOutputToReference(output);
+                          setRightPanelTab('studio');
+                          setGalleryLibraryOpen(false);
+                        }}
+                      >
+                        <Pencil size={15} />
+                      </GalleryIconButton>
+                    )}
                     <GalleryIconButton
                       title="Copy metadata"
                       data-testid={`gallery-copy-metadata-${index}`}
@@ -641,28 +756,6 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           })}
         </div>
       )}
-
-      {activeAssetKind === 'generated' ? (
-        <div className="mt-4">
-          <h2 className="mb-2 text-sm font-bold text-modiff-text">Version tree</h2>
-          <div className="grid gap-1">
-            {outputs.slice(0, 12).map((output) => (
-              <LineageButton
-                key={`lineage-${output.id}`}
-                output={output}
-                onClick={() => {
-                  if (isVideoOutput(output) || isAudioOutput(output)) {
-                    setSelectedOutputIds([output.id]);
-                    setView('inspect');
-                  } else {
-                    setLightboxOpener(imageUrlLightboxOpener([output.url]));
-                  }
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -825,10 +918,10 @@ function GalleryIconButton({
   );
 }
 
-function GalleryMeta({ output }: { output: StudioOutput }) {
+function GalleryMeta({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
   return (
     <>
-      <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
+      <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output, modelLabel)}</p>
       <p className="break-all text-xs text-modiff-subtle-text">
         {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
         {output.taskId || 'untracked'}
@@ -858,31 +951,33 @@ function GalleryMeta({ output }: { output: StudioOutput }) {
   );
 }
 
-function GalleryInspect({ output }: { output: StudioOutput }) {
-  const mediaDetails = isVideoOutput(output)
-    ? {
-        requestedSize: `${output.formSnapshot.width}x${output.formSnapshot.height}`,
-        requestedNumFrames: output.formSnapshot.numFrames,
-        requestedFps: output.formSnapshot.fps,
-        resolvedSize: output.resolvedExecutionInputs
-          ? `${outputInputDisplay(output, 'width')}x${outputInputDisplay(output, 'height')}`
-          : undefined,
-        encodedVideo: encodedVideoMetadata(output),
-      }
-    : {
-        // Image-edit routes can derive geometry from references without width/height
-        // call arguments. Keep actual asset geometry separate from input evidence.
-        size: outputMediaSizeLabel(output) ?? 'Not captured',
-        resolvedInputDimensions: {
-          width: outputInputDisplay(output, 'width'),
-          height: outputInputDisplay(output, 'height'),
-        },
-      };
+function GalleryInspect({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
+  const mediaDetails = outputTextType(output)
+    ? { displayType: outputTextType(output) }
+    : isVideoOutput(output)
+      ? {
+          requestedSize: `${output.formSnapshot.width}x${output.formSnapshot.height}`,
+          requestedNumFrames: output.formSnapshot.numFrames,
+          requestedFps: output.formSnapshot.fps,
+          resolvedSize: output.resolvedExecutionInputs
+            ? `${outputInputDisplay(output, 'width')}x${outputInputDisplay(output, 'height')}`
+            : undefined,
+          encodedVideo: encodedVideoMetadata(output),
+        }
+      : {
+          // Image-edit routes can derive geometry from references without width/height
+          // call arguments. Keep actual asset geometry separate from input evidence.
+          size: outputMediaSizeLabel(output) ?? 'Not captured',
+          resolvedInputDimensions: {
+            width: outputInputDisplay(output, 'width'),
+            height: outputInputDisplay(output, 'height'),
+          },
+        };
   return (
     <article data-testid="gallery-inspect-view" className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} maxHeight={460} />
       <div className="p-2">
-        <h2 className="text-sm font-bold text-modiff-text">{outputSubtitle(output)}</h2>
+        <h2 className="text-sm font-bold text-modiff-text">{outputSubtitle(output, modelLabel)}</h2>
         <p className="break-all text-xs text-modiff-subtle-text">
           {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
           {output.taskId || 'untracked'}
@@ -935,11 +1030,19 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
   );
 }
 
-function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: StudioOutput }) {
+function GallerySettingsDiff({
+  left,
+  right,
+  modelLabelFor,
+}: {
+  left: StudioOutput;
+  right: StudioOutput;
+  modelLabelFor: (output: StudioOutput) => string;
+}) {
   const rows = [
     ['Prompt', left.prompt || 'No prompt', right.prompt || 'No prompt'],
     ['Seed', String(outputInputDisplay(left, 'seed')), String(outputInputDisplay(right, 'seed'))],
-    ['Model', left.modelLabel, right.modelLabel],
+    ['Model', modelLabelFor(left), modelLabelFor(right)],
     ['Steps', String(outputInputDisplay(left, 'steps')), String(outputInputDisplay(right, 'steps'))],
     ['Guidance', String(outputInputDisplay(left, 'guidanceScale')), String(outputInputDisplay(right, 'guidanceScale'))],
     [
@@ -979,12 +1082,12 @@ function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: Studi
   );
 }
 
-function GalleryCompareCard({ output }: { output: StudioOutput }) {
+function GalleryCompareCard({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
   return (
     <article className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} aspectRatio="1 / 1" />
       <div className="p-2">
-        <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
+        <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output, modelLabel)}</p>
         {output.variationGroupId && (
           <p className="text-xs text-hf-orange">
             {output.variationLabel || 'Sweep variant'} | {output.variationGroupId}
@@ -996,7 +1099,15 @@ function GalleryCompareCard({ output }: { output: StudioOutput }) {
   );
 }
 
-function LineageButton({ output, onClick }: { output: StudioOutput; onClick: () => void }) {
+function LineageButton({
+  output,
+  modelLabel,
+  onClick,
+}: {
+  output: StudioOutput;
+  modelLabel: string;
+  onClick: () => void;
+}) {
   return (
     <ModiffButton
       tone="ghost"
@@ -1005,9 +1116,8 @@ function LineageButton({ output, onClick }: { output: StudioOutput; onClick: () 
       className="h-auto border border-transparent px-2 py-1 text-xs text-modiff-subtle-text hover:border-modiff-border"
       onClick={onClick}
     >
-      {output.variationGroupId ? 'Sweep' : output.parentId ? 'Branch' : 'Root'} |{' '}
-      {output.variationLabel || output.modelLabel} | {new Date(output.createdAt).toLocaleString()} |{' '}
-      {output.prompt || output.id}
+      {output.variationGroupId ? 'Sweep' : output.parentId ? 'Branch' : 'Root'} | {output.variationLabel || modelLabel}{' '}
+      | {new Date(output.createdAt).toLocaleString()} | {output.prompt || output.id}
     </ModiffButton>
   );
 }

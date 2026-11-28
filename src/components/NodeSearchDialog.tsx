@@ -1,10 +1,13 @@
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { representedStageOperations, visualStageMatches, type StageMatch } from '../studio/visualNodeCatalog';
+import { operationsForTask } from '../workflow/operationCatalog';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { NodeData, useNodesStore } from '../stores/useNodeStore';
 
-import { ModiffCheckbox, ModiffPopover, ModiffSearchInput } from '../ui';
+import { ModiffButton, ModiffCheckbox, ModiffPopover, ModiffSearchInput } from '../ui';
 import { GraphControlButton } from '../ui/GraphControls';
 import NodeDiscoveryFilters from './NodeDiscoveryFilters';
 import OperationDiscoveryFields from './OperationDiscoveryFields';
@@ -23,7 +26,11 @@ import { cx } from '../utils/classNames';
 import {
   connectionSearchEntries,
   operationSearchEntries,
+  operationWirePort,
+  wireOperationScope,
+  usableSiblingOutput,
   prepareOperationConnection,
+  stageOperationMatchesWire,
   rankConnectionSearchEntries,
   matchingNodeHandleForDrop,
   savedBlockSearchEntries,
@@ -41,6 +48,8 @@ import { buildHuggingFaceCatalogSections, type HuggingFaceCatalogEntry } from '.
 import { catalogNodeSearchEntries, createCatalogSearchNode } from '../workflow/catalogNodeSearch';
 
 type SearchEntry = {
+  stage?: StageMatch;
+  port?: string;
   key: string;
   label: string;
   node?: NodeData;
@@ -53,11 +62,17 @@ type SearchEntry = {
 interface NodeSearchDialogProps {
   anchorPosition: { top: number; left: number } | null;
   onClose: () => void;
-  onSelect: (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean) => Promise<void>;
+  onSelect: (
+    createNode: NodeSearchFactory,
+    signal: AbortSignal,
+    allowUnverified: boolean,
+    port?: string,
+  ) => Promise<void>;
   nodes: Record<string, NodeData>;
   dataType?: string | string[];
   handleType?: 'source' | 'target' | null | undefined;
   origin?: ConnectionSearchOrigin;
+  onSwitchOutput: (handleId: string) => boolean;
 }
 
 const NodeSearchDialog = ({
@@ -68,9 +83,18 @@ const NodeSearchDialog = ({
   dataType,
   handleType,
   origin,
+  onSwitchOutput,
 }: NodeSearchDialogProps) => {
-  const { pipeline, task, view, support } = useNodeDiscovery();
+  const discovery = useNodeDiscovery();
+  const { view, support } = discovery;
   const operations = useNodesStore((s) => s.operationContracts);
+  const inferred = useMemo(() => wireOperationScope(origin, operations), [origin, operations]);
+  const pipeline = discovery.selection ? discovery.pipeline : (inferred?.pipeline ?? discovery.pipeline);
+  const task = discovery.selection ? discovery.task : (inferred?.task ?? discovery.task);
+  const originField = origin && nodeConnectorParam({ data: origin.node }, origin.handleId);
+  const portLabel = originField?.label || origin?.handleId;
+  const [initialOutput] = useState(() => origin && { id: origin.handleId, label: portLabel });
+  const stageCatalog = useNodesStore((s) => s.visualNodeCatalog);
   const resolve = useNodesStore((s) => s.resolveOperation);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
@@ -81,6 +105,7 @@ const NodeSearchDialog = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [builtInOpen, setBuiltInOpen] = useState(true);
   const [customOpen, setCustomOpen] = useState(true);
+  const [browseBlocks, setBrowseBlocks] = useState(false);
   const [allowUnverified, setAllowUnverified] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const blocks = useUserBlockStore((state) => state.blocks);
@@ -102,6 +127,8 @@ const NodeSearchDialog = ({
   const interfacesLoaded = useRegisteredBlockInterfacesStore((s) => s.loaded);
   const interfacesError = useRegisteredBlockInterfacesStore((s) => s.error);
   const fetchInterfaces = useRegisteredBlockInterfacesStore((s) => s.fetch);
+  const loadingDestinations =
+    !loaded || !libraryLoaded || !snapshotLoaded || (Boolean(handleType) && !interfacesLoaded);
   const form = useStudioStore((s) => s.form);
   const catalogContext = useMemo(
     () => (library ? { library, snapshot, registry: nodes, form } : null),
@@ -111,23 +138,6 @@ const NodeSearchDialog = ({
     () => (library ? buildHuggingFaceCatalogSections(library, snapshot) : []),
     [library, snapshot],
   );
-  const catalogEntries = useMemo(
-    () =>
-      catalogContext
-        ? catalogNodeSearchEntries(
-            catalogSections,
-            catalogContext,
-            interfaces,
-            searchQuery,
-            view,
-            dataType,
-            handleType,
-            allowUnverified,
-          )
-        : [],
-    [catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType, allowUnverified],
-  );
-
   useEffect(() => {
     if (!libraryLoaded) void fetchLibrary();
   }, [libraryLoaded, fetchLibrary]);
@@ -154,60 +164,193 @@ const NodeSearchDialog = ({
     }
   }, [anchorPosition]);
 
-  const catalogNodes = useMemo(
-    () => runtimeCatalogNodes(nodes, operations, support, view, { pipeline, task }),
-    [nodes, operations, support, view, pipeline, task],
-  );
-  const filteredNodes = useMemo<SearchEntry[]>(() => {
-    const entries = [
-      ...operationSearchEntries(
-        operations,
-        pipeline,
-        task,
-        dataType,
-        handleType,
-        searchQuery,
-        nodes,
-        origin,
-        allowUnverified,
-      ).map((operation) => ({
-        key: `operation:${operation.operationId}`,
-        label: operationLabel(operation),
-        operation,
-        node: nodes[operation.nodeKey],
-      })),
-      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view, origin, allowUnverified).map(
-        ([key, node]) => ({
+  const browsingCommon = (view === 'common' || view === 'experimental') && !handleType && !searchQuery.trim();
+  const findMatches = useCallback(
+    (
+      origin: ConnectionSearchOrigin | undefined,
+      dataType: NodeSearchDialogProps['dataType'],
+      pipeline: string,
+      task: string,
+    ) => {
+      const catalogEntries = catalogContext
+        ? catalogNodeSearchEntries(
+            catalogSections,
+            catalogContext,
+            interfaces,
+            searchQuery,
+            view,
+            dataType,
+            handleType,
+            allowUnverified,
+            origin,
+          )
+        : [];
+      const catalogNodes = runtimeCatalogNodes(nodes, operations, support, view, { pipeline, task });
+      const stages = stageCatalog
+        ? visualStageMatches(stageCatalog, nodes, searchQuery, {
+            all: Boolean(handleType) || view === 'advanced' || view === 'all',
+            targeted: Boolean(handleType),
+            showModelHints: !handleType,
+            operations: pipeline ? operationsForTask(operations, pipeline, task) : undefined,
+            compatible: (node, op) =>
+              !handleType ||
+              (op
+                ? stageOperationMatchesWire(node, op, dataType, handleType, origin, allowUnverified)
+                : Boolean(matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified))),
+          })
+        : [];
+      const represented = representedStageOperations(stages);
+      const entries: SearchEntry[] = [
+        ...stages.flatMap((stage) => {
+          // A wire can match more than one action in the same generic stage.
+          // Preserve the search winner first and expose each other genuine choice.
+          const choices = handleType
+            ? [
+                stage,
+                ...stage.choices.filter(
+                  (choice) =>
+                    (choice.mode !== stage.mode || choice.operation !== stage.operation) &&
+                    (!searchQuery.trim() || choice.mode.label.toLowerCase().includes(searchQuery.trim().toLowerCase())),
+                ),
+              ]
+            : [stage];
+          return choices.map((choice) => ({
+            stage: { ...stage, ...choice, detail: choice === stage ? stage.detail : choice.mode.label },
+            key: ['stage', stage.stage.id, choice.mode.node, choice.mode.label, choice.operation?.operationId].join(
+              ':',
+            ),
+            label: stage.stage.label,
+            node: choice.definition,
+            operation: choice.operation,
+          }));
+        }),
+        ...operationSearchEntries(
+          operations,
+          pipeline,
+          task,
+          dataType,
+          handleType,
+          searchQuery,
+          nodes,
+          origin,
+          allowUnverified,
+        )
+          .filter((operation) => !represented.has(operation))
+          .map((operation) => ({
+            key: `operation:${operation.operationId}`,
+            label: operationLabel(operation),
+            operation,
+            node: nodes[operation.nodeKey],
+          })),
+        ...connectionSearchEntries(
+          stageCatalog
+            ? Object.fromEntries(Object.entries(catalogNodes).filter(([, node]) => node.module.startsWith('custom.')))
+            : catalogNodes,
+          dataType,
+          handleType,
+          searchQuery,
+          view,
+          origin,
+          allowUnverified,
+        ).map(([key, node]) => ({
           key,
           node,
           label: nodeDisplayLabel(node),
-        }),
-      ),
-      ...catalogEntries.map((catalog) => ({ key: `catalog:${catalog.id}`, label: catalog.label, catalog })),
-      ...savedEntries
-        .filter(
-          ({ block, node }) =>
-            savedBlockMatchesSearch(block, searchQuery) &&
-            (!handleType || matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified)),
-        )
-        .map((entry) => ({ ...entry, label: entry.node.label })),
-    ];
-    return rankConnectionSearchEntries(entries, dataType, handleType, origin);
+        })),
+        ...(browsingCommon && !browseBlocks ? [] : catalogEntries).map((catalog) => ({
+          key: `catalog:${catalog.id}`,
+          label: catalog.label,
+          catalog,
+        })),
+        ...savedEntries
+          .filter(
+            ({ block, node }) =>
+              savedBlockMatchesSearch(block, searchQuery) &&
+              (!handleType || matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified)),
+          )
+          .map((entry) => ({ ...entry, label: entry.node.label })),
+      ];
+      const pinned = entries.map((entry: SearchEntry) => ({
+        ...entry,
+        port: handleType
+          ? entry.operation
+            ? operationWirePort(entry.node, entry.operation, dataType, handleType, origin, allowUnverified)
+            : entry.node && matchingNodeHandleForDrop(entry.node, dataType, handleType, origin, allowUnverified)?.[0]
+          : undefined,
+      }));
+      return {
+        entries: rankConnectionSearchEntries(pinned, dataType, handleType, origin),
+        catalogCount: catalogEntries.length,
+      };
+    },
+    [
+      stageCatalog,
+      operations,
+      support,
+      view,
+      handleType,
+      searchQuery,
+      savedEntries,
+      nodes,
+      catalogSections,
+      catalogContext,
+      interfaces,
+      browsingCommon,
+      browseBlocks,
+      allowUnverified,
+    ],
+  );
+  const { entries: filteredNodes, catalogCount } = useMemo(
+    () => findMatches(origin, dataType, pipeline, task),
+    [findMatches, origin, dataType, pipeline, task],
+  );
+  const sibling = useMemo(() => {
+    if (
+      !origin ||
+      handleType !== 'source' ||
+      loadingDestinations ||
+      filteredNodes.length ||
+      searchQuery.trim() ||
+      allowUnverified
+    )
+      return;
+    return usableSiblingOutput(origin, (candidate, type) => {
+      const scope = discovery.selection ? undefined : wireOperationScope(candidate, operations);
+      const match = findMatches(
+        candidate,
+        type,
+        scope?.pipeline ?? discovery.pipeline,
+        scope?.task ?? discovery.task,
+      ).entries.find((entry) => !entry.stage?.requiresModel);
+      return match?.stage?.mode.label || match?.label;
+    });
   }, [
-    catalogNodes,
-    operations,
-    pipeline,
-    task,
-    view,
-    dataType,
-    handleType,
-    searchQuery,
-    savedEntries,
-    nodes,
-    catalogEntries,
     origin,
+    handleType,
+    filteredNodes,
+    loadingDestinations,
+    searchQuery,
     allowUnverified,
+    discovery.selection,
+    discovery.pipeline,
+    discovery.task,
+    operations,
+    findMatches,
   ]);
+
+  const chooseOutput = (handleId: string) => {
+    try {
+      if (!onSwitchOutput(handleId)) throw new Error('That output is no longer available.');
+      setSearchQuery('');
+      setSelectedIndex(0);
+      setBuiltInOpen(true);
+      setCustomOpen(true);
+      setResolutionError(null);
+      inputRef.current?.focus();
+    } catch (error) {
+      setResolutionError(formatRequestError(error, 'Could not switch outputs.'));
+    }
+  };
 
   const { builtInEntries, customEntries } = useMemo(() => {
     return {
@@ -237,13 +380,14 @@ const NodeSearchDialog = ({
     onClose();
     setTimeout(() => {
       setSearchQuery('');
+      setBrowseBlocks(false);
       setSelectedIndex(0);
     }, 0);
   }, [onClose]);
 
   const selectEntry = useCallback(
     async (entry: SearchEntry) => {
-      if (pending.current) return;
+      if (pending.current || entry.stage?.requiresModel) return;
       const request = new AbortController();
       const context = captureWorkflowOperationContext();
       const selection = useNodeDiscoveryStore.getState().selection;
@@ -256,7 +400,7 @@ const NodeSearchDialog = ({
           const operation = entry.operation;
           const node = await resolve(operation, request.signal);
           const data = withOperationAuthoring(
-            prepareOperationConnection(node, operation, dataType, handleType),
+            prepareOperationConnection(node, operation, dataType, handleType, entry.port),
             operation,
           );
           createNode = (position) =>
@@ -274,11 +418,12 @@ const NodeSearchDialog = ({
           createNode = (position) => createStoredUserBlockNode(block, position);
         } else if (entry.node) {
           const node = entry.node;
-          createNode = (position) => createNodeFromRegistry(entry.key, { [entry.key]: node }, position)!;
+          const key = entry.stage?.mode.node ?? entry.key;
+          createNode = (position) => createNodeFromRegistry(key, { [key]: node }, position)!;
         } else return;
         if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
-        assertWorkflowOperationContext(context, { includeForm: false });
-        await onSelect(createNode, request.signal, allowUnverified);
+        assertWorkflowOperationContext(context, { includeForm: Boolean(entry.operation && entry.stage && !selection) });
+        await onSelect(createNode, request.signal, allowUnverified, entry.port);
         if (request.signal.aborted) return;
         handleClose();
       } catch (error) {
@@ -333,7 +478,7 @@ const NodeSearchDialog = ({
       id={`node-search-${index}`}
       role="option"
       aria-selected={index === activeIndex}
-      disabled={busy}
+      disabled={busy || entry.stage?.requiresModel}
       aria-busy={busy || undefined}
       onClick={() => void selectEntry(entry)}
       className={cx(
@@ -342,6 +487,7 @@ const NodeSearchDialog = ({
       )}
     >
       <div className="truncate text-sm text-modiff-text">{entry.label}</div>
+      {entry.stage && <div className="break-words text-xs text-modiff-subtle-text">{entry.stage.detail}</div>}
       {entry.block ? <div className="text-xs text-modiff-subtle-text">Saved Block · {entry.revision}</div> : null}
       {entry.catalog ? (
         <div className="text-xs text-modiff-subtle-text">
@@ -353,7 +499,13 @@ const NodeSearchDialog = ({
           {entry.operation.pipelineClass} · {entry.operation.task?.replace(/_/gu, ' ')}
         </div>
       ) : null}
-      {entry.node?.description ? (
+      {entry.port && (
+        <div className="break-words text-xs text-modiff-subtle-text">
+          {handleType === 'source' ? 'Input' : 'Output'} ·{' '}
+          {entry.node?.params[entry.port]?.label || entry.port.replace(/_/gu, ' ')}
+        </div>
+      )}
+      {!entry.stage && !entry.port && entry.node?.description ? (
         <div className="truncate text-xs text-modiff-subtle-text">
           {entry.node.description.substring(0, 72) + (entry.node.description.length > 72 ? '...' : '')}
         </div>
@@ -386,6 +538,29 @@ const NodeSearchDialog = ({
       panelClassName="flex h-[min(512px,calc(100dvh-16px))] w-[368px] flex-col overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
       placement="bottom-start"
     >
+      {handleType && portLabel && (
+        <div className="border-b border-modiff-border px-3 py-2">
+          <p aria-live="polite" className="text-sm font-semibold text-modiff-text">
+            {handleType === 'source' ? 'Connect output' : 'Connect input'} · {portLabel}
+          </p>
+          {dataType && <p className="break-words text-xs text-modiff-subtle-text">{[dataType].flat().join(' / ')}</p>}
+          {sibling && (
+            <div className="mt-2">
+              <p className="text-xs text-modiff-subtle-text">
+                {sibling.label} on this node can connect to {sibling.destination}.
+              </p>
+              <ModiffButton className="mt-1" size="compact" onClick={() => chooseOutput(sibling.handleId)}>
+                Use {sibling.label} output
+              </ModiffButton>
+            </div>
+          )}
+          {handleType === 'source' && initialOutput && origin?.handleId !== initialOutput.id && (
+            <ModiffButton tone="ghost" size="compact" onClick={() => chooseOutput(initialOutput.id)} className="mt-1">
+              Back to {initialOutput.label}
+            </ModiffButton>
+          )}
+        </div>
+      )}
       <div className="shrink-0 p-2">
         <ModiffSearchInput
           ref={inputRef}
@@ -409,7 +584,16 @@ const NodeSearchDialog = ({
       </div>
 
       <NodeDiscoveryFilters />
-      <OperationDiscoveryFields inPopover />
+      {browsingCommon && catalogCount > 0 ? (
+        <div className="px-3 pb-2">
+          <ModiffCheckbox
+            label={`Include catalog Blocks (${catalogCount})`}
+            checked={browseBlocks}
+            onCheckedChange={setBrowseBlocks}
+          />
+        </div>
+      ) : null}
+      <OperationDiscoveryFields inPopover inferred={inferred} />
       {resolutionError ? (
         <p role="alert" className="px-3 pb-2 text-xs text-modiff-text">
           {resolutionError}
@@ -454,10 +638,6 @@ const NodeSearchDialog = ({
             onCheckedChange={setAllowUnverified}
             label="Show unverified matches (generic or missing types)"
           />
-          <p>
-            {handleType === 'source' ? 'Nodes with matching input port types' : 'Nodes with matching output port types'}
-          </p>
-          <p>Model, shape, and custom-code constraints are checked when declared and again at Run.</p>
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" role="listbox" aria-label="Matching nodes">
@@ -470,38 +650,46 @@ const NodeSearchDialog = ({
             <div className={cx(builtInEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
               {builtInEntries.length ? (
                 builtInEntries.map((entry, index) => renderEntry(entry, index))
-              ) : (
+              ) : customEntries.length || loadingDestinations ? null : (
                 <div className="px-4 py-4 text-center">
                   <div className="text-sm font-semibold text-modiff-text">
-                    {handleType ? 'No compatible nodes found' : 'No results found'}
+                    {searchQuery.trim()
+                      ? 'No nodes match this search'
+                      : handleType
+                        ? 'No compatible nodes found'
+                        : 'No results found'}
                   </div>
-                  <div className="text-xs text-modiff-subtle-text">
-                    {handleType ? 'Try another search or start from a different port.' : 'Try a different search query'}
-                  </div>
+                  {!sibling && (
+                    <div className="text-xs text-modiff-subtle-text">
+                      {searchQuery.trim()
+                        ? 'Clear the search to see other matches.'
+                        : handleType
+                          ? pipeline
+                            ? 'This model and task have no matching built-in port. Try another pipeline or an enabled custom node with the same socket type.'
+                            : 'Choose a pipeline to check model-specific ports, or use an enabled custom node with the same socket type.'
+                          : 'Try a different search query.'}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ) : null}
         </section>
-        <section className={cx('flex min-h-0 flex-col', customOpen && customEntries.length ? 'flex-1' : 'shrink-0')}>
-          {sectionHeader('Custom nodes', customEntries.length, customOpen, () => {
-            setCustomOpen((open) => !open);
-            setSelectedIndex(0);
-          })}
-          {customOpen ? (
-            <div className={cx(customEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
-              {customEntries.length ? (
-                customEntries.map((entry, index) =>
+        {customEntries.length > 0 && (
+          <section className={cx('flex min-h-0 flex-col', customOpen && 'flex-1')}>
+            {sectionHeader('Custom nodes', customEntries.length, customOpen, () => {
+              setCustomOpen((open) => !open);
+              setSelectedIndex(0);
+            })}
+            {customOpen ? (
+              <div className="min-h-0 flex-1 overflow-auto">
+                {customEntries.map((entry, index) =>
                   renderEntry(entry, (builtInOpen ? builtInEntries.length : 0) + index),
-                )
-              ) : (
-                <div className="px-4 py-3 text-center text-xs text-modiff-subtle-text">
-                  No matching enabled custom nodes
-                </div>
-              )}
-            </div>
-          ) : null}
-        </section>
+                )}
+              </div>
+            ) : null}
+          </section>
+        )}
       </div>
     </ModiffPopover>
   );

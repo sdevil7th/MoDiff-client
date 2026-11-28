@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { decodedImageStatistics } from './imageProofStatistics';
+import { connect, save } from './qwenDemoGestures';
 
 // Explicit opt-in: creates a uniquely named, reviewed first-party extension.
 // It never overwrites an existing package, and disables its own copy afterward.
@@ -14,6 +15,10 @@ test('fresh documented custom package enables and reloads through the rendered U
   const modelSwitches = nativeImage && process.env.MODIFF_CUSTOM_MODEL_SWITCHES === '1';
   test.setTimeout((modelSwitches ? 30 : nativeImage ? 20 : 5) * 60_000);
   page.setDefaultTimeout(15_000);
+  const waitForCanvas = () =>
+    page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated), null, {
+      timeout: 90_000,
+    });
   const backend = resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const name = `PrototypingPrompt${Date.now()}`;
   const output = resolve(process.env.MODIFF_REVIEW_OUTPUT_DIR || 'artifacts/custom-prototyping', name);
@@ -52,18 +57,21 @@ test('fresh documented custom package enables and reloads through the rendered U
   try {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await waitForCanvas();
     await expect(page.getByTestId('startup-workspace-gate')).toBeHidden({ timeout: 90_000 });
     const launcher = page.getByTestId('task-launcher');
-    await expect(launcher).toBeVisible();
-    await launcher.getByRole('button', { name: 'Empty workflow', exact: true }).click();
+    if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Empty workflow', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.length)).toBe(0);
     await expect(page.getByTestId('startup-workspace-gate')).toBeHidden({ timeout: 90_000 });
     await page.getByTestId('left-tab-nodes').click();
-    await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
+    await page.getByRole('button', { name: 'Add custom node', exact: true }).click({ timeout: 60_000 });
     const dialog = page.getByTestId('custom-extensions-dialog');
-    await dialog.getByRole('button', { name: 'Advanced options', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Advanced options', exact: true }).click({ timeout: 60_000 });
     await dialog.getByLabel('Extension source', { exact: true }).fill('examples/custom_nodes/PromptTools');
     await dialog.getByLabel('Extension module name').fill(name);
+    const packageKey = `custom.${name}.PromptPrefix`;
+    const beforeAdd = await (await page.request.get('/nodes')).json();
+    expect(beforeAdd.nodes[packageKey]).toBeUndefined();
     const installed = page.waitForResponse((response) => response.url().endsWith('/custom_modules/add'));
     await dialog.getByTestId('extension-source-form').getByRole('button', { name: 'Add node', exact: true }).click();
     const installation = await (await installed).json();
@@ -75,60 +83,83 @@ test('fresh documented custom package enables and reloads through the rendered U
     receipts.push({ operation: 'enable', response: activation });
     const activatedModule = activation.modules.find((item: { name: string }) => item.name === name);
     expect(activatedModule.enabled).toBe(true);
+    const registered = await (await page.request.get('/nodes')).json();
+    expect(registered.nodes[packageKey]).toMatchObject({
+      label: 'Prompt Prefix',
+      category: 'Text',
+      params: {
+        text: { label: 'Prompt', display: 'textarea' },
+        prefix: { label: 'Prefix', display: 'textarea' },
+        prompt_input: { label: 'Prompt Input', display: 'input', type: 'string', required: false },
+        result: { label: 'Prompt', display: 'output', type: 'string' },
+      },
+    });
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.getByLabel('Search nodes', { exact: true }).fill(name);
-    const group = page.getByTestId('node-group-custom-nodes');
-    if ((await group.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
-      await group.getByRole('button').first().click();
-    await group.getByRole('button', { name: 'Prompt Prefix', exact: true }).click();
-    await page.getByLabel('Search nodes', { exact: true }).fill('');
+    const search = page.getByLabel('Search nodes', { exact: true });
+    const customGroup = page.getByTestId('node-group-custom-nodes');
+    await search.fill('Text');
+    const textCategory = customGroup.getByRole('group', { name: 'Text', exact: true });
+    const customButton = textCategory.getByRole('button', { name: 'Prompt Prefix', exact: true });
+    await expect(customButton).toBeVisible();
+    await page.screenshot({ path: resolve(output, 'custom-category.png') });
 
-    // Import a tiny ordinary graph through the real frontend factories. The
-    // approval, Run, reload and persistence gestures below use the actual UI.
-    const ids = await page.evaluate(async (name) => {
-      const [{ useFlowStore }, { useNodesStore }, { createNodeFromRegistry }, { useStudioStore }] = await Promise.all([
-        import('/src/stores/useFlowStore.ts'),
-        import('/src/stores/useNodeStore.ts'),
-        import('/src/workflow/nodeFactory.ts'),
-        import('/src/stores/useStudioStore.ts'),
-      ]);
-      const flow = useFlowStore.getState();
-      const custom = flow.nodes.find((node) => node.data.module === `custom.${name}`)!;
-      if (!custom) throw new Error('The UI did not insert the enabled custom node.');
-      const registry = useNodesStore.getState().nodesRegistry;
-      const text = createNodeFromRegistry('modules.Primitive.TextValue', registry, { x: 20, y: 100 })!;
-      const exported = createNodeFromRegistry('modules.Primitive.ExportData', registry, { x: 760, y: 100 })!;
-      text.data.params.text.value = 'a lighthouse at night';
-      custom.data.params.text.value = 'This inline value must not override the connected prompt';
-      custom.data.params.prefix.value = 'Watercolor:';
-      custom.position = { x: 370, y: 100 };
-      exported.data.params.format.value = 'text';
-      exported.data.params.filename.value = `{PATH:data}/exports/${name}_{HASH:6}.txt`;
-      useStudioStore.getState().updateForm({ resourceMode: 'expert' });
-      flow.replaceGraph({
-        nodes: [text, custom, exported],
-        edges: [
-          {
-            id: `${name}-input`,
-            source: text.id,
+    await customButton.click();
+    await search.fill('modules.Primitive.TextValue');
+    await page.getByTestId('node-row-modules-Primitive-TextValue').click();
+    await search.fill('Export Data');
+    await page.getByTestId('node-row-modules-Primitive-ExportData').click();
+    await search.fill('');
+
+    const readGraph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    await expect.poll(async () => (await readGraph()).nodes.length).toBe(3);
+    const inserted = (await readGraph()).nodes;
+    const ids = {
+      text: inserted.find((node) => node.data.action === 'TextValue')!.id,
+      custom: inserted.find((node) => node.data.module === `custom.${name}`)!.id,
+      exported: inserted.find((node) => node.data.action === 'ExportData')!.id,
+    };
+    const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    const handle = (id: string, field: string) => page.getByTestId(`node-handle-${id}-${field}`);
+    const arrange = () => page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const fill = async (id: string, label: string, value: string) => {
+      const field = node(id).getByRole('textbox', { name: label, exact: true });
+      await field.fill(value);
+      await field.blur();
+    };
+    const inlinePrompt = 'an observatory behind a glass dome';
+    await arrange();
+    await fill(ids.text, 'Text', 'a lighthouse at night');
+    await fill(ids.custom, 'Prompt', inlinePrompt);
+    await fill(ids.custom, 'Prefix', 'Ink painting:');
+    await fill(ids.exported, 'File', `{PATH:data}/exports/${name}_{HASH:6}.txt`);
+    await node(ids.exported).locator('[data-key="format"]').getByRole('button').click();
+    await page.getByRole('option', { name: 'text', exact: true }).click();
+    await expect(handle(ids.custom, 'prompt_input')).toHaveAttribute('aria-label', 'Input Prompt Input, string');
+    await expect(handle(ids.custom, 'result')).toHaveAttribute('aria-label', 'Output Prompt, string');
+    await expect(handle(ids.exported, 'value')).toHaveAttribute('aria-label', 'Input Data, any');
+    await connect(page, handle(ids.custom, 'result'), handle(ids.exported, 'value'));
+    await expect
+      .poll(async () => (await readGraph()).edges)
+      .toMatchObject([{ source: ids.custom, sourceHandle: 'result', target: ids.exported, targetHandle: 'value' }]);
+    const connectPrompt = async () => {
+      await connect(page, handle(ids.text, 'output'), handle(ids.custom, 'prompt_input'));
+      await expect
+        .poll(async () => (await readGraph()).edges)
+        .toContainEqual(
+          expect.objectContaining({
+            source: ids.text,
             sourceHandle: 'output',
-            target: custom.id,
+            target: ids.custom,
             targetHandle: 'prompt_input',
-          },
-          {
-            id: `${name}-output`,
-            source: custom.id,
-            sourceHandle: 'result',
-            target: exported.id,
-            targetHandle: 'value',
-          },
-        ],
-      });
-      return { custom: custom.id, exported: exported.id };
-    }, name);
+          }),
+        );
+    };
+    const automatic = page.getByRole('button', { name: 'Memory policy: Automatic. Click to switch.', exact: true });
+    if (await automatic.isVisible()) await automatic.click();
     let nativePreview: string | null = null;
     const imageHashes: string[] = [];
     if (nativeImage) {
+      await connectPrompt();
       const response = await page.request.post('/operations/starter', {
         data: { pipelineClass: 'ZImageModularPipeline', task: 'text_to_image', executionProfileId: 'z-image:modular' },
         timeout: 60_000,
@@ -219,6 +250,9 @@ test('fresh documented custom package enables and reloads through the rendered U
       const value = await page.request.get(`/cache/${ids.custom}/result`);
       expect(value.ok()).toBe(true);
       expect(await value.text()).toBe(expected);
+      const exportedValue = await page.request.get(`/cache/${ids.exported}/output`);
+      expect(exportedValue.ok()).toBe(true);
+      expect(await exportedValue.text()).toBe(expected);
       if (nativePreview) {
         const evidence = await (await page.request.get(`/runs/${submission.task_id}`)).json();
         // Retain mismatching evidence too; an assertion must not erase the
@@ -244,8 +278,16 @@ test('fresh documented custom package enables and reloads through the rendered U
       }
       receipts.push({ operation: 'run', taskId: submission.task_id, expected, elapsedMs: Date.now() - clickedAt });
     };
-    await run('Watercolor: a lighthouse at night');
-    const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    if (!nativeImage) {
+      await run(`Ink painting: ${inlinePrompt}`);
+      await connectPrompt();
+    }
+    await arrange();
+    await page.screenshot({ path: resolve(output, 'connected.png') });
+    const workflowName = `Custom authoring review ${name}`;
+    await save(page, workflowName);
+    await run('Ink painting: a lighthouse at night');
+    const before = await readGraph();
     await writeFile(resolve(output, 'before.workflow.json'), JSON.stringify(before, null, 2));
     const installedPath = resolve(activatedModule.path, 'main.py');
     expect(await readFile(installedPath, 'utf8')).toBe(source);
@@ -272,14 +314,25 @@ test('fresh documented custom package enables and reloads through the rendered U
     receipts.push({ operation: 'reload', response: reload });
     expect(reload.modules.find((item: { name: string }) => item.name === name).enabled).toBe(true);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await run('RELOADED Watercolor: a lighthouse at night');
+    await run('RELOADED Ink painting: a lighthouse at night');
     if (nativeImage) expect(imageHashes[1]).not.toBe(imageHashes[0]);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-    const restored = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    await waitForCanvas();
+    const restored = await readGraph();
     expect(restored.edges).toEqual(before.edges);
     expect(restored.nodes.map((node) => node.id)).toEqual(before.nodes.map((node) => node.id));
-    await run('RELOADED Watercolor: a lighthouse at night');
+    await page.getByRole('button', { name: `Close ${workflowName}`, exact: true }).click();
+    if (await launcher.isVisible()) await page.keyboard.press('Escape');
+    await page.getByTestId('left-tab-workflows').click();
+    await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+    await page.getByRole('button', { name: workflowName, exact: true }).click();
+    await expect.poll(async () => (await readGraph()).edges).toEqual(before.edges);
+    await expect
+      .poll(async () => (await readGraph()).nodes.map((entry) => entry.id))
+      .toEqual(before.nodes.map((entry) => entry.id));
+    await expect(node(ids.custom).getByRole('textbox', { name: 'Prefix', exact: true })).toHaveValue('Ink painting:');
+    await expect(handle(ids.custom, 'prompt_input')).toHaveAttribute('aria-label', 'Input Prompt Input, string');
+    await run('RELOADED Ink painting: a lighthouse at night');
     if (nativeImage) expect(imageHashes[2]).toBe(imageHashes[1]);
     if (modelSwitches) {
       // A real native → native → ordinary whole-pipeline → native round trip.
@@ -332,7 +385,7 @@ test('fresh documented custom package enables and reloads through the rendered U
         );
         expect(changed.edges.some((edge) => edge.source === ids.custom && edge.target !== ids.exported)).toBe(true);
         receipts.push({ operation: 'browser model switch', repository, pipeline });
-        await run('RELOADED Watercolor: a lighthouse at night');
+        await run('RELOADED Ink painting: a lighthouse at night');
       }
       const returned = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
       expect(returned.nodes.map((node) => node.id).sort()).toEqual(before.nodes.map((node) => node.id).sort());

@@ -4,6 +4,7 @@ import type { NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { classifyManagedControl, type ManagedControlFormKey } from './managedControlPolicy';
 import { runtimeOptionValues } from './runtimeOptions';
+import { assertStudioWeightFormatOptions, studioWeightFormat } from './weightFormat';
 import type { StudioFormState, StudioGraphBinding } from './types';
 
 const AUDIO_MODES = new Set(['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint']);
@@ -213,7 +214,12 @@ function valueForTarget(sourceValue: unknown, targetParam: NodeParams, randomSee
   return sourceScalar;
 }
 
-function formPatchForControl(formKey: keyof StudioFormState, value: unknown): Partial<StudioFormState> | null {
+function formPatchForControl(
+  formKey: keyof StudioFormState,
+  value: unknown,
+  param?: NodeParams,
+): Partial<StudioFormState> | null {
+  if (formKey === 'weightFormat') return { weightFormat: assertStudioWeightFormatOptions(value, param) };
   const form = useStudioStore.getState().form;
   if (formKey === 'seed' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const parsedSeed = Number((value as Record<string, unknown>).value);
@@ -263,12 +269,16 @@ export function syncManagedControlGroup(
   sourceValue: unknown,
   randomSeed = false,
 ) {
-  managedNodes(binding).forEach((node) => {
-    Object.entries(node.data.params ?? {}).forEach(([paramKey, param]) => {
-      if (managedControlSyncGroup(node, paramKey, binding) !== syncGroup) return;
-      useFlowStore.getState().setParam(node.id, paramKey, valueForTarget(sourceValue, param, randomSeed));
-    });
-  });
+  const targets = managedNodes(binding).flatMap((node) =>
+    Object.entries(node.data.params ?? {})
+      .filter(([paramKey]) => managedControlSyncGroup(node, paramKey, binding) === syncGroup)
+      .map(([paramKey, param]) => ({ node, paramKey, param })),
+  );
+  if (syncGroup === 'form:weightFormat')
+    targets.forEach(({ param }) => assertStudioWeightFormatOptions(sourceValue, param));
+  targets.forEach(({ node, paramKey, param }) =>
+    useFlowStore.getState().setParam(node.id, paramKey, valueForTarget(sourceValue, param, randomSeed)),
+  );
 }
 
 export function syncManagedFormControlAliases(form: StudioFormState, binding: StudioGraphBinding) {
@@ -289,7 +299,12 @@ export function syncManagedFormControlAliases(form: StudioFormState, binding: St
 
   syncGroups.forEach((syncGroup) => {
     const formKey = syncGroup.slice('form:'.length) as keyof StudioFormState;
-    syncManagedControlGroup(binding, syncGroup, form[formKey], form.randomSeed);
+    syncManagedControlGroup(
+      binding,
+      syncGroup,
+      formKey === 'weightFormat' ? studioWeightFormat(form.weightFormat) : form[formKey],
+      form.randomSeed,
+    );
   });
   declarativeBindings.forEach((declarativeBinding, syncGroup) => {
     const value = declarativeBindingValue(declarativeBinding, form);
@@ -320,11 +335,25 @@ export function syncManagedNodeControlChange(nodeId: string, paramKey: string, v
   if (!syncGroup) return;
   let form = useStudioStore.getState().form;
   if (formKey) {
-    const patch = formPatchForControl(formKey, value);
+    const patch = formPatchForControl(formKey, value, param);
     if (!patch) return;
+    if (formKey === 'weightFormat') {
+      // Validate every mirrored current schema before the form or sibling writes.
+      managedNodes(binding).forEach((target) =>
+        Object.entries(target.data.params ?? {}).forEach(([name, field]) => {
+          if (managedControlSyncGroup(target, name, binding) === syncGroup)
+            assertStudioWeightFormatOptions(value, field);
+        }),
+      );
+    }
     useStudioStore.getState().updateForm(patch);
     form = useStudioStore.getState().form;
-    syncManagedControlGroup(binding, syncGroup, form[formKey], form.randomSeed);
+    syncManagedControlGroup(
+      binding,
+      syncGroup,
+      formKey === 'weightFormat' ? studioWeightFormat(form.weightFormat) : form[formKey],
+      form.randomSeed,
+    );
     return;
   }
   syncManagedControlGroup(binding, syncGroup, value, form.randomSeed);

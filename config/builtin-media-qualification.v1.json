@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "format": "modiff.builtin-media-qualification.v1",
+  "exercises": {
+    "image_crop": { "x": 8, "y": 8, "width": 32, "height": 24 },
+    "image_upscale": { "resize_width": 96, "resize_height": 72, "resize_resampling": "nearest" },
+    "image_channels": { "channel": "red" },
+    "image_adjustment": { "brightness": 0.5 },
+    "image_filter": { "amount": 2 },
+    "image_stitch": { "stitch_columns": 1, "stitch_spacing": 2, "stitch_background": "black" },
+    "image_tile": { "rows": 3, "columns": 2 },
+    "mask_composite": { "composite_invert_mask": true },
+    "audio_trim": { "start_seconds": 0.25, "duration_seconds": 0.5 },
+    "audio_join": { "boundary_fade_seconds": 0 },
+    "audio_loudness_match": { "max_adjustment_db": 3 },
+    "video_frame_extract": { "selection_mode": "indices", "indices": "1,4,8" },
+    "frame_interpolation": { "interpolation_fps": 30 },
+    "video_trim": { "start_seconds": 0.25, "end_seconds": 1 },
+    "video_reverse": {},
+    "video_stitch": {},
+    "video_tile": { "columns": 1, "gap": 8, "background": "white" }
+  }
+}

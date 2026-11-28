@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "proofScope": "Synthetic metadata-only factory compatibility vectors with deterministic IDs, not model or release evidence.",
+  "capturedAt": "2026-10-27T00:00:00.000Z",
+  "vectors": [
+    {
+      "id": "flux3_klein_fp8r512_text_to_image:grouped",
+      "bytes": 29135,
+      "sha256": "f0eb593b721bc98c6341e650391bb8fcecc0ce616c5ad146d76de5e31f51ca11"
+    },
+    {
+      "id": "flux3_klein_fp8r512_text_to_image:ordinary",
+      "bytes": 29135,
+      "sha256": "f0eb593b721bc98c6341e650391bb8fcecc0ce616c5ad146d76de5e31f51ca11"
+    },
+    {
+      "id": "flux3_klein_fp8r512_single_reference_edit:grouped",
+      "bytes": 31706,
+      "sha256": "fe3042cc7bfad2a5129994b569971d8f890cf0f274d5928b6e36c5efde2a2010"
+    },
+    {
+      "id": "flux3_klein_fp8r512_single_reference_edit:ordinary",
+      "bytes": 31706,
+      "sha256": "fe3042cc7bfad2a5129994b569971d8f890cf0f274d5928b6e36c5efde2a2010"
+    },
+    {
+      "id": "flux3_klein_fp8r512_multi_reference_edit:grouped",
+      "bytes": 31985,
+      "sha256": "e6866bd61a918921d7aef72a12e18256464d74c51a92480adf4d67d0f414e2e9"
+    },
+    {
+      "id": "flux3_klein_fp8r512_multi_reference_edit:ordinary",
+      "bytes": 31985,
+      "sha256": "e6866bd61a918921d7aef72a12e18256464d74c51a92480adf4d67d0f414e2e9"
+    },
+    {
+      "id": "flux3_klein_fp8r512_raw_coordinate_prompt:grouped",
+      "bytes": 28794,
+      "sha256": "5feccb3096a413c5d3b5362d4495497e0efc797af0c61e14da73408e3a2adde9"
+    },
+    {
+      "id": "flux3_klein_fp8r512_raw_coordinate_prompt:ordinary",
+      "bytes": 28794,
+      "sha256": "5feccb3096a413c5d3b5362d4495497e0efc797af0c61e14da73408e3a2adde9"
+    },
+    {
+      "id": "flux3_klein_fp8r512_lora_style:grouped",
+      "bytes": 31318,
+      "sha256": "71667e8a508b42347e96250dcfd66cd2d275d29b34dcedf49987cbd4a15abbc7"
+    },
+    {
+      "id": "flux3_klein_fp8r512_lora_style:ordinary",
+      "bytes": 31318,
+      "sha256": "71667e8a508b42347e96250dcfd66cd2d275d29b34dcedf49987cbd4a15abbc7"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_text_to_image:grouped",
+      "bytes": 30793,
+      "sha256": "58089b345e8a411a602610dc13b2508c6880707e1823b9e93837a034816d30fe"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_text_to_image:ordinary",
+      "bytes": 30793,
+      "sha256": "58089b345e8a411a602610dc13b2508c6880707e1823b9e93837a034816d30fe"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_single_reference_edit:grouped",
+      "bytes": 33369,
+      "sha256": "2c4c8d1c618b4e95952a2dbc55951c44a08a19b360f49747a944f0a0f579efd0"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_single_reference_edit:ordinary",
+      "bytes": 33369,
+      "sha256": "2c4c8d1c618b4e95952a2dbc55951c44a08a19b360f49747a944f0a0f579efd0"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_multi_reference_edit:grouped",
+      "bytes": 33653,
+      "sha256": "d0317b5204b7a35cdc04fd03ada11e9037ff568ef9cd1c550c3cac2751c1a516"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_multi_reference_edit:ordinary",
+      "bytes": 33653,
+      "sha256": "d0317b5204b7a35cdc04fd03ada11e9037ff568ef9cd1c550c3cac2751c1a516"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_raw_coordinate_prompt:grouped",
+      "bytes": 30452,
+      "sha256": "651c8c73a16ce34c1ad1fda7f087aa3c87b1c1c35c49cead098acb8483379050"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_raw_coordinate_prompt:ordinary",
+      "bytes": 30452,
+      "sha256": "651c8c73a16ce34c1ad1fda7f087aa3c87b1c1c35c49cead098acb8483379050"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_lora_style:grouped",
+      "bytes": 33113,
+      "sha256": "15c1fdb93d775fc297c7b8521b72640cb5fd9232524d5404c7b44ec60b52b1f2"
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_lora_style:ordinary",
+      "bytes": 33113,
+      "sha256": "15c1fdb93d775fc297c7b8521b72640cb5fd9232524d5404c7b44ec60b52b1f2"
+    }
+  ]
+}

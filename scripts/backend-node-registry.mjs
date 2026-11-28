@@ -153,7 +153,14 @@ export function readBundledBackendNodeRegistry(backendRoot) {
   for (const moduleEntry of modules) {
     const moduleRoot = join(modulesRoot, moduleEntry.name);
     const initPath = join(moduleRoot, '__init__.py');
-    if (!existsSync(initPath)) throw new Error(`Bundled backend module has no __init__.py: ${moduleRoot}`);
+    if (!existsSync(initPath)) {
+      // A checkout can retain empty module directories or bytecode after the
+      // source was removed. Runtime discovery registers no nodes from them.
+      // Any other content is an incomplete module and must still fail closed.
+      const contents = readdirSync(moduleRoot, { withFileTypes: true });
+      if (contents.every((entry) => entry.isDirectory() && entry.name === '__pycache__')) continue;
+      throw new Error(`Bundled backend module has no __init__.py: ${moduleRoot}`);
+    }
     const initSource = readFileSync(initPath, 'utf8');
     const actions = new Set(precomputedModuleMapKeys(initSource, initPath));
     for (const stem of moduleParseStems(initSource, initPath)) {

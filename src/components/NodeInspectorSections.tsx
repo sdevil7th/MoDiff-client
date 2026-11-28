@@ -2,8 +2,11 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { ModiffTabs, StatusLine } from '../ui';
+import type { NodeParams } from '../stores/useNodeStore';
+import { visualOperationStageKind } from '../workflow/visualOperationGroupProjection';
 import { isFocusedGuidance } from '../workflow/encodingNodePresentation';
 
+const EncodingNodeControls = lazy(() => import('./EncodingNodeControls'));
 const NodeInspectionDetails = lazy(() => import('./NodeInspectionDetails'));
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const GuidanceNodeControls = lazy(() => import('./GuidanceNodeControls'));
@@ -18,7 +21,15 @@ const sections: { value: NodeInspectorSection; label: string }[] = [
 ];
 
 /** One view of the selected canvas node; no separate settings or schema discovery. */
-export default function NodeInspectorSections({ node, children }: { node: CustomNodeType; children: ReactNode }) {
+export default function NodeInspectorSections({
+  node,
+  children,
+  updateStore,
+}: {
+  node: CustomNodeType;
+  children: ReactNode;
+  updateStore: (key: string, value: unknown, property?: keyof NodeParams) => void;
+}) {
   const [section, setSection] = useState<NodeInspectorSection>('parameters');
   const id = useId();
   return (
@@ -42,9 +53,17 @@ export default function NodeInspectorSections({ node, children }: { node: Custom
                 <OperationOwnerControls node={node} />
               </Suspense>
             ) : null}
-            {isFocusedGuidance(node.data.blockInstanceV2) ? (
+            {node.data.blockInstanceV2 && visualOperationStageKind(node.data.blockInstanceV2) === 'inputs' ? (
+              <Suspense fallback={<StatusLine>Loading encoding controls…</StatusLine>}>
+                <EncodingNodeControls
+                  instance={node.data.blockInstanceV2}
+                  controlIdPrefix={id}
+                  updateStore={updateStore}
+                />
+              </Suspense>
+            ) : isFocusedGuidance(node.data.blockInstanceV2) ? (
               <Suspense fallback={<StatusLine>Loading guidance controls…</StatusLine>}>
-                <GuidanceNodeControls instance={node.data.blockInstanceV2!} />
+                <GuidanceNodeControls instance={node.data.blockInstanceV2!} controlIdPrefix={id} />
               </Suspense>
             ) : (
               children

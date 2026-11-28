@@ -14,6 +14,7 @@ let outputContracts;
 let outputUtils;
 
 const storageValues = new Map();
+const sessionValues = new Map();
 const localStorageMock = {
   clear: () => storageValues.clear(),
   getItem: (key) => storageValues.get(key) ?? null,
@@ -27,10 +28,16 @@ const localStorageMock = {
 
 before(async () => {
   globalThis.localStorage = localStorageMock;
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     dispatchEvent: () => true,
     location: { origin: 'http://127.0.0.1:5191' },
     localStorage: localStorageMock,
+    sessionStorage: globalThis.sessionStorage,
   };
   server = await createServer({
     root: ROOT,
@@ -49,6 +56,7 @@ before(async () => {
 
 beforeEach(() => {
   storageValues.clear();
+  sessionValues.clear();
   studioStoreModule.useStudioStore.setState({
     outputs: [],
     outputRevision: 0,
@@ -149,7 +157,7 @@ test('an invalid backend output rejects the whole response instead of partially 
   assert.match(state.galleryBackendError, /invalid output/);
 });
 
-test('backend-owned output history is not duplicated into localStorage', async () => {
+test('backend-owned output history is not duplicated into the page checkpoint', async () => {
   globalThis.fetch = async () => jsonResponse({ error: false, outputs: [output('backend')] });
   await studioStoreModule.useStudioStore.getState().fetchBackendOutputs();
 
@@ -157,7 +165,7 @@ test('backend-owned output history is not duplicated into localStorage', async (
     studioStoreModule.useStudioStore.getState().outputs.map((item) => item.id),
     ['backend'],
   );
-  const persisted = JSON.parse(storageValues.get('modiff.studio'));
+  const persisted = JSON.parse(sessionValues.get('modiff.studio'));
   assert.equal(Object.hasOwn(persisted.state, 'outputs'), false);
 });
 
@@ -190,6 +198,20 @@ test('refresh hydrates the durable current preview separately from previous outp
   );
 });
 
+test('preview history never borrows an unscoped or another workflow output with reused node ids', () => {
+  const records = [
+    { ...output('local'), workflowTabId: 'workflow-a' },
+    { ...output('other'), workflowTabId: 'workflow-b' },
+    output('legacy'),
+  ];
+  const previous = (workflow) =>
+    previewStateModule.previousOutputsForPreview(records, workflow, 'node-1', 'image', null).map((item) => item.id);
+  assert.deepEqual(previous('workflow-a'), ['local']);
+  assert.deepEqual(previous('fresh-workflow'), []);
+  assert.deepEqual(previous(null), ['legacy']);
+  assert.equal(records.length, 3, 'Unscoped historical outputs remain available in the gallery.');
+});
+
 test('a slower history response cannot replace a newer preview-state revision', async () => {
   const call = deferred();
   globalThis.fetch = () => call.promise;
@@ -211,9 +233,9 @@ test('a slower history response cannot replace a newer preview-state revision', 
   assert.equal(state.previewSlots[key].currentOutputId, 'new-current');
 });
 
-test('legacy localStorage output copies are discarded during hydration', async () => {
+test('obsolete output copies in a page checkpoint are discarded during hydration', async () => {
   const state = studioStoreModule.useStudioStore.getState();
-  storageValues.set(
+  sessionValues.set(
     'modiff.studio',
     JSON.stringify({
       state: {

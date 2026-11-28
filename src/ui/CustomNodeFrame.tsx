@@ -1,5 +1,6 @@
 import { forwardRef, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react';
 import type { ModiffNodeStyle } from '../theme';
+import { contentDrivenNodeStyle } from '../workflow/nodeContentSize';
 import { cx } from '../utils/classNames';
 
 export type CustomNodeFrameProps = {
@@ -10,6 +11,7 @@ export type CustomNodeFrameProps = {
   parentNodeId?: string;
   isError?: boolean;
   maxWidth: number;
+  explicitHeight?: number;
   minWidth?: number;
   nodeStyle?: ModiffNodeStyle;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
@@ -17,13 +19,25 @@ export type CustomNodeFrameProps = {
 };
 
 export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(function CustomNodeFrame(
-  { children, className, id, parentNodeId, isError = false, maxWidth, minWidth, nodeStyle, onContextMenu, testId },
+  {
+    children,
+    className,
+    id,
+    parentNodeId,
+    isError = false,
+    maxWidth,
+    minWidth,
+    explicitHeight,
+    nodeStyle,
+    onContextMenu,
+    testId,
+  },
   ref,
 ) {
   const frameStyle: CSSProperties = {
     maxWidth,
     minWidth,
-    ...nodeStyle,
+    ...contentDrivenNodeStyle(nodeStyle, explicitHeight),
     maxHeight: 'none',
   };
 
