@@ -497,6 +497,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Four entry chunks and the existing 64 KiB limit on each deferred chunk are preserved.
 // Content-sized stages, role-aware wiring and editing add the measured largest-chunk delta. 578843 to 582429 gzip bytes.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Shared effective-control and wire-origin logic. Measured 582429 to 583348 gzip bytes.
+  919 +
   3586 +
   3781 +
   // The approved native Shap-E preview brings the largest chunk to 575069 gzip bytes.
@@ -825,6 +827,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 757,520 total startup bytes, up from 753,545.
 // The four startup chunks include shared selectors, stage geometry and editing controls. 757520 to 764464 gzip bytes.
 const MAX_STARTUP_GZIP_BYTES =
+  // Same four startup chunks, measured 764464 to 765381 gzip bytes.
+  917 +
   6944 +
   3975 +
   // The Shap-E preview and its Gallery descriptor add 634 bytes of startup JavaScript.
@@ -1213,6 +1217,8 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 357,530 to 361,671 bytes, including the shared workflow-file picker.
 // The template feature, panel layouts and conditional controls are loaded with their existing surfaces. 361671 to 367446 gzip bytes.
 const MAX_DEFERRED_GZIP_BYTES =
+  // The port picker and stage controls stay lazy. Measured 367446 to 368441 gzip bytes.
+  995 +
   5775 +
   4141 +
   // The native turntable comparison adds 129 bytes and keeps 41 bytes of headroom.
